@@ -47,8 +47,8 @@ git  552bb6d  Reconcile handoff with verified commit state
 ```
 
 The workflow-parity work lives on `codex/production-workflow-parity`; its first
-two commits are `f60f079` and `a2a62be`. The LLM salvage described below is the
-next branch change. Tests: **218 assertions across four suites, exit 0**.
+two commits are `f60f079` and `a2a62be`; the current branch also contains the
+LLM salvage described below. Tests: **218 assertions across four suites, exit 0**.
 Frontend production build: clean. The Electron build was also walked against a
 temporary Fixtures database: Sources, Appearance, Production Lock and
 Prepare-only destinations all rendered in the desktop shell.
