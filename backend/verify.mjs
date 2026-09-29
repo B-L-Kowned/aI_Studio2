@@ -377,6 +377,17 @@ check('other production not marked stale', Object.keys(r.body.data.stale).length
 r = await call('POST', '/productions', { sourceType: 'idea' });
 check('creates from a blank idea', r.status === 200 && r.body.data.outline.length === 3);
 
+r = await call('POST', '/productions', {
+  sourceType: 'existing_script',
+  title: 'Imported script flow',
+  scriptText: 'Host: Welcome to the show.\nGuest: Thanks for having me.',
+});
+check('creates from an existing script', r.status === 200, JSON.stringify(r.body).slice(0, 140));
+const importedScriptId = r.body.data.id;
+r = await call('GET', `/productions/${importedScriptId}/segments`);
+check('an imported accepted script arrives with production lines ready',
+  r.body.data.segments.length === 2, String(r.body.data.segments.length));
+
 r = await call('POST', '/productions', { sourceType: 'nonsense' });
 check('rejects unknown sourceType', r.status === 400 && r.body.error === 'BAD_SOURCE');
 r = await call('POST', '/productions', { sourceType: 'template', templateId: 'no-such-template' });

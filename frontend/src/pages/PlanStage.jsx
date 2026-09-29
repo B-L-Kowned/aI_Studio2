@@ -28,8 +28,8 @@ export default function PlanStage({ goToStage }) {
         ))}
         <hr />
         <small>AI PRODUCER</small>
-        <p className="muted">Uses the included LLM by default. It asks only for decisions it cannot safely make.</p>
-        <button className="producer" onClick={askProducer}><Sparkles /> Ask Producer</button>
+        <p className="muted">Runs a deterministic production check. It flags only decisions that still need you.</p>
+        <button className="producer" onClick={askProducer}><Sparkles /> Review with Producer</button>
       </aside>
 
       <section>
@@ -218,7 +218,7 @@ function Outline({ goToStage }) {
 
       <div className="actions">
         <button onClick={() => mutate(() => api.rebalance(production.id), applyProduction)}>
-          Ask AI to rebalance
+          Rebalance timings
         </button>
         <button
           className="primary"

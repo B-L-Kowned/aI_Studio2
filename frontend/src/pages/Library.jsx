@@ -67,9 +67,9 @@ export default function Library() {
           <>
             <div className="searchbox">
               <Search size={13} />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" />
+              <input aria-label="Search assets" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" />
             </div>
-            <select value={kind} onChange={(e) => setKind(e.target.value)}>
+            <select aria-label="Filter assets by kind" value={kind} onChange={(e) => setKind(e.target.value)}>
               <option value="all">All kinds</option>
               {kinds.map((k) => (
                 <option key={k} value={k}>{KIND[k]?.label ?? k}</option>
@@ -107,7 +107,7 @@ export default function Library() {
                   {a.duration ? <em className="libmeta">{clock(a.duration)}</em> : null}
                   {a.kind === 'heygen_video' && !a.playable && (
                     <em className="libmeta warn" title="Imported before the Library stored the video itself">
-                      nothing behind it
+                      re-sync required
                     </em>
                   )}
                   {confirming === a.id ? (

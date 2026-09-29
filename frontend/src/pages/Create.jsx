@@ -58,7 +58,7 @@ export default function Create({ go }) {
 
 
       {stage === 'Plan' && <PlanStage goToStage={setStage} />}
-      {stage === 'Script' && <ScriptStage />}
+      {stage === 'Script' && <ScriptStage goToStage={setStage} />}
       {stage === 'Segments' && <SegmentsStage />}
       {stage === 'Render' && <RenderStage />}
       {stage === 'Edit' && <EditStage />}

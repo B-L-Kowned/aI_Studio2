@@ -1,4 +1,5 @@
 import { getDb } from '../db/index.js';
+import { buildSegments } from './segments.js';
 
 // What each starting point actually DOES.
 //
@@ -59,7 +60,7 @@ export function importScript(productionId, text) {
     );
   }
 
-  return db.transaction(() => {
+  const imported = db.transaction(() => {
     const version =
       (db.prepare('SELECT MAX(version) m FROM script_versions WHERE production_id = ?')
         .get(productionId).m ?? 0) + 1;
@@ -83,6 +84,11 @@ export function importScript(productionId, text) {
       speakers: [...new Set(segments.map((s) => s.speaker))],
     };
   })();
+
+  // An imported script is accepted on arrival, so it crosses the same
+  // acceptance boundary as a script approved in the editor. Its production
+  // lines should be ready without teaching a second workflow for this source.
+  return { ...imported, segmentBuild: buildSegments(productionId) };
 }
 
 /**

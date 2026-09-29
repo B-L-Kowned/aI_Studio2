@@ -370,6 +370,11 @@ JSON into the existing script-segment shape. No reference-repo file was changed.
    controlled conversational producer over the new durable research,
    script, voice, appearance and lock states.
 
+The Script → Segments join is no longer on this list: accepting a proposed
+script now builds its production lines and advances the UI to Segments.
+Imported, already-accepted scripts do the same. Rebuild remains available for
+recovery, but it is no longer required to discover the next stage.
+
 ---
 
 ## 10. How to work on this without repeating the mistakes

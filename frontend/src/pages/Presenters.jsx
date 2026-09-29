@@ -1,8 +1,34 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Check, AlertCircle, Plus, X, Archive, RotateCcw, ChevronDown } from 'lucide-react';
+import { Check, AlertCircle, Plus, X, Archive, RotateCcw, ChevronDown, Search } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
-import { Section, PageHead } from '../components/Section.jsx';
+import { Section } from '../components/Section.jsx';
+
+const ROSTER_PAGE_SIZE = 24;
+
+function searchablePresenter(presenter) {
+  const persona = presenter.persona ?? {};
+  return [
+    presenter.name,
+    presenter.tagline,
+    presenter.description,
+    presenter.avatar?.name,
+    presenter.voice?.name,
+    persona.voice,
+    persona.signatureOpening,
+    persona.signOff,
+  ].filter(Boolean).join(' ').toLocaleLowerCase();
+}
+
+function initials(name = '') {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toLocaleUpperCase() || '?';
+}
 
 /**
  * Who appears on screen — and the actual comedy/content gate.
@@ -19,6 +45,8 @@ export default function Presenters({ tab: externalTab, onTabs }) {
   const [showRetired, setShowRetired] = useState(false);
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState(null);
+  const [query, setQuery] = useState('');
+  const [visibleCount, setVisibleCount] = useState(ROSTER_PAGE_SIZE);
 
   const load = useCallback(async () => {
     const d = await api.presenters(showRetired);
@@ -29,9 +57,24 @@ export default function Presenters({ tab: externalTab, onTabs }) {
 
   useEffect(() => { load(); }, [load]);
 
-  if (!data) return <p className="muted">Loading…</p>;
   const chosen = externalTab ?? tab;
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+
+  useEffect(() => {
+    setQuery('');
+    setVisibleCount(ROSTER_PAGE_SIZE);
+  }, [chosen]);
+
+  useEffect(() => {
+    setVisibleCount(ROSTER_PAGE_SIZE);
+  }, [normalizedQuery, showRetired]);
+
+  if (!data) return <p className="muted">Loading…</p>;
   const active = data.tabs.find((t) => t.id === chosen) ?? data.tabs[0];
+  const matches = active?.presenters.filter((p) =>
+    !normalizedQuery || searchablePresenter(p).includes(normalizedQuery)
+  ) ?? [];
+  const visiblePresenters = matches.slice(0, visibleCount);
 
   const run = async (fn) => {
     setErr(null);
@@ -89,8 +132,30 @@ export default function Presenters({ tab: externalTab, onTabs }) {
             </Section>
           ) : (
             <Section title={active.label} meta={active.detail}>
+            <div className="rostertools">
+              <label className="rostersearch">
+                <Search size={14} aria-hidden="true" />
+                <span className="sr-only">Search {active.label}</span>
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={`Search ${active.label.toLocaleLowerCase()}…`}
+                />
+              </label>
+              <span className="rostercount" aria-live="polite">
+                {matches.length === active.presenters.length
+                  ? `${active.presenters.length} total`
+                  : `${matches.length} of ${active.presenters.length}`}
+              </span>
+            </div>
+
+            {matches.length === 0 ? (
+              <p className="sectionempty">No {active.label.toLocaleLowerCase()} match “{query.trim()}”.</p>
+            ) : (
+              <>
             <div className="presgrid">
-              {active.presenters.map((p) => (
+              {visiblePresenters.map((p) => (
                 <div className={'prescard' + (p.isActive ? '' : ' retired')} key={p.id}>
                   {/* The tile IS the taxonomy: art for characters, type for the rest. */}
                   {p.hasArtwork ? (
@@ -98,10 +163,13 @@ export default function Presenters({ tab: externalTab, onTabs }) {
                       <span className="presartfallback">{p.name[0]}</span>
                     </div>
                   ) : (
-                    // No artwork means the tile is only the name, which is
-                    // already the next line down. A tall band of nothing is not
-                    // a portrait, so it shrinks to a label.
-                    <div className="prestype slim"><span>{p.name}</span></div>
+                    // No artwork must not become a fabricated face. Initials
+                    // create a useful visual anchor without repeating the name
+                    // or making a false identity claim.
+                    <div className="prestype slim" aria-hidden="true">
+                      <span>{initials(p.name)}</span>
+                      <em>{active.id === 'characters' ? 'character' : active.id === 'personal' ? 'you' : 'presenter'}</em>
+                    </div>
                   )}
 
                   <b>{p.name}</b>
@@ -149,6 +217,16 @@ export default function Presenters({ tab: externalTab, onTabs }) {
                 </div>
               ))}
             </div>
+            {visiblePresenters.length < matches.length && (
+              <div className="rosterload">
+                <span>Showing {visiblePresenters.length} of {matches.length}</span>
+                <button onClick={() => setVisibleCount((count) => count + ROSTER_PAGE_SIZE)}>
+                  Show {Math.min(ROSTER_PAGE_SIZE, matches.length - visiblePresenters.length)} more
+                </button>
+              </div>
+            )}
+              </>
+            )}
             </Section>
           )}
 

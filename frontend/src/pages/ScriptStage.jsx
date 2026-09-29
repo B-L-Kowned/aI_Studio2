@@ -3,7 +3,21 @@ import { Sparkles, Check, X, Lock, AlertCircle, FileText } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 
-export default function ScriptStage() {
+const GENERATOR_LABELS = {
+  included: 'Built-in deterministic',
+  ollama: 'Local Ollama',
+  openai: 'ChatGPT (OpenAI)',
+  anthropic: 'Claude (Anthropic)',
+  groq: 'Groq',
+  xai: 'Grok (xAI)',
+};
+
+function generatorLabel(version) {
+  const provider = GENERATOR_LABELS[version.generatorProvider] ?? version.generatorProvider ?? 'Unknown engine';
+  return version.generatorModel ? `${provider} · ${version.generatorModel}` : provider;
+}
+
+export default function ScriptStage({ goToStage }) {
   const { production, mutate } = useStudio();
   const [state, setState] = useState(null);
   const [workflow, setWorkflow] = useState(null);
@@ -61,7 +75,7 @@ export default function ScriptStage() {
         <div className="versionbar">
           {state.versions.map((v) => (
             <span key={v.id} className={'vchip ' + v.status + (v.stale ? ' stale' : '')}>
-              v{v.version} · {v.status}{v.stale ? ' · stale' : ''}
+              v{v.version} · {v.status}{v.stale ? ' · stale' : ''} · {generatorLabel(v)}
             </span>
           ))}
         </div>
@@ -115,8 +129,23 @@ export default function ScriptStage() {
               <button onClick={() => mutate(() => api.rejectScript(production.id, latest.id), apply)}>
                 <X size={15} /> Reject
               </button>
-              <button className="primary" onClick={() => mutate(() => api.acceptScript(production.id, latest.id), apply)}>
-                <Check size={15} /> Accept v{latest.version} → Produce
+              <button
+                className="primary"
+                onClick={async () => {
+                  await mutate(() => api.acceptScript(production.id, latest.id), apply);
+                  // One user action crosses the writing/production boundary.
+                  // The APIs remain separately useful and testable, while the
+                  // interface never lands on an empty next stage that requires
+                  // a second, non-obvious “Build” press.
+                  await mutate(
+                    () => api.buildSegments(production.id),
+                    null,
+                    { silent: true }
+                  );
+                  goToStage?.('Segments');
+                }}
+              >
+                <Check size={15} /> Accept v{latest.version} → Segments
               </button>
             </div>
           ) : (

@@ -107,6 +107,10 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
 
 /* --------------------------------------------------------------- header -- */
 /* The bar is full-bleed so its border reaches the window edges; its contents
@@ -1348,6 +1352,18 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 }
 .stagebar.inline button { padding: 6px 4px; font-size: 12.5px; }
 
+/* At desktop-window widths the title and six stages cannot honestly share one
+   line. Give the production its full first row and keep every stage readable. */
+@media (max-width: 1000px) {
+  .prodhead {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 16px; align-items: end;
+  }
+  .prodhead .crumbstack { max-width: none; grid-column: 1; grid-row: 1; }
+  .prodhead .savechip { grid-column: 2; grid-row: 1; }
+  .prodhead .stagebar.inline { grid-column: 1 / -1; grid-row: 2; width: 100%; }
+}
+
 /* ---------------------------------------------------------------- modal -- */
 .modal {
   position: fixed; top: 12vh; left: 50%; transform: translateX(-50%);
@@ -1560,6 +1576,23 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 .stagebar .active .tabcount { background: rgba(255,255,255,.22); color: #fff; }
 .preshint { margin: 14px 0 12px; }
 
+.rostertools {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+}
+.rostersearch {
+  width: min(360px, 100%); display: flex; align-items: center; gap: 7px;
+  border: 1px solid var(--line-2); background: var(--surface);
+  border-radius: var(--r); padding: 0 9px; color: var(--muted);
+}
+.rostersearch:focus-within {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.rostersearch input {
+  width: 100%; min-width: 0; border: 0; padding: 8px 0; box-shadow: none;
+}
+.rostersearch input:focus { border: 0; box-shadow: none; }
+.rostercount { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+
 .presgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .prescard {
   background: var(--surface); border: 1px solid var(--line);
@@ -1571,8 +1604,19 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 .prescard small { color: var(--muted); font-size: 12px; line-height: 1.45; }
 /* A tile carrying a name that is repeated directly beneath it is decoration.
    Where a persona describes the presenter, the tile gives way to the words. */
-.prestype.slim { height: 46px; }
-.prestype.slim span { font-size: 12.5px; }
+.prestype.slim {
+  height: 54px; grid-template-columns: 32px 1fr; place-items: center start;
+  gap: 10px; padding: 9px 10px; text-align: left;
+}
+.prestype.slim span {
+  width: 32px; height: 32px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--surface); border: 1px solid var(--line-2);
+  font: 620 11px/1 var(--mono); letter-spacing: .02em; color: var(--ink-2);
+}
+.prestype.slim em {
+  font-style: normal; font-size: 10px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--faint);
+}
 
 /* A character is invented, so it has artwork. */
 .presart {
@@ -1602,9 +1646,17 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 .castrow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .castrow select { font-size: 12px; padding: 6px 7px; min-width: 0; }
 .prescard .ghostbtn { align-self: flex-start; }
+.rosterload {
+  display: flex; justify-content: center; align-items: center; gap: 12px;
+  padding-top: 16px; color: var(--muted); font-size: 12px;
+}
 
 @media (max-width: 860px) { .presgrid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 620px) { .presgrid { grid-template-columns: 1fr; } }
+@media (max-width: 620px) {
+  .presgrid { grid-template-columns: 1fr; }
+  .rostertools { align-items: stretch; flex-direction: column; }
+  .rostercount { margin-left: 0; }
+}
 
 /* ---------------------------------------------------------------- heygen -- */
 .pocket { border: 1px solid var(--line); border-radius: var(--r-lg); padding: 15px 17px; margin: 16px 0; }
