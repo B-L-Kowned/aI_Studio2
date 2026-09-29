@@ -66,5 +66,12 @@ export function allowedModes(entitlement) {
 /** Templates are listed without their recipe bodies — the UI only picks one. */
 export function templatesFor(entitlement) {
   const visible = entitlement === 'both' ? TEMPLATES : TEMPLATES.filter((t) => t.mode === entitlement);
-  return visible.map(({ id, name, mode, runtime, format }) => ({ id, name, mode, runtime, format }));
+  // `purpose` and the section count travel too: a picker that can only say
+  // "name · mode · runtime" has to cram three facts into one string, which is
+  // exactly what the old <option> did. The brief and outline stay server-side
+  // — they are applied on create, not browsed.
+  return visible.map(({ id, name, mode, runtime, format, purpose, outline }) => ({
+    id, name, mode, runtime, format, purpose: purpose ?? null,
+    sections: outline?.length ?? 0,
+  }));
 }

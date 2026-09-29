@@ -242,22 +242,28 @@ nav .on { color: var(--ink); font-weight: 560; background: var(--canvas); }
 .caladdlist button i { display: block; font-style: normal; color: var(--faint); font-size: 10.5px; }
 
 /* ── The breadcrumb ───────────────────────────────────────────────────────
-   Two controls, deliberately unlike each other. The campaign is small, muted
-   and underlines on hover — it reads as a link that goes up. The title is the
-   heading and carries the chevron, so the thing that opens a picker is the
-   thing that looks like it opens a picker. When both were one button, the
-   click people actually made — the campaign, to go back — switched production
-   instead. */
-.crumb { display: flex; align-items: center; gap: 6px; min-width: 0; }
+   Stacked, which is what the row can afford: the stage bar sits beside it, so
+   a horizontal "campaign › title" left both ends truncated to nothing. The
+   campaign is the small line above — muted, with a back chevron, underlining
+   on hover so it reads as the way out. The title below is just the title now;
+   the dropdown that used to hang off it was a second copy of Plan → Campaigns.
+*/
+.crumbstack { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; }
 .crumbup {
+  display: inline-flex; align-items: center; gap: 3px;
   border: 0; background: none; padding: 0;
-  font-size: 11.5px; color: var(--muted); cursor: pointer;
-  max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; color: var(--muted); letter-spacing: .01em; cursor: pointer;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.crumbup svg { flex-shrink: 0; color: var(--faint); }
 .crumbup:hover { color: var(--ink); text-decoration: underline; }
+.crumbup:hover svg { color: var(--ink); }
 .crumbup.none { color: var(--faint); cursor: default; }
 .crumbup.none:hover { text-decoration: none; color: var(--faint); }
-.crumbsep { color: var(--faint); font-size: 11.5px; }
+.crumbtitle {
+  margin: 0; min-width: 0; max-width: 100%; font-size: 19px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 /* Arrived by going up: say which one, briefly, then stop shouting. */
 .campgroup.cameFrom {
@@ -265,6 +271,176 @@ nav .on { color: var(--ink); font-weight: 560; background: var(--canvas); }
   border-radius: var(--r-sm);
   transition: box-shadow .4s ease;
 }
+
+/* The track, on the campaign row. Purpose is a closed set, so it gets the
+   solid treatment; audience is a free-text sentence, so it stays quiet and
+   truncates rather than pushing the counts off the row. */
+.ctrack {
+  font-size: 10.5px; letter-spacing: .02em;
+  padding: 1px 7px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+  border: 1px solid var(--accent-line);
+}
+.caudience {
+  font-size: 11px; color: var(--faint); font-style: italic;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 340px; min-width: 0;
+}
+
+/* A campaign with nothing in it yet: the prompt, not a zero. */
+.campfoot .campempty { font-style: normal; color: var(--accent); }
+
+/* ── Casting: pick one of ten thousand ───────────────────────────────────
+   Replaces a <select> that could only ever hold a truncated slice of the
+   catalogue. The panel is anchored to its row and scrolls; the count under
+   the box says how many were actually searched, so "nothing matches" is
+   never confused with "nothing was looked at". */
+.apick { position: relative; flex: 1; min-width: 0; }
+.apickbtn {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  width: 100%; padding: 5px 8px;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--muted);
+  font-size: 12px; cursor: pointer; text-align: left;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.apick.set .apickbtn { color: var(--ink); }
+.apickbtn:hover { border-color: var(--line-2); }
+.apickbtn svg { flex-shrink: 0; color: var(--faint); }
+
+.apickscrim { position: fixed; inset: 0; z-index: 40; }
+.apickpanel {
+  position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 41;
+  min-width: 230px;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: var(--r-sm); box-shadow: var(--shadow-pop); padding: 6px;
+}
+.apicksearch {
+  width: 100%; padding: 5px 7px; font-size: 12px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--canvas);
+}
+.apickmeta { padding: 4px 3px 5px; font-size: 10.5px; color: var(--faint); }
+.apicklist { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; }
+.apicklist .muted { margin: 0; padding: 5px 3px; font-size: 11.5px; }
+.apicklist button {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; text-align: left; border: 0; background: transparent; cursor: pointer;
+  padding: 5px 7px; border-radius: var(--r-sm); font-size: 12px; color: var(--ink);
+}
+.apicklist button:hover { background: var(--canvas); }
+.apicklist button.cur { background: var(--accent-soft); color: var(--accent); }
+.apicklist button em { font-style: normal; font-size: 10px; color: var(--faint); flex-shrink: 0; }
+.apickclear { color: var(--muted) !important; border-bottom: 1px solid var(--line) !important; border-radius: 0 !important; }
+
+/* ── Template picker ──────────────────────────────────────────────────────
+   Replaces a <select> whose options read "Name · mode · runtime". Those are
+   three separate facts and they are laid out as three separate facts, under
+   a heading that says what the track is FOR. Scrolls rather than growing the
+   modal past the window. */
+.tpick {
+  max-height: 260px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--canvas); padding: 4px;
+}
+.tpickgroup + .tpickgroup { margin-top: 6px; }
+.tpickgroup > small {
+  display: block; padding: 6px 7px 4px;
+  font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--faint);
+}
+.tpickgroup > small.other { opacity: .65; }
+
+.tpickrow {
+  display: block; width: 100%; text-align: left;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; cursor: pointer;
+  padding: 6px 8px;
+}
+.tpickrow:hover { background: var(--surface); }
+.tpickrow.on { background: var(--surface); border-color: var(--accent); }
+.tpickrow b { display: block; font-size: 13px; font-weight: 560; color: var(--ink); }
+.tpickrow > span { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 1px; }
+.tpickrow > span i,
+.tpickrow.blank > span { font-style: normal; font-size: 11px; color: var(--faint); }
+.tpickrow i.tmode {
+  font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase;
+  padding: 0 5px; border-radius: 999px; border: 1px solid var(--line-2);
+}
+.tpickrow i.tmode.comedy { color: var(--accent); border-color: var(--accent-line); }
+
+/* ── Who says this line ───────────────────────────────────────────────────
+   The roster went from 2 castable to 158 in one import, which turned a
+   perfectly reasonable <select> into an unsearchable wall of names. Same
+   shape as the asset picker, but filtered locally — the cast is already on
+   the client, so there is nothing to wait for. */
+.ppick { position: relative; min-width: 0; }
+.ppickbtn {
+  display: flex; align-items: center; justify-content: space-between; gap: 5px;
+  width: 100%; padding: 4px 7px;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--muted);
+  font-size: 11.5px; cursor: pointer; text-align: left;
+}
+.ppickbtn > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ppick.set .ppickbtn { color: var(--ink); }
+.ppickbtn:hover { border-color: var(--line-2); }
+.ppickbtn svg { flex-shrink: 0; color: var(--faint); }
+
+.ppickscrim { position: fixed; inset: 0; z-index: 40; }
+.ppickpanel {
+  position: absolute; top: calc(100% + 3px); left: 0; z-index: 41;
+  min-width: 260px; max-width: 340px;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: var(--r-sm); box-shadow: var(--shadow-pop); padding: 6px;
+}
+.ppicksearch {
+  width: 100%; padding: 5px 7px; font-size: 12px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--canvas);
+}
+.ppickmeta { padding: 4px 3px 5px; font-size: 10.5px; color: var(--faint); }
+.ppicklist { display: flex; flex-direction: column; max-height: 250px; overflow-y: auto; }
+.ppicklist .muted { margin: 0; padding: 5px 3px; font-size: 11.5px; }
+.ppicklist button {
+  display: block; width: 100%; text-align: left;
+  border: 0; background: transparent; cursor: pointer;
+  padding: 5px 7px; border-radius: var(--r-sm);
+}
+.ppicklist button:hover { background: var(--canvas); }
+.ppicklist button.cur { background: var(--accent-soft); }
+.ppicklist button b { display: block; font-size: 12px; font-weight: 500; color: var(--ink); }
+.ppicklist button i {
+  display: block; font-style: normal; font-size: 10.5px; color: var(--faint);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.ppickclear { color: var(--muted) !important; border-bottom: 1px solid var(--line) !important; border-radius: 0 !important; font-size: 11.5px; }
+
+/* The series form lays its fields out in a grid of <label>s; the template
+   picker is a block, not a control, so it gets the same label treatment
+   without being one. */
+.serieslabel { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+
+/* The free read-through: what it sounds like and how long it runs, before
+   anything reaches a provider. */
+.readout {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 10px 0; padding: 8px 12px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--canvas);
+}
+.readhead { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink); }
+.readhead svg { color: var(--faint); }
+.readhead i { font-style: normal; font-size: 11px; color: var(--faint); }
+.readlen { font-size: 12px; color: var(--muted); }
+.readlen.ok    { color: var(--ok, #157f4a); }
+.readlen.short { color: var(--warn, #9a6b00); }
+.readlen.over  { color: var(--bad, #b3261e); }
+.readout audio { height: 30px; flex: 1; min-width: 200px; }
+.readclose { border: 0; background: none; color: var(--faint); cursor: pointer; padding: 2px; }
+
+/* The two HeyGen pockets, side by side. Not alternatives: the plan renders for
+   real, the key renders free test videos. */
+.pockets { display: inline-flex; gap: 4px; }
+.pocketchip.key { border-color: var(--accent-line); color: var(--accent); }
+.pocketchip.off { opacity: .45; }
 
 .modes {
   display: flex;
@@ -1100,8 +1276,10 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
   display: flex; align-items: center; gap: 16px; margin-bottom: 16px;
   padding-bottom: 14px; border-bottom: 1px solid var(--line);
 }
-/* The title takes only what it needs; the stages take the middle. */
-.prodhead .switcher { flex: 0 1 auto; max-width: 30%; }
+/* The title takes only what it needs; the stages take the middle. This
+   replaces the identical rule that was on `.switcher`, removed with the
+   dropdown — without it a long title pushes the stage bar off its row. */
+.prodhead .crumbstack { flex: 0 1 auto; max-width: 42%; }
 .prodhead .savechip { margin-left: auto; flex: none; }
 
 /* The stage bar sits IN the title row rather than under it. Stacked, the two
@@ -1110,62 +1288,6 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
   flex: 1 1 auto; min-width: 0; margin: 0;
 }
 .stagebar.inline button { padding: 6px 4px; font-size: 12.5px; }
-.switcher { position: relative; display: flex; min-width: 0; }
-.switchbtn {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
-  border: 1px solid transparent; background: transparent;
-  padding: 4px 9px; margin-left: -9px; min-width: 0;
-  color: var(--ink); border-radius: var(--r); text-align: left;
-}
-.switchlabel {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 11px; color: var(--muted); letter-spacing: .01em;
-}
-.switchlabel svg { color: var(--faint); }
-.switchbtn h1 {
-  margin: 0; min-width: 0; max-width: 100%; font-size: 19px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.switchbtn:hover { background: var(--surface); border-color: var(--line); }
-.switchbtn:hover .switchlabel svg { color: var(--ink); }
-/* Narrow and short: a switcher that buries the stage bar and the outline hides
-   the very thing you are switching away from. */
-.switchpanel {
-  position: absolute; top: 52px; left: -9px; z-index: 30;
-  background: var(--surface); border: 1px solid var(--line-2);
-  border-radius: var(--r-lg); box-shadow: var(--shadow-pop);
-  width: 286px; max-height: 300px; overflow: auto; padding: 5px;
-}
-.switchhead {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 6px 8px 8px;
-}
-.switchhead b { font-size: 11px; letter-spacing: .05em; color: var(--faint); }
-.switchhead button { border: 0; background: transparent; padding: 2px; color: var(--muted); }
-.switchgroup { margin-bottom: 4px; }
-.switchgroup small {
-  display: block; font-size: 10px; letter-spacing: .06em; font-weight: 600;
-  color: var(--faint); padding: 6px 8px 4px;
-}
-.switchgroup button,
-.switchnew {
-  display: flex; width: 100%; align-items: center; justify-content: space-between;
-  gap: 10px; border: 0; background: transparent; text-align: left;
-  padding: 8px; border-radius: var(--r); font-size: 13px;
-}
-.switchgroup button:hover, .switchnew:hover { background: var(--canvas); }
-.switchgroup button.cur { background: var(--canvas); font-weight: 540; }
-.switchgroup span { display: block; min-width: 0; }
-.switchgroup i {
-  display: block; font-style: normal; font-size: 11px;
-  color: var(--muted); margin-top: 2px;
-}
-.switchgroup svg { flex-shrink: 0; color: var(--muted); }
-.switchnew {
-  justify-content: flex-start; gap: 7px; color: var(--ink);
-  border-top: 1px solid var(--line); border-radius: 0 0 var(--r) var(--r);
-  margin-top: 4px; font-weight: 520;
-}
 
 /* ---------------------------------------------------------------- modal -- */
 .modal {
@@ -1543,17 +1665,6 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
   padding: 9px 11px;
 }
 .keywarn svg { flex-shrink: 0; margin-top: 2px; }
-
-/* Switcher rows: every marker says what it means. */
-.switchgroup em {
-  font-style: normal; font-size: 10.5px; flex-shrink: 0;
-  display: inline-flex; align-items: center; gap: 3px;
-}
-.switchgroup em.swcur { color: var(--ok); }
-.switchgroup em.swstale { color: var(--warn); }
-.switchgroup em.swrt { color: var(--faint); font-variant-numeric: tabular-nums; }
-.switchgroup button { padding: 7px 8px; }
-.switchgroup i { font-size: 10.5px; }
 
 /* ---- shared page furniture ---------------------------------------------- */
 .pagelead { color: var(--muted); font-size: 13px; margin: 2px 0 16px; max-width: 70ch; }
@@ -2105,7 +2216,6 @@ button.danger:hover:not(:disabled) { background: #9d2019; border-color: #9d2019;
 .parkline > svg { color: var(--faint); flex: none; }
 .parkline input { flex: 1; border: 0; background: none; font-size: 13.5px; padding: 3px 0; }
 .parkline input:focus { outline: none; }
-
 
 /* ── The production calendar ─────────────────────────────────────────────── */
 

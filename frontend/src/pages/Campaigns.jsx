@@ -168,8 +168,15 @@ export default function Campaigns({ go }) {
             >
               <header>
                 <b>{g.name}</b>
+                {/* The track. `purpose` is a closed set so "investor" means the
+                    same thing across fifty companies; `audience` is free text
+                    because no enum survives fifty companies — and it is the one
+                    that actually reaches generateScript. Both were in the
+                    database and reached this page as null. */}
+                {g.purpose && <span className="ctrack">{g.purpose}</span>}
                 <span className="cmode">{g.mode}</span>
                 <span className="ccount">{g.items.length}</span>
+                {g.audience && <span className="caudience" title={g.audience}>{g.audience}</span>}
                 {!visible && <span className="conn off"><Lock size={11} /> {g.mode} only</span>}
                 <span className="spacer" />
                 {/* "Add" lived here on every campaign, next to a "New" button

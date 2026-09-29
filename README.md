@@ -64,7 +64,8 @@ Override with `STUDIO_DB_PATH`. Under Electron this becomes `app.getPath('userDa
 ## Generation providers
 
 The UI requests a **capability** (`render`, `generate_scene`, `draft_voice`) and
-`backend/lib/providers/index.js` routes it. Only `lib/providers/heygen.js` knows HeyGen exists.
+`backend/lib/providers/index.js` routes it. HeyGen-specific integrations stay under
+`backend/lib/providers/`.
 
 | direction | what moves |
 |---|---|
@@ -72,10 +73,11 @@ The UI requests a **capability** (`render`, `generate_scene`, `draft_voice`) and
 | **PUSH** | each render → `POST /v2/video/generate`, recorded in `provider_jobs` with the remote id |
 | **PULL** | job status polled back → progress, video URL, duration, credits used |
 
-> **Endpoint paths are unverified.** The map in `lib/providers/heygen.js` is written from
-> knowledge of HeyGen's v1/v2 API, not from a live call. `DRY_RUN` never contacts HeyGen, so
-> nothing has exercised them. **Check each path against https://docs.heygen.com before the
-> first live render** — the Providers page shows this warning until they are marked verified.
+HeyGen has two independent connections. MCP/OAuth spends the web plan and has no
+free test render. An API key uses a separate balance and supports HeyGen's
+watermarked `test: true` render. Keep both connected: Test routes to the key and
+Live prefers MCP. If Test has no key, it returns `NO_FREE_PATH` rather than
+quietly spending the plan.
 
 ## Publishing
 
@@ -86,11 +88,12 @@ TikTok, Instagram, Facebook and X are social channels.
 
 An unavailable connection **degrades to Prepare only** and never blocks an export.
 
-## Dry run
+## Provider modes
 
-`DRY_RUN=true` is the default, is surfaced throughout the UI, and is enforced server-side:
-a paid render is refused without explicit confirmation. All provider calls return
-deterministic fixtures. No credits can be spent.
+The workspace stores one of three modes: `fixtures` (offline simulated output),
+`live_read` / Test (real catalogue and auditions; renders must be free), and
+`live` (billable). Paid renders require explicit confirmation. `DRY_RUN` remains
+only as a legacy environment alias.
 
 ## API
 
@@ -118,12 +121,14 @@ cd frontend && BUILD_DIR=.verify-build npm run build
 
 ## Not done yet
 
-- **No Electron shell.** This runs in a browser against a local API. Packaging needs the
-  shell, an ephemeral port (a fixed one collides with other apps and a second copy), and
-  BYO keys moved to the OS keychain via `safeStorage` — `lib/credentials.js` encrypts at
-  rest today and is written as a drop-in seam for that swap.
-- Series/bulk planning, existing-video analysis and the collaborator invite *landing page*
-  are modelled in the API but have no dedicated screen.
+- The Electron shell exists and serves the frontend and API from one ephemeral
+  local origin. A packaged build is still required for the correct Dock name.
+- BYO keys still need to move to the OS keychain via `safeStorage`;
+  `lib/credentials.js` is the seam for that swap.
+- Source/URL import and the collaborator invite landing page are not built.
+- The editor presents the broader roadmap, but only time-range trim/short-clip
+  decisions are currently applied to exported files. Captions, graphics,
+  reframing, B-roll and the other listed operations remain unimplemented.
 
 ## Important docs
 

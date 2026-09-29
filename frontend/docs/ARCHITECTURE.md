@@ -188,6 +188,27 @@ separate pay-as-you-go balance. They are not interchangeable, and
 `chooseRenderPath()` decides between them from what the MCP server actually
 exposes (`tools/list`) plus the current mode — never from an assumption.
 
+**You want BOTH, and they are not alternatives.** The plan path renders for
+real and has no test mode; the key path renders HeyGen's own watermarked test
+videos for free. With both stored:
+
+| mode | path | free |
+|---|---|---|
+| fixtures | `fixtures` | yes — simulated |
+| live_read (Test) | `key` | **yes** — HeyGen test flag, watermarked |
+| live | `mcp` | no — spends your plan |
+
+With no key, `live_read` returns `NO_FREE_PATH` and refuses, because a mode
+that promises not to spend must keep the promise or refuse the job.
+
+**Fixed 2026-09-29.** `lib/connections.js` reported a single `pocket`, with
+MCP winning — so a stored key went invisible the moment you signed in, and the
+UI hid the key field entirely when `pocket === 'mcp'` behind a button reading
+"Use an API key *instead*". The free test-render path was unreachable in
+practice. `/connections` now reports `pockets: { mcp, key }` independently and
+the key is always addable. The router always read them independently; only the
+report pretended otherwise.
+
 ---
 
 ## 5. Storage
@@ -286,7 +307,10 @@ it trains you to read red as normal.
 | Electron packaging | **Closed 2026-09-28.** See §1 “The Electron floor”. |
 | OS keychain | Specified in `desktop/KEYCHAIN.md`, not implemented — deliberately, see that file. |
 | Transcription | Detected if installed; no local transcriber here, and the analyser says so rather than returning an empty transcript. |
-| Character artwork | None exists and none is referenced. Three seeded characters used to point at `/art/*.png` files that were never drawn; the tile is the name for all 166. |
+| Character artwork | **Not a gap — an opt-in override.** The previous build's README: each character *borrows a realistic human HeyGen avatar* by default; dropping an image in makes it a mascot/creature instead (HeyGen talking-photo). `images/` was always empty. 158 of 166 now borrow a real face via `backing`; 8 need a hand. This entry previously called it missing artwork, twice. |
 | `/v2/templates` | The one HeyGen endpoint still flagged unverified. |
 | API-key render path | Written, never exercised — no key stored. |
-| Source / URL import | Not built; the UI says so rather than making a blank production. |
+| Source / URL import | Not built; the UI says so rather than making a blank production. 1 of 6 start sources. |
+| Post-render editing | **Partial.** The exporter can apply `Trim / Cut` and `Create Short Clip` when a decision has a valid time range, but the current screen does not collect that range, so those buttons do not yet change the exported file through the UI. The other listed tools are roadmap labels only. No lower-thirds, burn-in captions or branding. `caption` exists only as publish metadata. |
+| Script → Segments | Accepting a script does **not** create segments; "Build from script" is a separate press on an otherwise-empty Segments page. The join between the two halves of the pipeline is a button you have to know about. |
+| Free audio review | **Closed 2026-09-29.** Auditions are HeyGen speech and spend the plan, which made the only way to hear a script a paid one. `lib/readthrough.js` reads it with local `say`: free, offline, with per-line and total duration against the target. It deliberately cannot satisfy the render gate — it answers "are these the right words", not "is this the right delivery". |

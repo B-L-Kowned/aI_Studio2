@@ -69,7 +69,23 @@ export function listConnections() {
       connected: !!cred || viaMcp,
       verified: !!cred?.verified || viaMcp,
       hint: viaMcp ? 'signed in' : cred?.hint ?? null,
+      // `pocket` reported ONE of the two, MCP winning, so a stored API key was
+      // invisible the moment you were also signed in. They are not
+      // alternatives: the plan path (MCP) renders on your subscription and has
+      // no test mode, and the key path renders watermarked test videos for
+      // free. You want BOTH, and the render router already reads them
+      // independently — only this report pretended otherwise.
       pocket: c.id === 'heygen' ? (viaMcp ? 'mcp' : cred ? 'key' : 'none') : null,
+      pockets: c.id === 'heygen'
+        ? {
+            mcp: { connected: viaMcp, hint: viaMcp ? 'signed in' : null },
+            key: {
+              connected: !!cred,
+              verified: !!cred?.verified,
+              hint: cred?.hint ?? null,
+            },
+          }
+        : null,
       checkable: isCheckable(c.id),
       name: providerName(c.id),
       quotaRemaining: acct?.quota_remaining ?? null,

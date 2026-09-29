@@ -14,7 +14,7 @@ reports leftover state as failures and silently changes your provider mode.
 
 1. License: Comedy, Content, Both; upgrade entitlement without reinstall/migration.
 2. Onboarding: Local/Drive/Dropbox selection; Included LLM; mocked BYO OpenAI/Claude/Grok validation; skip and resume.
-3. Create entry: idea, template, existing video, existing script, URL/source, existing project.
+3. Create entry: idea, template, existing video, existing script and existing project. Confirm URL/source is labelled unavailable and refuses honestly.
 4. Template: load 20-minute podcast recipe; override episode values without mutating template; optionally save as new template.
 5. Plan: build Brief; target 20:00; outline totals/rebalance; reorder/add/remove sections; approve.
 6. Scenes: expand outline sections; add/remove/reorder scenes; assign 0/1/2+ participants; set roles and representation; approve without script.
@@ -24,9 +24,9 @@ reports leftover state as failures and silently changes your provider mode.
 10. Script: generate deterministic mock script from approved plan; version, edit, accept/reject proposals; downstream stale flags.
 11. Produce: mock voice/visual/avatar previews; no paid calls.
 12. Render: mock queued→processing→complete/fail/cancel; cost estimate shown; explicit paid confirmation disabled in dry run.
-13. Edit: trim, replace/regenerate scene, B-roll, captions, audio, reframe, filler/silence, participant insert, short clip; non-destructive edit versions.
-14. Publish: Prepare Only for YouTube/LinkedIn/TikTok/Instagram/Facebook/X; mocked schedule/publish connectors; downloadable package metadata.
+13. Edit: non-destructive decisions; verify valid time ranges for Trim / Cut and Create Short Clip are applied by ffmpeg. Confirm the UI does not claim the remaining roadmap tools changed the file.
+14. Publish: Prepare Only for YouTube/LinkedIn/TikTok/Instagram/Facebook/X; direct publish to Artificial Funny only when its real API key is accepted. Social schedule/publish connectors are not built.
 15. Persistence: navigate across pages, reload fixture store, version restore, autosave failure/retry.
 16. Failure cases: provider timeout, invalid key, missing storage, collaborator revocation, stale render, publication failure.
 
-Acceptance: every primary flow is testable end-to-end with zero external paid calls.
+Acceptance: the primary planning-through-export flow and Prepare Only handoff are testable end-to-end with zero external paid calls. Live provider and direct website publishing checks require their real connections and explicit cost/side-effect approval.

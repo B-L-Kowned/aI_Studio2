@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Lock, AlertCircle, Upload, ArrowLeft } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import TemplatePicker from '../components/TemplatePicker.jsx';
 
 // The dialog asks for whatever the starting point actually needs, at the moment
 // it is named. "New production from an existing video" used to ask for a title,
@@ -33,11 +34,18 @@ const SOURCE = {
 export default function NewProduction({
   sourceType, campaignId: initialCampaign = null, prefillTitle = '', onClose, onBack, onDone,
 }) {
-  const { workspace, collections, productions, createProduction } = useStudio();
+  const { workspace, collections, productions, createProduction, scopeMode } = useStudio();
   const source = SOURCE[sourceType] ?? SOURCE.idea;
 
   const [title, setTitle] = useState(prefillTitle);
-  const [templateId, setTemplateId] = useState(workspace.templates[0]?.id ?? '');
+  // The first template IN THIS PROGRAM, not the first in the array. Opening
+  // the modal in Comedy pre-selected "Pat — 20 Minute Podcast" — a content
+  // podcast, sitting below the fold under "other program", so the default was
+  // both wrong and invisible.
+  const [templateId, setTemplateId] = useState(() => {
+    const fits = (x) => !scopeMode || x.mode === scopeMode || x.mode === 'both';
+    return (workspace.templates.find(fits) ?? workspace.templates[0])?.id ?? '';
+  });
   const [campaignId, setCampaignId] = useState(initialCampaign ?? '');
   const [videoFile, setVideoFile] = useState('');
   const [scriptText, setScriptText] = useState('');
@@ -205,22 +213,15 @@ export default function NewProduction({
           {/* A copied plan brings its own outline, so offering a template here
               would be offering to overwrite what you just chose to copy. */}
           {source.needs !== 'project' && (
-            <label className="oblabel">
+            <div className="oblabel">
               Template {needsTemplate ? '' : '(optional — sets the starting brief and outline)'}
-              <select
-                className="obinput"
+              <TemplatePicker
+                templates={templates}
                 value={templateId}
-                onChange={(e) => setTemplateId(e.target.value)}
-                required={needsTemplate}
-              >
-                {!needsTemplate && <option value="">Blank — no template</option>}
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} · {t.mode} · {t.runtime}
-                  </option>
-                ))}
-              </select>
-            </label>
+                allowBlank={!needsTemplate}
+                onChange={setTemplateId}
+              />
+            </div>
           )}
 
           {templates.length === 0 && (

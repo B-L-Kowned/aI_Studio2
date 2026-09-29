@@ -177,7 +177,11 @@ export default function Home({ go }) {
 
         {!dueCount && (
           <p className="sectionnote">
-            Nothing due this week. Click any day to put a production on it.
+            {counts.productions === 0
+              // Telling someone to put a production on a day when they have no
+              // productions is advice they cannot take.
+              ? 'Nothing here yet. Start a video and it will show up on the week it is due.'
+              : 'Nothing due this week. Click any day to put a production on it.'}
           </p>
         )}
       </Section>
@@ -207,9 +211,16 @@ export default function Home({ go }) {
                 </span>
 
                 <span className="campfoot">
-                  {c.productions} video{c.productions === 1 ? '' : 's'}
-                  {c.stages.done > 0 && ` · ${c.stages.done} done`}
-                  {c.nextDue != null && ` · ${dueWords(c.nextDue)}`}
+                  {/* A campaign you have set up but not filled is the one that
+                      most needs saying out loud. "0 videos" reads as a broken
+                      count; naming the next move reads as a campaign waiting. */}
+                  {c.productions === 0
+                    ? <em className="campempty">No videos yet — start one</em>
+                    : <>
+                        {c.productions} video{c.productions === 1 ? '' : 's'}
+                        {c.stages.done > 0 && ` · ${c.stages.done} done`}
+                        {c.nextDue != null && ` · ${dueWords(c.nextDue)}`}
+                      </>}
                 </span>
               </button>
             );

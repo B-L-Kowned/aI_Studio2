@@ -1,5 +1,10 @@
 # Claude implementation handoff — v0.3
 
+> Historical implementation brief. It is not the current handoff or architecture
+> source of truth. Use `frontend/docs/HANDOFF.md` and
+> `frontend/docs/ARCHITECTURE.md`; where this file disagrees, those documents and
+> the running application win.
+
 ## Goal
 Turn this PM prototype into a production-quality frontend while preserving the product contract. Do not spend paid generation credits during implementation or testing.
 

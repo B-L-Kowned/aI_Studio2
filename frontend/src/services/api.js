@@ -146,6 +146,8 @@ export const api = {
   // segments — the unit of script, take, presenter, shot, quality and render
   segments: (id) => get(`/productions/${id}/segments`),
   buildSegments: (id) => post(`/productions/${id}/segments/build`),
+  // Local, free, and not the shipping voice — see lib/readthrough.js.
+  readThrough: (id) => post(`/productions/${id}/readthrough`, {}),
   updateSegment: (id, segmentId, body) => patch(`/productions/${id}/segments/${segmentId}`, body),
   auditionAll: (id) => post(`/productions/${id}/segments/audition-all`),
   auditionSegment: (id, segmentId, body) => post(`/productions/${id}/segments/${segmentId}/audition`, body ?? {}),

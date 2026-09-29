@@ -79,13 +79,26 @@ export default function ConnectionsSection() {
                     </span>
                     {c.hint && <code className="dim">{c.hint}</code>}
 
-                    {c.id === 'heygen' && c.pocket === 'mcp' && (
-                      <em className="pocketchip">your plan</em>
+                    {/* HeyGen has TWO pockets and they are not alternatives.
+                        The plan (MCP) renders on your subscription and has no
+                        test mode — its only render is a real one. The API key
+                        renders watermarked test videos for free. Having both
+                        is what lets you prove a production end to end without
+                        spending, then render it for real. This used to report
+                        whichever one won and hide the other. */}
+                    {c.id === 'heygen' && c.pockets && (
+                      <span className="pockets">
+                        <em className={'pocketchip' + (c.pockets.mcp.connected ? '' : ' off')}>
+                          plan {c.pockets.mcp.connected ? '· signed in' : '· not signed in'}
+                        </em>
+                        <em className={'pocketchip key' + (c.pockets.key.connected ? '' : ' off')}>
+                          key {c.pockets.key.connected
+                            ? (c.pockets.key.verified ? '· verified' : '· unchecked')
+                            : '· none'}
+                        </em>
+                      </span>
                     )}
-                    {c.id === 'heygen' && c.pocket === 'key' && (
-                      <em className="pocketchip warn">billed separately</em>
-                    )}
-                    {c.id === 'heygen' && !c.connected && (
+                    {c.id === 'heygen' && !c.pockets?.mcp?.connected && (
                       <HeyGenSignIn onDone={load} />
                     )}
 
@@ -103,12 +116,15 @@ export default function ConnectionsSection() {
                       </form>
                     ) : (
                       <>
-                        {!(c.id === 'heygen' && c.pocket === 'mcp') && (
-                          <button onClick={() => { setEditing(c.id); setKey(''); setErr(null); }}>
-                            {c.connected ? 'Replace key'
-                              : c.id === 'heygen' ? 'Use an API key instead' : 'Connect'}
-                          </button>
-                        )}
+                        {/* Always offered for HeyGen, signed in or not. It was
+                            hidden whenever MCP was connected, so the free test
+                            render path could not be reached at all — and the
+                            label said "instead", which is the wrong idea. */}
+                        <button onClick={() => { setEditing(c.id); setKey(''); setErr(null); }}>
+                          {c.id === 'heygen'
+                            ? (c.pockets?.key?.connected ? 'Replace API key' : 'Add an API key')
+                            : c.connected ? 'Replace key' : 'Connect'}
+                        </button>
                         {c.connected && (
                           <>
                             <button title="Ask the service again" disabled={fixtures}

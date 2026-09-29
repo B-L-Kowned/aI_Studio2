@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Check, AlertCircle, Plus, X, Archive, RotateCcw } from 'lucide-react';
+import { Check, AlertCircle, Plus, X, Archive, RotateCcw, ChevronDown } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { Section, PageHead } from '../components/Section.jsx';
@@ -175,23 +175,110 @@ export default function Presenters({ tab: externalTab, onTabs }) {
   );
 }
 
+/**
+ * Pick one provider asset.
+ *
+ * This was a <select> holding whatever the page had been handed — 25 avatars
+ * of 9,967 and 200 voices of 2,943. The other 99.7% could not be cast to at
+ * all, because a roster of ten thousand cannot be shipped as option nodes.
+ *
+ * The server was already built for this: /providers/:id/assets takes `q` and
+ * returns {items, matched, total}. Only the input was missing, so the whole
+ * catalogue was sitting one query away from a page that never asked.
+ *
+ * Empty box = yours first, which is the useful default. Type and it searches
+ * everything, and says how many it searched so the number is never a mystery.
+ */
+function AssetPicker({ kind, label, current, fallback, onPick }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setBusy(true);
+    // Debounced: a keystroke per request would queue ten searches for one word,
+    // and the answers can arrive out of order.
+    const timer = setTimeout(async () => {
+      try {
+        const r = await api.providerAssets('heygen', { kind, q: q.trim(), limit: 40 });
+        if (alive) setRes(r);
+      } catch { if (alive) setRes(null); }
+      finally { if (alive) setBusy(false); }
+    }, 220);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [open, q, kind]);
+
+  const items = res?.items ?? fallback ?? [];
+
+  return (
+    <div className={'apick' + (current ? ' set' : '')}>
+      <button type="button" className="apickbtn" onClick={() => setOpen((v) => !v)}>
+        {current ? current.name : `${label}…`}
+        <ChevronDown size={12} />
+      </button>
+
+      {open && (
+        <>
+          <div className="apickscrim" onClick={() => setOpen(false)} />
+          <div className="apickpanel">
+            <input
+              className="apicksearch"
+              placeholder={`Search ${label}s…`}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
+              autoFocus
+            />
+            <div className="apickmeta">
+              {busy ? 'searching…'
+                : res
+                  ? `${res.matched} of ${res.total}${q.trim() ? '' : ' · yours first'}`
+                  : 'could not search'}
+            </div>
+            <div className="apicklist">
+              {current && (
+                <button type="button" className="apickclear" onClick={() => { onPick(null); setOpen(false); }}>
+                  Clear {label}
+                </button>
+              )}
+              {items.length === 0 && !busy && <p className="muted">Nothing matches.</p>}
+              {items.map((a) => (
+                <button
+                  type="button"
+                  key={a.id}
+                  className={a.id === current?.id ? 'cur' : ''}
+                  onClick={() => { onPick(a.id); setOpen(false); }}
+                >
+                  {a.name?.trim() || '(unnamed)'}
+                  {a.owned && <em>yours</em>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function CastRow({ presenter, options, onSave }) {
   return (
     <div className="castrow">
-      <select
-        value={presenter.avatar?.id ?? ''}
-        onChange={(e) => onSave({ avatarAssetId: e.target.value ? Number(e.target.value) : null })}
-      >
-        <option value="">avatar…</option>
-        {options.avatars.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-      </select>
-      <select
-        value={presenter.voice?.id ?? ''}
-        onChange={(e) => onSave({ voiceAssetId: e.target.value ? Number(e.target.value) : null })}
-      >
-        <option value="">voice…</option>
-        {options.voices.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-      </select>
+      <AssetPicker
+        kind="avatar" label="avatar"
+        current={presenter.avatar}
+        fallback={options.avatars}
+        onPick={(id) => onSave({ avatarAssetId: id })}
+      />
+      <AssetPicker
+        kind="voice" label="voice"
+        current={presenter.voice}
+        fallback={options.voices}
+        onPick={(id) => onSave({ voiceAssetId: id })}
+      />
     </div>
   );
 }

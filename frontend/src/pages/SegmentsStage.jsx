@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Check, AlertCircle, Play, Volume2, RefreshCw, Lock, Film, User, Users,
-} from 'lucide-react';
+import { Check, AlertCircle, Play, Volume2, RefreshCw, Lock, Film, User, Users, Headphones, X } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import PresenterPick from '../components/PresenterPick.jsx';
 
 /**
  * The segment is the unit of script, take, presenter, shot, quality and render.
@@ -25,6 +24,7 @@ export default function SegmentsStage() {
   const [data, setData] = useState(null);
   const [castable, setCastable] = useState([]);
   const [busy, setBusy] = useState(null);
+  const [read, setRead] = useState(null);
   const [confirmRender, setConfirmRender] = useState(null); // segment awaiting a paid yes
   const [path, setPath] = useState(null);
 
@@ -46,10 +46,15 @@ export default function SegmentsStage() {
   ).length;
   // Editing a line is a save; auditioning and rendering are not. `mutate`
   // reports the outcome itself, so this must not report it a second time.
+  // Returns the response. It used to swallow it, so a caller that needed the
+  // result — the read-through, which IS its result — silently got undefined.
   const run = async (key, fn, { tracksSave = false } = {}) => {
     setBusy(key);
-    try { await mutate(fn, null, { tracksSave }); await load(); }
-    catch { /* mutate has already said what went wrong */ }
+    try {
+      const res = await mutate(fn, null, { tracksSave });
+      await load();
+      return res;
+    } catch { return null; /* mutate has already said what went wrong */ }
     finally { setBusy(null); }
   };
 
@@ -71,12 +76,54 @@ export default function SegmentsStage() {
               <Volume2 size={14} /> Audition {pendingAudition} line{pendingAudition === 1 ? '' : 's'}
             </button>
           )}
+          {segments.length > 0 && (
+            <button
+              onClick={async () => {
+                const r = await run('read', () => api.readThrough(production.id));
+                if (r?.data) setRead(r.data);
+              }}
+              disabled={busy === 'read'}
+              title="Hear the words in a local voice. Costs nothing."
+            >
+              <Headphones size={14} /> {busy === 'read' ? 'Reading…' : 'Read aloud — free'}
+            </button>
+          )}
           <button onClick={() => run('build', () => api.buildSegments(production.id))}
             disabled={busy === 'build'}>
             <RefreshCw size={14} /> {segments.length ? 'Rebuild from script' : 'Build from script'}
           </button>
         </div>
       </div>
+
+      {read && (
+        /* The free pass: what the words sound like and how long they actually
+           run. Deliberately not the shipping voice, and deliberately unable to
+           open the render gate — it answers "are these the right words", not
+           "is this the right delivery". */
+        <div className="readout">
+          <span className="readhead">
+            <Headphones size={13} />
+            <b>Read-through</b>
+            <i>local voice · nothing spent</i>
+          </span>
+          {(() => {
+            // The target is "m:ss"; compare in seconds so "0:21 vs 2:00" is a
+            // fact on screen rather than arithmetic you do in your head.
+            const [tm, ts] = String(read.targetRuntime ?? '').split(':').map(Number);
+            const target = Number.isFinite(tm) ? tm * 60 + (ts || 0) : null;
+            const off = target ? read.spokenSeconds / target : null;
+            const tone = off == null ? '' : off < 0.6 ? ' short' : off > 1.15 ? ' over' : ' ok';
+            return (
+              <span className={'readlen' + tone}>
+                {Math.floor(read.spokenSeconds / 60)}:{String(read.spokenSeconds % 60).padStart(2, '0')} spoken
+                {read.targetRuntime ? ` · target ${read.targetRuntime}` : ''}
+              </span>
+            );
+          })()}
+          {read.audio && <audio controls preload="none" src={read.audio} />}
+          <button className="readclose" onClick={() => setRead(null)}><X size={13} /></button>
+        </div>
+      )}
 
       {segments.length > 0 && (
         <>
@@ -88,17 +135,17 @@ export default function SegmentsStage() {
               <span className={'castrole' + (sp.mixed ? ' mixed' : '')} key={sp.speaker}>
                 <b>{sp.speaker}</b>
                 <i>{sp.lines} line{sp.lines === 1 ? '' : 's'}</i>
-                <select
-                  value={sp.mixed ? '' : (sp.presenter?.id ?? '')}
-                  onChange={(e) =>
+                <PresenterPick
+                  items={castable}
+                  value={sp.mixed ? null : (sp.presenter?.id ?? null)}
+                  placeholder={sp.mixed ? 'mixed — pick one' : 'not cast'}
+                  clearLabel="Not cast"
+                  onChange={(id) =>
                     run(`sp${sp.speaker}`, () => api.updateSegment(production.id, sp.firstSegmentId, {
-                      presenterId: e.target.value ? Number(e.target.value) : null,
+                      presenterId: id,
                       applyToSpeaker: true,
                     }), { tracksSave: true })}
-                >
-                  <option value="">{sp.mixed ? 'mixed — pick one' : 'not cast'}</option>
-                  {castable.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                />
               </span>
             ))}
             {castable.length === 0 && (
@@ -150,16 +197,14 @@ export default function SegmentsStage() {
                 </div>
 
                 <div className="segcontrols">
-                  <select
-                    value={s.presenter?.id ?? ''}
-                    onChange={(e) =>
+                  <PresenterPick
+                    items={castable}
+                    value={s.presenter?.id ?? null}
+                    onChange={(id) =>
                       run(`p${s.id}`, () => api.updateSegment(production.id, s.id, {
-                        presenterId: e.target.value ? Number(e.target.value) : null,
+                        presenterId: id,
                       }), { tracksSave: true })}
-                  >
-                    <option value="">presenter…</option>
-                    {castable.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
+                  />
 
                   <select
                     value={s.quality}

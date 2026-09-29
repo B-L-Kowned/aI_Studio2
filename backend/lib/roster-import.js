@@ -274,3 +274,117 @@ export function autoCastByName() {
 
   return matched;
 }
+
+/**
+ * Cast the comedy roster from the previous build's own avatar allocation.
+ *
+ * `autoCastByName` matches a presenter's NAME against the catalogue, which
+ * works for a real person and never for an invented one — "Jingles the Jester"
+ * is not a HeyGen avatar and never will be. It cast nothing, and 165 of 166
+ * characters sat uncastable.
+ *
+ * characters.json carries `backing`: the avatar the old app had already
+ * allocated to each character, round-robin and gender-bucketed so no two
+ * characters share a face. 158 of 159 resolve against this catalogue. That is
+ * the mapping; it did not need inventing, only reading.
+ *
+ * Voice is NOT in that file, so it is allocated here — a distinct English
+ * voice whose gender matches the avatar's. Blind assignment would be worse
+ * than none (a wrong-gender voice on a comedy character is a re-record), so
+ * anything whose gender cannot be read is left for a human to pick.
+ */
+export function castFromBackings(root = DEFAULT_ROOT, { apply = false } = {}) {
+  const db = getDb();
+  const file = join(root, 'desktop', 'app', 'data', 'characters.json');
+  if (!existsSync(file)) {
+    throw Object.assign(new Error(`No characters.json at ${file}`), { code: 'NOT_FOUND' });
+  }
+  const chars = JSON.parse(readFileSync(file, 'utf8'));
+
+  // `owned` avatars are YOUR likeness. The old app's pool included them, so one
+  // backing resolved to "Patrick Face Master" — which would have put the
+  // operator's own face on Conspiracy Carl. An invented character borrows a
+  // stock face; your face belongs to the personal roster, and nowhere else.
+  const avatars = db
+    .prepare(`SELECT id, name, gender FROM provider_assets
+               WHERE provider='heygen' AND kind='avatar' AND name IS NOT NULL
+                 AND (owned IS NULL OR owned = 0)`)
+    .all();
+
+  // The catalogue spells the same thing four ways: Woman/female, Man/male.
+  const sex = (g) => {
+    const s = String(g ?? '').toLowerCase();
+    if (s.startsWith('f') || s === 'woman') return 'female';
+    if (s.startsWith('m') || s === 'man') return 'male';
+    return null;
+  };
+
+  const byExact = new Map();
+  for (const a of avatars) {
+    const k = a.name.trim().toLowerCase();
+    // An ambiguous name must not be resolved by whichever row came first.
+    byExact.set(k, byExact.has(k) ? null : a);
+  }
+  const resolveAvatar = (backing) => {
+    const b = String(backing ?? '').trim().toLowerCase();
+    if (!b) return null;
+    const exact = byExact.get(b);
+    if (exact) return exact;
+    // "Aditya" should match "Aditya in Blue Shirt" but never "Adityavarman".
+    const rx = new RegExp(`^${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\b|[^a-z])`, 'i');
+    return avatars.find((a) => rx.test(a.name.trim())) ?? null;
+  };
+
+  // Distinct English voices per gender, so two characters never share one.
+  const pool = { female: [], male: [] };
+  for (const v of db
+    .prepare("SELECT id, gender FROM provider_assets WHERE provider='heygen' AND kind='voice' AND language='English' ORDER BY id")
+    .all()) {
+    const s = sex(v.gender);
+    if (s) pool[s].push(v.id);
+  }
+  const used = new Set(
+    db.prepare('SELECT voice_asset_id FROM presenters WHERE voice_asset_id IS NOT NULL')
+      .all().map((r) => r.voice_asset_id)
+  );
+  const cursor = { female: 0, male: 0 };
+  const takeVoice = (s) => {
+    const lst = pool[s] ?? [];
+    while (cursor[s] < lst.length) {
+      const id = lst[cursor[s]++];
+      if (!used.has(id)) { used.add(id); return id; }
+    }
+    return null;
+  };
+
+  const report = { total: chars.length, cast: [], noAvatar: [], noVoice: [], notInRoster: [] };
+
+  const run = db.transaction(() => {
+    for (const c of chars) {
+      const row = db
+        .prepare("SELECT id, name, avatar_asset_id, voice_asset_id FROM presenters WHERE kind='character' AND lower(trim(name)) = lower(trim(?))")
+        .get(c.name);
+      if (!row) { report.notInRoster.push(c.name); continue; }
+      if (row.avatar_asset_id && row.voice_asset_id) continue;   // already cast; leave it
+
+      const avatar = row.avatar_asset_id ? null : resolveAvatar(c.backing);
+      if (!row.avatar_asset_id && !avatar) { report.noAvatar.push(`${c.name} (${c.backing})`); continue; }
+
+      const gender = sex(avatar?.gender);
+      const voice = row.voice_asset_id ? null : (gender ? takeVoice(gender) : null);
+      if (!row.voice_asset_id && !voice) { report.noVoice.push(c.name); }
+
+      if (apply) {
+        db.prepare(
+          `UPDATE presenters SET avatar_asset_id = COALESCE(?, avatar_asset_id),
+             voice_asset_id = COALESCE(?, voice_asset_id) WHERE id = ?`
+        ).run(avatar?.id ?? null, voice ?? null, row.id);
+      }
+      report.cast.push({ name: c.name, avatar: avatar?.name ?? '(kept)', voice: voice ? 'assigned' : '(kept)' });
+    }
+  });
+  run();   // with apply=false nothing inside the transaction writes
+
+  report.castable = report.cast.length;
+  return report;
+}

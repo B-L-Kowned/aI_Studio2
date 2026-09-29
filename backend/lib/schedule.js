@@ -228,8 +228,21 @@ export function schedule({
   // The point of the page at fifty companies. Fourteen rows is a queue; the
   // question is which COMPANIES are stuck and which are moving, and that is a
   // rollup, not an enumeration.
+  // Campaigns in this program, whatever they contain. Inferring this from the
+  // productions made a campaign you had just set up read as "0 campaigns" until
+  // it had a video in it — the one state where you most need to see it.
+  const scopeCampaigns = db
+    .prepare(
+      `SELECT id, name FROM campaigns
+        ${scoped ? "WHERE mode = ? OR mode = 'both'" : ''}
+        ORDER BY position, id`
+    )
+    .all(...(scoped ? [mode] : []));
+
   const byCampaign = [];
   const groups = new Map();
+  // Seed with every in-scope campaign so the empty ones survive the grouping.
+  for (const c of scopeCampaigns) groups.set(c.id, { id: c.id, name: c.name, items: [] });
   for (const p of rows) {
     const key = p.campaign_id ?? 0;
     if (!groups.has(key)) {
@@ -354,7 +367,7 @@ export function schedule({
     idle,
     counts: {
       productions: rows.length,
-      campaigns: new Set(rows.map((r) => r.campaign_id).filter(Boolean)).size,
+      campaigns: scopeCampaigns.length,
       needsYou: needsYou.length,
       inFlight: inFlight.length,
       readyToRender,

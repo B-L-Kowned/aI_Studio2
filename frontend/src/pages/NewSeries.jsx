@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Layers, X, Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import TemplatePicker from '../components/TemplatePicker.jsx';
 
 /**
  * Plan a whole series at once.
@@ -73,14 +74,18 @@ export default function NewSeries({ onClose, onDone, onBack }) {
         </label>
 
         <div className="formgrid">
-          <label>Template
-            <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-              <option value="">Blank</option>
-              {(meta?.templates ?? []).map((t) => (
-                <option key={t.id} value={t.id}>{t.name} · {t.runtime}</option>
-              ))}
-            </select>
-          </label>
+          <div className="serieslabel">Template
+            {/* Same picker as a single production. It was "{name} · {runtime}"
+                crammed into an <option> here too, and a series commits the
+                choice to every episode at once — so it is the one place worth
+                seeing the format and section count before you pick. */}
+            <TemplatePicker
+              templates={meta?.templates ?? []}
+              value={templateId}
+              allowBlank
+              onChange={setTemplateId}
+            />
+          </div>
           <label>Each one is a
             <select value={numbering} onChange={(e) => setNumbering(e.target.value)}>
               {(meta?.numbering ?? ['episode']).map((n) => <option key={n} value={n}>{n}</option>)}

@@ -160,8 +160,16 @@ router.get(
     const rows = db.prepare('SELECT * FROM campaigns ORDER BY position, id').all();
     return ok(
       res,
+      // `SELECT *` reads the track columns and this mapping dropped them, so
+      // /companies described campaign 44 as "promotion · People who have never
+      // heard of it" while /campaigns said purpose: null. Plan reads THIS one,
+      // which is why the company/track layering was invisible on the page that
+      // lists campaigns. Third endpoint pair today to disagree about one row.
       rows.map((c) => ({
         id: c.id, name: c.name, description: c.description, mode: c.mode,
+        companyId: c.company_id ?? null,
+        purpose: c.purpose ?? null,
+        audience: c.audience ?? null,
         productions: db.prepare('SELECT COUNT(*) n FROM productions WHERE campaign_id = ?').get(c.id).n,
       }))
     );

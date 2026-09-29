@@ -8,6 +8,8 @@ import { renderViaStudio } from '../lib/providers/heygen-studio.js';
 import { renderViaKey } from '../lib/providers/heygen-key-render.js';
 import { chooseRenderPath } from '../lib/providers/heygen-route.js';
 import { ok, fail, route } from '../utils/respond.js';
+import { readThrough } from '../lib/readthrough.js';
+import { createReadStream, existsSync } from 'node:fs';
 
 const router = Router();
 
@@ -174,6 +176,41 @@ router.post(
             path.path === 'mcp' ? 'heygen_mcp' : 'heygen', 'failed', err.message);
       return fail(res, 502, err.code ?? 'RENDER_FAILED', err.message);
     }
+  })
+);
+
+/**
+ * Read the script aloud locally. Free, offline, and NOT the shipping voice —
+ * it answers "are these the right words", which is the question you ask before
+ * spending anything. It does not create a take and cannot open the render
+ * gate; only a real audition does that.
+ */
+router.post(
+  '/:id/readthrough',
+  route(async (req, res) => {
+    try {
+      const r = await readThrough(Number(req.params.id), {
+        voice: req.body?.voice || undefined,
+        rate: Number(req.body?.rate) || undefined,
+      });
+      const mins = Math.floor(r.spokenSeconds / 60);
+      const secs = String(r.spokenSeconds % 60).padStart(2, '0');
+      return ok(res, r, `Read ${r.lines.filter((l) => !l.empty).length} lines — ${mins}:${secs} spoken, nothing spent`);
+    } catch (err) {
+      return fail(res, err.code === 'NOT_FOUND' ? 404 : 400, err.code ?? 'ERROR', err.message);
+    }
+  })
+);
+
+router.get(
+  '/:id/readthrough/audio',
+  route(async (req, res) => {
+    const { join, dirname } = await import('node:path');
+    const { defaultDbPath } = await import('../db/index.js');
+    const file = join(dirname(defaultDbPath()), 'readthrough', String(Number(req.params.id)), 'readthrough.m4a');
+    if (!existsSync(file)) return fail(res, 404, 'NOT_FOUND', 'No read-through yet for this production');
+    res.type('audio/mp4');
+    return createReadStream(file).pipe(res);
   })
 );
 

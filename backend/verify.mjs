@@ -1,5 +1,7 @@
 // run-verify.mjs points this at a throwaway database; the default is the dev
 // server, where a run reports leftover state rather than regressions.
+import { TEMPLATES } from './data/templates.js';
+
 const BASE = process.env.VERIFY_BASE ?? 'http://localhost:3433/api';
 let pass = 0, fail = 0;
 
@@ -71,7 +73,17 @@ r = await call('POST', '/workspace/license', { key: 'BOTH-9Z8Y-7X6W' });
 check('upgrade to both', r.body.data.entitlement === 'both');
 check('both gets comedy AND content caps',
   r.body.data.capabilities.includes('character.create') && r.body.data.capabilities.includes('plan.longform'));
-check('both sees all templates', r.body.data.templates.length === 6, `got ${r.body.data.templates.length}`);
+// Against the real catalogue, not a number typed here. `=== 6` broke the whole
+// suite the first time a template was added, which teaches you to edit the
+// number rather than ask whether the invariant still holds. The invariant is
+// "both sees everything", checked against a non-empty list so it cannot pass
+// by both sides being zero.
+check('the template catalogue is not empty', TEMPLATES.length > 0, `${TEMPLATES.length}`);
+check('both sees all templates', r.body.data.templates.length === TEMPLATES.length,
+  `got ${r.body.data.templates.length} of ${TEMPLATES.length}`);
+check('every template says what it is for',
+  TEMPLATES.every((x) => x.purpose && x.mode && x.runtime && x.outline?.length),
+  `${TEMPLATES.filter((x) => !(x.purpose && x.mode && x.runtime && x.outline?.length)).length} incomplete`);
 check('both may switch modes', r.body.data.allowedModes.length === 3);
 
 section('Gate 2: storage + AI credentials');
