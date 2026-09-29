@@ -33,10 +33,9 @@ function initials(name = '') {
 /**
  * Who appears on screen — and the actual comedy/content gate.
  *
- * Characters have artwork. The stock roster and your own likeness do not, and
- * must not: a stock photo standing in for "a real presenter" is a claim about a
- * person who does not exist. They render as typographic tiles, and the visual
- * difference IS the taxonomy.
+ * A card shows the actual provider avatar assigned to that presenter. Custom
+ * artwork remains character-only, but hiding the assigned avatar made a cast
+ * of 158 ready characters look like a database of names instead of performers.
  */
 export default function Presenters({ tab: externalTab, onTabs }) {
   const { mutate } = useStudio();
@@ -132,48 +131,37 @@ export default function Presenters({ tab: externalTab, onTabs }) {
             </Section>
           ) : (
             <Section title={active.label} meta={active.detail}>
-            <div className="rostertools">
-              <label className="rostersearch">
-                <Search size={14} aria-hidden="true" />
-                <span className="sr-only">Search {active.label}</span>
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={`Search ${active.label.toLocaleLowerCase()}…`}
-                />
-              </label>
-              <span className="rostercount" aria-live="polite">
-                {matches.length === active.presenters.length
-                  ? `${active.presenters.length} total`
-                  : `${matches.length} of ${active.presenters.length}`}
-              </span>
-            </div>
+              <div className="rostertools">
+                <label className="rostersearch">
+                  <Search size={14} aria-hidden="true" />
+                  <span className="sr-only">Search {active.label}</span>
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={`Search ${active.label.toLocaleLowerCase()}…`}
+                  />
+                </label>
+                <span className="rostercount" aria-live="polite">
+                  {matches.length === active.presenters.length
+                    ? `${active.presenters.length} total`
+                    : `${matches.length} of ${active.presenters.length}`}
+                </span>
+              </div>
 
-            {matches.length === 0 ? (
-              <p className="sectionempty">No {active.label.toLocaleLowerCase()} match “{query.trim()}”.</p>
-            ) : (
-              <>
-            <div className="presgrid">
-              {visiblePresenters.map((p) => (
-                <div className={'prescard' + (p.isActive ? '' : ' retired')} key={p.id}>
-                  {/* The tile IS the taxonomy: art for characters, type for the rest. */}
-                  {p.hasArtwork ? (
-                    <div className="presart" style={{ backgroundImage: `url(${p.artworkUrl})` }}>
-                      <span className="presartfallback">{p.name[0]}</span>
-                    </div>
-                  ) : (
-                    // No artwork must not become a fabricated face. Initials
-                    // create a useful visual anchor without repeating the name
-                    // or making a false identity claim.
-                    <div className="prestype slim" aria-hidden="true">
-                      <span>{initials(p.name)}</span>
-                      <em>{active.id === 'characters' ? 'character' : active.id === 'personal' ? 'you' : 'presenter'}</em>
-                    </div>
-                  )}
+              {matches.length === 0 ? (
+                <p className="sectionempty">No {active.label.toLocaleLowerCase()} match “{query.trim()}”.</p>
+              ) : (
+                <>
+                  <div className="presgrid">
+                    {visiblePresenters.map((p) => (
+                      <article className={'prescard' + (p.isActive ? '' : ' retired')} key={p.id}>
+                        <PresenterVisual presenter={p} tabId={active.id} />
 
-                  <b>{p.name}</b>
-                  <small>{p.tagline || p.description}</small>
+                        <div className="presidentity">
+                          <h3>{p.name}</h3>
+                          <p>{p.tagline || p.description || 'No character note yet.'}</p>
+                        </div>
 
                   {/* A persona that only shows a name is decoration. These are
                       the lines that actually steer the script. */}
@@ -200,8 +188,8 @@ export default function Presenters({ tab: externalTab, onTabs }) {
                   <div className="prescardfoot">
                     <div className="presstate">
                       {p.ready
-                        ? <span className="okv"><Check size={12} /> {p.avatar.name} · {p.voice.name}</span>
-                        : <span className="unknownv"><AlertCircle size={12} /> not cast yet</span>}
+                        ? <span className="okv"><Check size={12} /> Ready to produce</span>
+                        : <span className="unknownv"><AlertCircle size={12} /> Needs casting</span>}
                     </div>
 
                     <CastRow presenter={p} options={data.options} onSave={(body) =>
@@ -214,19 +202,19 @@ export default function Presenters({ tab: externalTab, onTabs }) {
                       {p.isActive ? <><Archive size={12} /> Retire</> : <><RotateCcw size={12} /> Restore</>}
                     </button>
                   </div>
-                </div>
-              ))}
-            </div>
-            {visiblePresenters.length < matches.length && (
-              <div className="rosterload">
-                <span>Showing {visiblePresenters.length} of {matches.length}</span>
-                <button onClick={() => setVisibleCount((count) => count + ROSTER_PAGE_SIZE)}>
-                  Show {Math.min(ROSTER_PAGE_SIZE, matches.length - visiblePresenters.length)} more
-                </button>
-              </div>
-            )}
-              </>
-            )}
+                      </article>
+                    ))}
+                  </div>
+                  {visiblePresenters.length < matches.length && (
+                    <div className="rosterload">
+                      <span>Showing {visiblePresenters.length} of {matches.length}</span>
+                      <button onClick={() => setVisibleCount((count) => count + ROSTER_PAGE_SIZE)}>
+                        Show {Math.min(ROSTER_PAGE_SIZE, matches.length - visiblePresenters.length)} more
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </Section>
           )}
 
@@ -250,6 +238,33 @@ export default function Presenters({ tab: externalTab, onTabs }) {
         />
       )}
     </>
+  );
+}
+
+function PresenterVisual({ presenter, tabId }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = presenter.artworkUrl || presenter.avatar?.previewUrl;
+  const kind = tabId === 'characters' ? 'Character' : tabId === 'personal' ? 'You' : 'Presenter';
+  const imageLabel = presenter.artworkUrl ? 'Custom artwork' : presenter.avatar?.name;
+
+  return (
+    <div className={'presvisual' + (imageUrl && !imageFailed ? ' hasimage' : '')}>
+      {imageUrl && !imageFailed ? (
+        <img
+          src={imageUrl}
+          alt={`${presenter.name} — ${imageLabel}`}
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <div className="presfallback">
+          <b aria-hidden="true">{initials(presenter.name)}</b>
+          <span>{presenter.avatar ? 'Preview unavailable' : 'No avatar assigned'}</span>
+        </div>
+      )}
+      <span className="preskind">{kind}</span>
+      {imageUrl && !imageFailed && imageLabel && <span className="prescaption">{imageLabel}</span>}
+    </div>
   );
 }
 
@@ -407,15 +422,16 @@ function NewPresenter({ kind, onClose, onDone }) {
               Artwork URL
               <input className="obinput" value={artworkUrl}
                 onChange={(e) => setArtworkUrl(e.target.value)} placeholder="/art/name.png" />
-              <small className="muted">Characters are invented, so they get artwork.</small>
+              <small className="muted">
+                Optional custom art. Otherwise the card shows the avatar you assign after creating it.
+              </small>
             </label>
           ) : (
             <div className="notice">
               <AlertCircle />
               <span>
-                A stock presenter gets no artwork on purpose — a photo standing in for a
-                real person is a claim about someone who does not exist. It renders as a
-                typographic tile.
+                Presenter roles do not accept unrelated custom artwork. Once cast, the card
+                shows the exact synced avatar that will appear in the finished video.
               </span>
             </div>
           )}

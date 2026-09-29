@@ -364,7 +364,7 @@ it trains you to read red as normal.
 | Electron packaging | **Closed 2026-09-28.** See §1 “The Electron floor”. |
 | OS keychain | Specified in `desktop/KEYCHAIN.md`, not implemented — deliberately, see that file. |
 | Transcription | Detected if installed; no local transcriber here, and the analyser says so rather than returning an empty transcript. |
-| Character artwork | **Not a gap — an opt-in override.** The previous build's README: each character *borrows a realistic human HeyGen avatar* by default; dropping an image in makes it a mascot/creature instead (HeyGen talking-photo). `images/` was always empty. 158 of 166 now borrow a real face via `backing`; 8 need a hand. This entry previously called it missing artwork, twice. |
+| Character visuals | **Closed 2026-09-29.** Custom artwork remains an opt-in override, but cards now show the synced preview of the exact HeyGen avatar assigned through `backing`. `images/` was empty because 158 of 166 characters borrow provider avatars; the remaining 8 show an explicit uncast state. |
 | `/v2/templates` | The one HeyGen endpoint still flagged unverified. |
 | API-key render path | Written, never exercised — no key stored. |
 | Source / URL import | **Closed in `codex/production-workflow-parity`.** One public page is researched, evidence is preserved and reviewed, and approved context reaches the script. This is intentionally not a crawler. |

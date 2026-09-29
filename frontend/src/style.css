@@ -1595,52 +1595,62 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 
 .presgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .prescard {
+  min-width: 0; overflow: hidden;
   background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--r-lg); padding: 14px;
-  display: flex; flex-direction: column; gap: 7px;
+  border-radius: var(--r-lg); padding: 0;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow);
 }
 .prescard.retired { opacity: .5; }
-.prescard b { font-size: 13.5px; }
-.prescard small { color: var(--muted); font-size: 12px; line-height: 1.45; }
-/* A tile carrying a name that is repeated directly beneath it is decoration.
-   Where a persona describes the presenter, the tile gives way to the words. */
-.prestype.slim {
-  height: 54px; grid-template-columns: 32px 1fr; place-items: center start;
-  gap: 10px; padding: 9px 10px; text-align: left;
+.presvisual {
+  position: relative; aspect-ratio: 16 / 9; overflow: hidden;
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
 }
-.prestype.slim span {
-  width: 32px; height: 32px; display: grid; place-items: center;
-  border-radius: 50%; background: var(--surface); border: 1px solid var(--line-2);
-  font: 620 11px/1 var(--mono); letter-spacing: .02em; color: var(--ink-2);
+.presvisual img {
+  width: 100%; height: 100%; display: block; object-fit: cover;
+  object-position: center 22%;
 }
-.prestype.slim em {
-  font-style: normal; font-size: 10px; text-transform: uppercase;
-  letter-spacing: .08em; color: var(--faint);
+.presvisual.hasimage::after {
+  content: ''; position: absolute; inset: 48% 0 0;
+  background: linear-gradient(transparent, rgba(0,0,0,.58)); pointer-events: none;
 }
-
-/* A character is invented, so it has artwork. */
-.presart {
-  height: 120px; border-radius: var(--r); background-size: cover; background-position: center;
-  background-color: var(--canvas); border: 1px solid var(--line);
-  display: grid; place-items: center;
+.preskind, .prescaption {
+  position: absolute; z-index: 1; max-width: calc(100% - 20px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.presartfallback { font-size: 30px; font-weight: 600; color: var(--faint); }
-
-/* The stock roster and your own likeness must NOT have a face attached: a photo
-   standing in for a real person is a claim about someone who does not exist.
-   They are typographic tiles, and the difference is the taxonomy. */
-.prestype {
-  height: 120px; border-radius: var(--r);
-  background: var(--surface-2); border: 1px solid var(--line);
-  display: grid; place-items: center; padding: 10px; text-align: center;
+.preskind {
+  top: 10px; left: 10px; padding: 3px 7px;
+  background: rgba(255,255,255,.92); border: 1px solid rgba(255,255,255,.7);
+  border-radius: var(--r-sm); color: var(--ink-2);
+  font-size: 9.5px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
 }
-.prestype span {
-  font-size: 15px; font-weight: 600; letter-spacing: -0.02em;
-  color: var(--ink-2); line-height: 1.25;
+.prescaption {
+  left: 10px; bottom: 8px; color: #fff; font-size: 10.5px;
+  text-shadow: 0 1px 2px rgba(0,0,0,.7);
 }
+.presfallback {
+  height: 100%; display: grid; place-content: center; justify-items: center; gap: 8px;
+  color: var(--faint);
+}
+.presfallback b {
+  width: 48px; height: 48px; display: grid; place-items: center;
+  border: 1px solid var(--line-2); border-radius: 50%; background: var(--surface);
+  color: var(--ink-2); font: 620 13px/1 var(--mono); letter-spacing: .03em;
+}
+.presfallback span { font-size: 11px; }
+.presidentity { padding: 13px 14px 5px; }
+.presidentity h3 { font-size: 14px; line-height: 1.3; }
+.presidentity p {
+  min-height: 2.9em; margin: 5px 0 0; color: var(--muted);
+  font-size: 12px; line-height: 1.45;
+}
+.prescard > .persona { margin: 5px 14px 2px; }
 /* Everything below the description is the same on every card, so it aligns
    across the row instead of starting wherever the text above ran out. */
-.prescardfoot { margin-top: auto; padding-top: 10px; display: flex; flex-direction: column; gap: 7px; }
+.prescardfoot {
+  margin-top: auto; padding: 10px 14px 13px; display: flex; flex-direction: column; gap: 7px;
+}
 .presstate { font-size: 11.5px; min-height: 1.4em; }
 .presstate span { display: inline-flex; align-items: center; gap: 4px; }
 .castrow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }

@@ -266,7 +266,8 @@ that was not the answer**. Assume more exist.
 previous build's README is explicit — each character **borrows a realistic
 human HeyGen avatar by default**; dropping an image in makes it a
 mascot/creature instead (HeyGen talking-photo). `character_art/images/` was
-always empty on purpose.
+always empty on purpose. The Cast cards now surface the synced preview for that
+exact assigned avatar; they no longer hide 158 real castings behind initials.
 
 ---
 

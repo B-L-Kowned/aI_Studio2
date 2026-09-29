@@ -327,14 +327,14 @@ CREATE TABLE IF NOT EXISTS llm_routing (
 -- Presenters: who appears on screen. The comedy/content difference lives here,
 -- not in template lists.
 --
---   character  invented, belongs to funny, HAS artwork
---   avatar     stock roster of real people, belongs to content, NO artwork
---   personal   the user's own likeness, every plan, NO artwork
+--   character  invented, belongs to funny, MAY have custom artwork
+--   avatar     reusable presenter role, belongs to content, NO custom artwork
+--   personal   the user's own likeness, every plan, NO custom artwork
 --
--- The artwork rule is a product decision, not styling: a stock photo standing in
--- for "a real presenter" is a claim about a person who does not exist, and a
--- mocked-up "your face" is a promise about somebody we have never seen. The CHECK
--- makes it impossible to get wrong by accident.
+-- The artwork rule is a product decision, not styling: custom art belongs only
+-- to an invented character. `provider_assets.preview_url` is different — it is
+-- the exact assigned avatar that will perform this role, so the UI may show it
+-- for any kind without pretending it is independent character artwork.
 CREATE TABLE IF NOT EXISTS presenters (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   kind         TEXT NOT NULL CHECK (kind IN ('character','avatar','personal')),

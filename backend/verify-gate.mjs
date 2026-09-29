@@ -96,6 +96,9 @@ check('there is a presenter to cast', !!pres && !!avatar && !!voice,
 r = await call('PATCH', `/presenters/${pres.id}/casting`,
   { avatarAssetId: avatar.id, voiceAssetId: voice.id });
 check('presenter casts to a real avatar and voice', r.status === 200, r.body.message);
+check('the assigned avatar exposes its preview contract',
+  Object.prototype.hasOwnProperty.call(r.body.data.avatar, 'previewUrl'),
+  JSON.stringify(r.body.data.avatar));
 
 const cast = (await call('GET', '/presenters/castable')).body.data;
 check('and then appears as castable', cast.length > 0, `${cast.length}`);
