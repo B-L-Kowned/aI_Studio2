@@ -13,6 +13,33 @@ const { existsSync } = require('node:fs');
 // It deliberately owns nothing else. All product logic stays in the backend, so
 // the same build runs headless in CI and under `npm run verify`.
 
+// The native database module is built against N-API 10. N-API is forward- but not
+// backward-compatible, and a runtime that offers less does NOT report a clean
+// error: it segfaults inside node_module_register with an empty stderr, before
+// any JavaScript runs. Electron 33 (Node 20 / N-API 9) was below this floor and
+// the whole app died silently. Name the cause here rather than letting the
+// backend die and reporting "did not report a port".
+const REQUIRED_NAPI = 10;
+
+function checkRuntime() {
+  const napi = Number(process.versions.napi);
+  if (Number.isFinite(napi) && napi >= REQUIRED_NAPI) return null;
+  return [
+    `This Electron embeds Node ${process.version} (N-API ${process.versions.napi}).`,
+    `better-sqlite3 needs N-API ${REQUIRED_NAPI}, which means Node 22 or newer.`,
+    '',
+    'Below that floor the database module crashes the process on load with no',
+    'error message. Rebuilding it does not help — the ABI is not the problem.',
+    'Install an Electron whose embedded Node is 22 or newer.',
+  ].join('\n');
+}
+
+// In development the window is owned by Electron's own bundle, so the Dock and
+// Cmd-Tab show a generic "Electron" and the app looks like it never started.
+// Name it before `whenReady`, and pin userData so renaming does not relocate it.
+app.setPath('userData', join(app.getPath('appData'), 'ai-video-studio-desktop'));
+app.setName('AI Video Studio');
+
 const isDev = !app.isPackaged;
 const root = isDev ? resolve(__dirname, '..') : resolve(process.resourcesPath, 'app');
 const backendEntry = join(root, 'backend', 'server.js');
@@ -151,6 +178,13 @@ ipcMain.handle('studio:info', async () => ({
 // ----------------------------------------------------------------- lifecycle
 
 app.whenReady().then(async () => {
+  const unsupported = checkRuntime();
+  if (unsupported) {
+    dialog.showErrorBox('AI Video Studio cannot run on this Electron', unsupported);
+    app.quit();
+    return;
+  }
+
   try {
     ready = await startBackend();
   } catch (err) {

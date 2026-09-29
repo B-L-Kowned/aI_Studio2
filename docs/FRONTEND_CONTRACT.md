@@ -1,6 +1,15 @@
 # Frontend contract (backend-agnostic)
 
-Core objects: Workspace, Entitlement, CredentialRef, StorageProvider, Campaign, Project, Series, Production, Template, Brief, OutlineSection, Scene, Participant, Person, CollaborationInvite, ConsentGrant, Source, ScriptVersion, Segment, Asset, Job, RenderVersion, EditProject, EditDecision, Export, Publication.
+Core objects: Workspace, Entitlement, CredentialRef, StorageProvider, **Company**,
+Campaign (a *track*: purpose + audience), Production, Template, Brief, OutlineSection,
+Scene, Participant, Person, CollaborationInvite, ConsentGrant, Source, ScriptVersion,
+Segment, **Take**, **Idea**, **Presenter** (with persona), Asset, Job, RenderVersion,
+EditDecision, Export, Publication.
+
+> **Reconciled 2026-09-28 against the code.** `Project`, `Series` and `EditProject`
+> were listed here and have no table — a series is a campaign with ordered
+> productions. `Company`, `Take`, `Idea` and `Presenter` exist and were missing.
+> Canonical source: `frontend/docs/ARCHITECTURE.md`.
 
 Critical actions:
 - createProduction(sourceType, templateId?)

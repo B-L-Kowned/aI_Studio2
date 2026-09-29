@@ -23,6 +23,9 @@ export const ENDPOINTS = {
   generate:    { method: 'POST', path: '/v2/video/generate',       verified: true },
   videoStatus: { method: 'GET',  path: '/v1/video_status.get',     verified: true },
   // Not present in the reference client — still unconfirmed.
+  // Still unverified, and now unused when signed in over MCP: `list_templates`
+  // there is a live, checked call. This stays only for the key-only path, and
+  // stays flagged because nobody has ever seen it answer.
   templates:   { method: 'GET',  path: '/v2/templates',            verified: false },
 };
 

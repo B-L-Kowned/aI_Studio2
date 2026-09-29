@@ -22,7 +22,7 @@ import storage from './routes/storage.js';
 import { modeSummary } from './lib/providers/mode.js';
 import { ok, fail } from './utils/respond.js';
 import { existsSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Port 0 asks the OS for a free port. A shipped desktop build uses it and hands
@@ -80,8 +80,19 @@ if (packaged) {
 app.use('/api', (_req, res) => fail(res, 404, 'NOT_FOUND', 'Unknown endpoint'));
 
 if (packaged) {
-  // Client-side routing: a deep link is the app, not a missing file.
-  app.use((_req, res) => res.sendFile(join(webRoot, 'index.html')));
+  // Client-side routing: a deep link is the app, not a missing file. But a path
+  // that names a FILE is asking for a file, and express.static already had its
+  // chance at it. Answering those with index.html is a soft 404: the browser
+  // gets HTML where it wanted an image and silently renders the fallback, or
+  // gets HTML where it wanted a script and dies on `<` as a parse error.
+  // `/art/marv.png` returned 200 this way for artwork that never existed.
+  // Deep links carry no extension, so this costs client routing nothing.
+  app.use((req, res) => {
+    if (extname(req.path)) {
+      return fail(res, 404, 'NOT_FOUND', `No such file: ${req.path}`);
+    }
+    res.sendFile(join(webRoot, 'index.html'));
+  });
 } else {
   app.use((_req, res) => fail(res, 404, 'NOT_FOUND', 'Unknown endpoint'));
 }

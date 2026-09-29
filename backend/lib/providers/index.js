@@ -87,6 +87,8 @@ export async function syncProvider(id) {
       ? [
           ['avatar', (await mcp.avatarLooks({ ownership: 'private' })).map((a) => ({ ...a, owned: true }))],
           ['voice', await mcp.voicesByOwnership()],
+          // Over MCP this is a verified call. The key's /v2/templates never was.
+          ['template', await mcp.templates().catch(() => [])],
         ]
       : [
           ['avatar', await provider.listAvatars()],

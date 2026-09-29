@@ -147,18 +147,17 @@ export const setupCards = [
 ];
 
 // Presenters. The comedy/content split is who appears on screen.
-// Characters carry artwork; the stock roster and "You" deliberately do not.
+// Nothing here carries artwork. Three characters used to point at PNG files
+// that were never drawn, so their tile rendered as a big empty letter. The
+// tile now falls back to the name, which is what the other 171 already do.
 export const presenters = [
-  // ── Characters (comedy) — invented, WITH artwork ──────────────────────────
+  // ── Characters (comedy) — invented ────────────────────────────────────────
   { kind: 'character', name: 'Marv the Consultant',
-    description: 'Overconfident middle manager. Explains things nobody asked about.',
-    artworkUrl: '/art/marv.png' },
+    description: 'Overconfident middle manager. Explains things nobody asked about.' },
   { kind: 'character', name: 'Dr. Prakash Nope',
-    description: 'Academic who has read the paper and hated it.',
-    artworkUrl: '/art/prakash.png' },
+    description: 'Academic who has read the paper and hated it.' },
   { kind: 'character', name: 'Tina from Procurement',
-    description: 'Has a form for that. Has always had a form for that.',
-    artworkUrl: '/art/tina.png' },
+    description: 'Has a form for that. Has always had a form for that.' },
 
   // ── Presenters (content) — stock roster, NO artwork, typographic tiles ────
   { kind: 'avatar', name: 'Daniel — Business Casual',

@@ -55,14 +55,31 @@ try {
   } else {
     // Every suite runs against the same throwaway install, in order.
     code = 0;
+    // A suite that THROWS prints no total and exits non-zero. Read only the
+    // "N passed" lines and that is indistinguishable from a clean run — which
+    // is how verify-gate.mjs sat dead at 6 of 22 checks while the run looked
+    // green. So every suite gets an explicit verdict line, and the run ends
+    // with one summary nobody has to reconstruct by eye.
+    const verdicts = [];
     for (const suite of ['verify.mjs', 'verify-gate.mjs', 'verify-build.mjs']) {
       console.log(`\n────────── ${suite} ──────────`);
       const child = spawn(process.execPath, [suite], {
         env: Object.assign({}, process.env, { VERIFY_BASE: base }),
         stdio: 'inherit',
       });
-      code = (await new Promise((r) => child.on('exit', r))) || code;
+      const exit = await new Promise((r) => child.on('exit', r));
+      verdicts.push([suite, exit]);
+      console.log(exit ? `✗ ${suite} DID NOT COMPLETE (exit ${exit})` : `✓ ${suite} completed`);
+      code = exit || code;
     }
+    const bad = verdicts.filter(([, e]) => e);
+    console.log(`\n────────── summary ──────────`);
+    for (const [suite, exit] of verdicts) {
+      console.log(`  ${exit ? '✗' : '✓'} ${suite}${exit ? `  exit ${exit}` : ''}`);
+    }
+    console.log(bad.length
+      ? `\nFAILED — ${bad.length} of ${verdicts.length} suites did not complete.`
+      : `\nAll ${verdicts.length} suites completed.`);
   }
 } finally {
   server.kill('SIGTERM');

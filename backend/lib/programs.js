@@ -72,21 +72,18 @@ export const PRESENTER_TAB_INFO = {
     id: 'characters',
     label: 'Characters',
     program: 'funny',
-    hasArtwork: true,
-    detail: 'Invented performers. These have artwork.',
+    detail: 'Invented performers you write and cast yourself. Named tiles — no artwork exists.',
   },
   avatars: {
     id: 'avatars',
     label: 'Presenters',
     program: 'content',
-    hasArtwork: false,
     detail: 'The stock roster of real people. Typographic tiles, never stock photos.',
   },
   personal: {
     id: 'personal',
     label: 'You',
     program: null,
-    hasArtwork: false,
     detail: 'Built from your own footage. Belongs to every plan.',
   },
 };

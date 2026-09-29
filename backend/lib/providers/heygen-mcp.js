@@ -536,3 +536,20 @@ export async function voicesByOwnership() {
   const everything = await allVoices();
   return everything.map((v) => ({ ...v, owned: mineIds.has(v.voice_id) }));
 }
+
+/**
+ * Templates this account holds.
+ *
+ * `/v2/templates` on the API key was carried as UNVERIFIED for the whole build —
+ * it is not in the reference client, and with no key stored it could never be
+ * checked. The MCP server exposes `list_templates`, which IS verified: called
+ * live it answers, and answers 0 because this account has no templates. An
+ * empty list from a working call is a fact; an unverified endpoint is not.
+ */
+export async function templates() {
+  const rows = await paged('list_templates', {}, (t) => ({
+    id: t.template_id ?? t.id,
+    name: t.name ?? t.title ?? 'Untitled template',
+  }));
+  return rows.map((t) => ({ template_id: t.id, name: t.name }));
+}

@@ -1,7 +1,15 @@
 # Product / UX Contract v0.1
 
 ## Canonical hierarchy
-Workspace > Campaign (optional) > Project > Series (optional) > Production > Scene > Segment/Line > Asset/Render.
+Workspace > Company > Campaign/Track > Production > Scene > Segment/Line > Asset/Render.
+
+> **Reconciled 2026-09-28 against the code.** This line previously read
+> `Workspace > Campaign (optional) > Project > Series (optional) > Production > …`.
+> There is no `projects` table and no `series` table, and there never was one in
+> this build: a **series is a campaign** whose productions carry
+> `collection_position`, and a **Company** sits above campaigns. Keeping the old
+> wording would have meant building two hierarchy engines to satisfy a sentence.
+> Canonical source: `frontend/docs/ARCHITECTURE.md`.
 
 A campaign may contain multiple projects. A project may contain series and/or one-off productions.
 

@@ -80,7 +80,12 @@ check('the WHOLE production render is gated too',
 
 S('Casting is a decision about a speaker');
 // Cast a presenter to fixture assets so there is something castable at all.
-const assets = (await call('GET', '/providers/heygen/assets')).body.data;
+// `data` is {items, total, ...} since the payload was paginated — it is not
+// an array. Reading `.find` off it threw, which ABORTED this suite at check
+// 6 of 22 and printed no total, so the run still read as green.
+const assets = (await call('GET', '/providers/heygen/assets')).body.data.items ?? [];
+check('the asset catalogue came back as a list', Array.isArray(assets) && assets.length > 0,
+  `got ${typeof assets} length=${assets?.length}`);
 const avatar = assets.find((a) => a.kind === 'avatar');
 const voice = assets.find((a) => a.kind === 'voice');
 const roster = (await call('GET', '/presenters')).body.data;
