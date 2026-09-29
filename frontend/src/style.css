@@ -2391,18 +2391,76 @@ button.danger:hover:not(:disabled) { background: #9d2019; border-color: #9d2019;
 
 /* ── Companies and their tracks ──────────────────────────────────────────── */
 
-.cdomain { font: 11px var(--mono); color: var(--faint); margin-right: 10px; }
-
-.tracklist { display: flex; flex-direction: column; }
-.trackrow {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px; border-top: 1px solid var(--line);
+.companyroster {
+  overflow: hidden; margin-top: 16px;
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  background: var(--surface); box-shadow: var(--shadow);
 }
-.trackrow:first-child { border-top: 0; }
-.trackmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.trackmain b { font-size: 13.5px; font-weight: 550; }
-.trackmain i { font-style: normal; font-size: 11.5px; color: var(--faint); }
-.trackcount { font: 11.5px var(--mono); color: var(--faint); }
+.companycolumns, .companyline, .companytrack {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.15fr) minmax(240px, 1fr) 64px 74px;
+  align-items: center; gap: 14px;
+}
+.companycolumns {
+  min-height: 34px; padding: 0 14px;
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
+  color: var(--faint); font-size: 10px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.companycolumns span:nth-child(3) { text-align: right; }
+.companygroup + .companygroup { border-top: 1px solid var(--line-2); }
+.companygroup.retired { opacity: .55; }
+.companyline {
+  min-height: 50px; padding: 7px 14px;
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
+}
+.companymain { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.companymain > svg { flex: none; color: var(--muted); }
+.companymain > span { min-width: 0; display: flex; align-items: baseline; gap: 9px; }
+.companymain b { font-size: 13.5px; font-weight: 620; }
+.companymain i {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--faint); font: normal 10.5px var(--mono);
+}
+.companysummary { color: var(--muted); font-size: 11.5px; }
+.companyvideos { text-align: right; color: var(--muted); font: 11.5px var(--mono); }
+.companyretire { justify-self: end; padding: 6px; color: var(--faint); }
+.companytrack {
+  min-height: 54px; padding: 7px 14px;
+}
+.companytrack + .companytrack, .companyempty + .companytrack { border-top: 1px solid var(--line); }
+.companytrackname { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.companytrackname > svg { flex: none; margin-left: 4px; color: var(--line-2); }
+.companytrackname b {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px; font-weight: 560;
+}
+.trackaudience {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink-2); font-size: 11.5px;
+}
+.trackaudience.missing { color: var(--warn); }
+.companytrack > button { justify-self: end; }
+.companyempty {
+  min-height: 42px; padding: 8px 14px 8px 18px;
+  display: flex; align-items: center; gap: 9px;
+  color: var(--faint); font-size: 11.5px;
+}
+.companyempty svg { flex: none; color: var(--line-2); }
+.companyempty span { color: var(--muted); font-weight: 550; }
+.companyempty i { font-style: normal; }
+.companygroup.unassigned .companyline { background: var(--warn-soft); }
+
+@media (max-width: 800px) {
+  .companycolumns { display: none; }
+  .companyline, .companytrack {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px 12px;
+  }
+  .companysummary, .trackaudience { grid-column: 1; grid-row: 2; }
+  .companyvideos { grid-column: 2; grid-row: 1; }
+  .companyretire, .companytrack > button { grid-column: 2; grid-row: 2; }
+}
 
 /* The purpose is a closed set so the same track means the same thing across
    fifty companies. Colour reinforces that they are comparable. */

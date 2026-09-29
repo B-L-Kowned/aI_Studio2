@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Building2, X, Archive, RotateCcw, ChevronRight } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
-import { Section, PageHead, Empty } from '../components/Section.jsx';
+import { PageHead, Empty } from '../components/Section.jsx';
 
 /**
  * Company → Track → Production.
@@ -81,7 +81,7 @@ export default function Companies({ go }) {
         </form>
       )}
 
-      {companies.length === 0 && !adding && (
+      {companies.length === 0 && loose.length === 0 && !adding && (
         <Empty icon={Building2} action={
           <button className="primary" onClick={() => setAdding(true)}>Add the first company</button>
         }>
@@ -90,72 +90,98 @@ export default function Companies({ go }) {
         </Empty>
       )}
 
-      {companies.map((c) => (
-        <Section
-          key={c.id}
-          title={c.name}
-          meta={
-            <>
-              {c.domain && <span className="cdomain">{c.domain}</span>}
-              <small>
-                {c.counts.tracks} track{c.counts.tracks === 1 ? '' : 's'} ·{' '}
-                {c.counts.productions} video{c.counts.productions === 1 ? '' : 's'}
-              </small>
-            </>
-          }
-          actions={
-            <button
-              className="ghostbtn"
-              title={c.isActive ? 'Retire — keeps every video reachable' : 'Bring back'}
-              onClick={() => run(() => api.retireCompany(c.id, !c.isActive))}
-            >
-              {c.isActive ? <Archive size={13} /> : <RotateCcw size={13} />}
-            </button>
-          }
-          flush
-        >
-          {c.tracks.length === 0 ? (
-            <p className="sectionempty">
-              No tracks yet. Assign a campaign below, or make one in Campaigns.
-            </p>
-          ) : (
-            <div className="tracklist">
-              {c.tracks.map((t) => (
-                <div className="trackrow" key={t.id}>
-                  <span className={'purposetag ' + (t.purpose ?? 'none')}>
-                    {purposes.find((p) => p.id === t.purpose)?.label ?? 'no purpose'}
+      {(companies.length > 0 || loose.length > 0) && (
+        <section className="companyroster" aria-label="Companies and tracks">
+          <div className="companycolumns" aria-hidden="true">
+            <span>Company / track</span>
+            <span>Audience / status</span>
+            <span>Videos</span>
+            <span />
+          </div>
+
+          {companies.map((c) => (
+            <div className={'companygroup' + (c.isActive ? '' : ' retired')} key={c.id}>
+              <div className="companyline">
+                <span className="companymain">
+                  <Building2 size={15} aria-hidden="true" />
+                  <span>
+                    <b>{c.name}</b>
+                    {c.domain && <i>{c.domain}</i>}
                   </span>
-                  <span className="trackmain">
+                </span>
+                <span className="companysummary">
+                  {c.counts.tracks} track{c.counts.tracks === 1 ? '' : 's'}
+                </span>
+                <span className="companyvideos" aria-label={`${c.counts.productions} videos`}>
+                  {c.counts.productions}
+                </span>
+                <button
+                  className="ghostbtn companyretire"
+                  aria-label={c.isActive ? `Retire ${c.name}` : `Restore ${c.name}`}
+                  title={c.isActive ? 'Retire — keeps every video reachable' : 'Bring back'}
+                  onClick={() => run(() => api.retireCompany(c.id, !c.isActive))}
+                >
+                  {c.isActive ? <Archive size={13} /> : <RotateCcw size={13} />}
+                </button>
+              </div>
+
+              {c.tracks.length === 0 ? (
+                <div className="companyempty">
+                  <ChevronRight size={13} aria-hidden="true" />
+                  <span>No tracks yet</span>
+                  <i>Assign an unassigned campaign below, or create one in Campaigns.</i>
+                </div>
+              ) : c.tracks.map((t) => (
+                <div className="companytrack" key={t.id}>
+                  <span className="companytrackname">
+                    <ChevronRight size={13} aria-hidden="true" />
+                    <span className={'purposetag ' + (t.purpose ?? 'none')}>
+                      {purposes.find((p) => p.id === t.purpose)?.label ?? 'no purpose'}
+                    </span>
                     <b>{t.name}</b>
-                    <i>{t.audience || 'No audience set — the script cannot know who it is for'}</i>
                   </span>
-                  <span className="trackcount">{t.productions}</span>
+                  <span className={'trackaudience' + (t.audience ? '' : ' missing')}>
+                    {t.audience || 'Audience not set'}
+                  </span>
+                  <span className="companyvideos" aria-label={`${t.productions} videos`}>
+                    {t.productions}
+                  </span>
                   <button onClick={() => setEditing(t.id)}>Edit</button>
                 </div>
               ))}
             </div>
-          )}
-        </Section>
-      ))}
+          ))}
 
-      {/* The clean-up. Every campaign that predates this layer is here until
-          someone says whose it is and what it is for. */}
-      {loose.length > 0 && (
-        <Section
-          title="Not assigned"
-          meta={`${loose.length} campaign${loose.length === 1 ? '' : 's'} with no company`}
-          flush
-        >
-          <div className="tracklist">
-            {loose.map((t) => (
-              <div className="trackrow" key={t.id}>
-                <span className="purposetag none">unassigned</span>
-                <span className="trackmain"><b>{t.name}</b></span>
-                <button className="primary" onClick={() => setEditing(t.id)}>Assign</button>
+          {/* The clean-up. Every campaign that predates this layer stays in
+              the same roster until someone assigns its company and purpose. */}
+          {loose.length > 0 && (
+            <div className="companygroup unassigned">
+              <div className="companyline">
+                <span className="companymain">
+                  <Building2 size={15} aria-hidden="true" />
+                  <span><b>Not assigned</b></span>
+                </span>
+                <span className="companysummary">
+                  {loose.length} campaign{loose.length === 1 ? '' : 's'} with no company
+                </span>
+                <span />
+                <span />
               </div>
-            ))}
-          </div>
-        </Section>
+              {loose.map((t) => (
+                <div className="companytrack" key={t.id}>
+                  <span className="companytrackname">
+                    <ChevronRight size={13} aria-hidden="true" />
+                    <span className="purposetag none">unassigned</span>
+                    <b>{t.name}</b>
+                  </span>
+                  <span className="trackaudience missing">Choose a company, purpose and audience</span>
+                  <span />
+                  <button className="primary" onClick={() => setEditing(t.id)}>Assign</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       {editing && (
