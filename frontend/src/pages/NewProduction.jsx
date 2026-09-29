@@ -1,0 +1,272 @@
+import React, { useState } from 'react';
+import { X, Lock, AlertCircle, Upload, ArrowLeft } from 'lucide-react';
+import { useStudio } from '../context/studio-context.jsx';
+import { api } from '../services/api.js';
+
+// The dialog asks for whatever the starting point actually needs, at the moment
+// it is named. "New production from an existing video" used to ask for a title,
+// a template and a campaign — and never once mentioned a video. You created a
+// production, then went hunting in Plan → Sources for the thing the dialog was
+// named after.
+
+const SOURCE = {
+  idea: { label: 'a blank idea', needs: null },
+  template: { label: 'a template', needs: null },
+  existing_video: {
+    label: 'an existing video',
+    needs: 'video',
+    help: 'Measured locally with ffmpeg as soon as the production is created. Nothing is uploaded.',
+  },
+  existing_script: {
+    label: 'an existing script',
+    needs: 'script',
+    help: 'One line per speaker, as "Name: their line". It lands as an accepted script version.',
+  },
+  existing_project: {
+    label: 'an existing project',
+    needs: 'project',
+    help: 'Brief, outline and scenes are copied. Scripts, renders and publications are not — those are work, not plan.',
+  },
+  url: { label: 'a source URL', needs: 'unavailable' },
+};
+
+export default function NewProduction({
+  sourceType, campaignId: initialCampaign = null, prefillTitle = '', onClose, onBack, onDone,
+}) {
+  const { workspace, collections, productions, createProduction } = useStudio();
+  const source = SOURCE[sourceType] ?? SOURCE.idea;
+
+  const [title, setTitle] = useState(prefillTitle);
+  const [templateId, setTemplateId] = useState(workspace.templates[0]?.id ?? '');
+  const [campaignId, setCampaignId] = useState(initialCampaign ?? '');
+  const [videoFile, setVideoFile] = useState('');
+  const [scriptText, setScriptText] = useState('');
+  const [copyFromId, setCopyFromId] = useState('');
+  // null = not creating one; a string = the name being typed.
+  const [newCampaignName, setNewCampaignName] = useState(null);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const desktop = typeof window !== 'undefined' && window.studio?.desktop;
+  const templates = workspace.templates;
+  const needsTemplate = sourceType === 'template';
+
+  const chooseVideo = async () => {
+    const picked = await window.studio.pickVideo();
+    if (picked) setVideoFile(picked);
+  };
+
+  const ready =
+    source.needs !== 'unavailable' &&
+    (source.needs !== 'video' || !!videoFile.trim()) &&
+    (source.needs !== 'script' || !!scriptText.trim()) &&
+    (source.needs !== 'project' || !!copyFromId);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setErr(null);
+    setBusy(true);
+    try {
+      // Make the campaign first, so the production lands in it rather than
+      // being created loose and moved.
+      let campaign = campaignId ? Number(campaignId) : null;
+      if (newCampaignName !== null && newCampaignName.trim()) {
+        const made = await api.createCampaign({ name: newCampaignName.trim() });
+        campaign = made.data?.id ?? made.data?.campaign?.id ?? null;
+      }
+
+      await createProduction({
+        sourceType,
+        templateId: needsTemplate ? templateId : (templateId || null),
+        title: title.trim() || undefined,
+        campaignId: campaign,
+        videoFile: videoFile.trim() || null,
+        scriptText: scriptText.trim() || null,
+        copyFromId: copyFromId ? Number(copyFromId) : null,
+      });
+      onDone?.();
+      onClose();
+    } catch (ex) {
+      setErr(ex.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (source.needs === 'unavailable') {
+    return (
+      <>
+        <div className="scrim" onClick={onClose} />
+        <div className="modal">
+          <div className="modalhead">
+            <b>Not built yet</b>
+            <button onClick={onClose}><X size={15} /></button>
+          </div>
+          <p className="muted">
+            Building a production from a URL means fetching the page, deciding what on it is
+            the content, and reading it — a real piece of work that is not done. Rather than
+            create a blank production and call it a URL import, this route says so.
+          </p>
+          <div className="actions">
+            <button className="primary" onClick={onClose}>Understood</button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className={'modal' + (source.needs === 'script' ? ' wide' : '')}>
+        <div className="modalhead">
+          <b>
+            {onBack && (
+              <button className="backbtn" type="button" onClick={onBack} title="Choose a different starting point">
+                <ArrowLeft size={14} />
+              </button>
+            )}
+            New production from {source.label}
+          </b>
+          <button onClick={onClose}><X size={15} /></button>
+        </div>
+
+        <form onSubmit={submit}>
+          {/* The thing this route is named after comes FIRST. */}
+          {source.needs === 'video' && (
+            <label className="oblabel">
+              The video
+              {desktop ? (
+                <span className="pickrow">
+                  <button type="button" onClick={chooseVideo}>
+                    <Upload size={13} /> {videoFile ? 'Choose a different file' : 'Choose a video…'}
+                  </button>
+                  {videoFile && <code>{videoFile}</code>}
+                </span>
+              ) : (
+                <input
+                  className="obinput"
+                  placeholder="/Users/you/Movies/interview.mp4"
+                  value={videoFile}
+                  onChange={(e) => setVideoFile(e.target.value)}
+                  autoFocus
+                />
+              )}
+              <small className="obhelp">{source.help}</small>
+            </label>
+          )}
+
+          {source.needs === 'script' && (
+            <label className="oblabel">
+              The script
+              <textarea
+                className="obinput scriptbox"
+                rows={10}
+                placeholder={'Pat: So the thing about agents is that they fail quietly.\nChristine: Which is the worst way to fail.'}
+                value={scriptText}
+                onChange={(e) => setScriptText(e.target.value)}
+                autoFocus
+              />
+              <small className="obhelp">{source.help}</small>
+            </label>
+          )}
+
+          {source.needs === 'project' && (
+            <label className="oblabel">
+              Copy the plan from
+              <select
+                className="obinput"
+                value={copyFromId}
+                onChange={(e) => setCopyFromId(e.target.value)}
+                autoFocus
+              >
+                <option value="">Choose a production…</option>
+                {productions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} · {p.counts.sections} sections · {p.counts.scenes} scenes
+                  </option>
+                ))}
+              </select>
+              <small className="obhelp">{source.help}</small>
+            </label>
+          )}
+
+          <label className="oblabel">
+            Title
+            <input
+              className="obinput"
+              placeholder="e.g. Why Agents Keep Failing"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus={!source.needs}
+            />
+          </label>
+
+          {/* A copied plan brings its own outline, so offering a template here
+              would be offering to overwrite what you just chose to copy. */}
+          {source.needs !== 'project' && (
+            <label className="oblabel">
+              Template {needsTemplate ? '' : '(optional — sets the starting brief and outline)'}
+              <select
+                className="obinput"
+                value={templateId}
+                onChange={(e) => setTemplateId(e.target.value)}
+                required={needsTemplate}
+              >
+                {!needsTemplate && <option value="">Blank — no template</option>}
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} · {t.mode} · {t.runtime}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {templates.length === 0 && (
+            <p className="oberr"><Lock size={14} /> Your licence includes no templates.</p>
+          )}
+
+          <label className="oblabel">
+            Campaign (optional)
+            <select
+              className="obinput"
+              value={newCampaignName === null ? campaignId : '__new'}
+              onChange={(e) => {
+                if (e.target.value === '__new') setNewCampaignName('');
+                else { setNewCampaignName(null); setCampaignId(e.target.value); }
+              }}
+            >
+              <option value="">No campaign — a one-off</option>
+              {collections.campaigns.map((c) => (
+                <option key={c.id} value={c.id}>{c.name} · {c.mode}</option>
+              ))}
+              <option value="__new">＋ New campaign…</option>
+            </select>
+            {newCampaignName !== null && (
+              <input
+                className="obinput"
+                style={{ marginTop: 6 }}
+                placeholder="Name the campaign"
+                value={newCampaignName}
+                onChange={(e) => setNewCampaignName(e.target.value)}
+                autoFocus
+              />
+            )}
+          </label>
+
+          {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
+
+          <div className="actions">
+            <button type="button" onClick={onClose}>Cancel</button>
+            <button className="primary" type="submit" disabled={busy || !ready}>
+              {busy
+                ? (source.needs === 'video' ? 'Measuring…' : 'Creating…')
+                : 'Create production'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </>
+  );
+}

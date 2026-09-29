@@ -1,0 +1,28 @@
+{
+  "name": "ai-video-studio-desktop",
+  "version": "0.1.0",
+  "description": "AI Video Studio — desktop shell",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:web": "cd ../frontend && npm run build",
+    "dist": "npm run build:web && electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.bialkowned.aivideostudio",
+    "productName": "AI Video Studio",
+    "directories": { "output": "release" },
+    "files": ["main.js", "preload.js", "package.json"],
+    "extraResources": [
+      { "from": "../backend", "to": "app/backend", "filter": ["**/*", "!node_modules/.cache", "!*.db", "!verify*.mjs", "!run-verify.mjs"] },
+      { "from": "../frontend/dist", "to": "app/frontend/dist" }
+    ],
+    "mac": { "category": "public.app-category.video", "target": ["dmg"] },
+    "win": { "target": ["nsis"] },
+    "linux": { "target": ["AppImage"] }
+  }
+}

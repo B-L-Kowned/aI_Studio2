@@ -1,0 +1,109 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import { openDb, defaultDbPath } from './db/index.js';
+import workspace from './routes/workspace.js';
+import productions from './routes/productions.js';
+import pipeline from './routes/pipeline.js';
+import collections from './routes/collections.js';
+import providers from './routes/providers.js';
+import connections from './routes/connections.js';
+import heygen from './routes/heygen.js';
+import presenters from './routes/presenters.js';
+import segments from './routes/segments.js';
+import training from './routes/training.js';
+import analysis from './routes/analysis.js';
+import series from './routes/series.js';
+import roster from './routes/roster.js';
+import scheduleRoutes from './routes/schedule.js';
+import ideas from './routes/ideas.js';
+import companies from './routes/companies.js';
+import storage from './routes/storage.js';
+import { modeSummary } from './lib/providers/mode.js';
+import { ok, fail } from './utils/respond.js';
+import { existsSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Port 0 asks the OS for a free port. A shipped desktop build uses it and hands
+// the chosen port to the renderer — a fixed port would collide with whatever
+// else is on the user's machine, and with a second copy of this app.
+const PORT = Number(process.env.PORT ?? 3433);
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3333';
+
+const app = express();
+app.use(express.json({ limit: '1mb' }));
+app.use(cors({ origin: CORS_ORIGIN.split(',').map((s) => s.trim()) }));
+
+const dbPath = defaultDbPath();
+openDb(dbPath);
+
+app.get('/api/health', (_req, res) =>
+  ok(res, { status: 'ok', db: 'sqlite', uptime: Math.round(process.uptime()), ...modeSummary() })
+);
+
+app.use('/api', workspace);
+app.use('/api', collections);
+app.use('/api', providers);
+app.use('/api', connections);
+app.use('/api', heygen);
+app.use('/api', presenters);
+app.use('/api/productions', productions);
+app.use('/api/productions', pipeline);
+app.use('/api/productions', segments);
+app.use('/api/training', training);
+app.use('/api/productions', analysis);
+app.use('/api/series', series);
+app.use('/api', roster);
+app.use('/api', scheduleRoutes);
+app.use('/api', ideas);
+app.use('/api', companies);
+app.use('/api', storage);
+
+// ------------------------------------------------------- the app itself ---
+//
+// A packaged build serves the frontend from the SAME origin as the API, which
+// is what lets the bundle keep a relative `/api` base. An absolute origin
+// compiled into the bundle would pin the app to one hostname and port — and in
+// a desktop build the port is chosen at startup, so there is nothing to pin.
+const here = dirname(fileURLToPath(import.meta.url));
+const webRoot = resolve(process.env.WEB_ROOT || join(here, '..', 'frontend', 'dist'));
+const packaged = existsSync(join(webRoot, 'index.html'));
+
+if (packaged) {
+  app.use(express.static(webRoot, { index: false }));
+}
+
+// Anything under /api that got this far is genuinely unknown. Answering it with
+// index.html would turn a typo into a 200 and hide the mistake — a soft 404 on
+// an API is worse than a hard one, because the caller parses the page as data.
+app.use('/api', (_req, res) => fail(res, 404, 'NOT_FOUND', 'Unknown endpoint'));
+
+if (packaged) {
+  // Client-side routing: a deep link is the app, not a missing file.
+  app.use((_req, res) => res.sendFile(join(webRoot, 'index.html')));
+} else {
+  app.use((_req, res) => fail(res, 404, 'NOT_FOUND', 'Unknown endpoint'));
+}
+
+app.use((err, _req, res, _next) => {
+  console.error('[error]', err);
+  return fail(res, 500, 'INTERNAL', err.message || 'Internal server error');
+});
+
+const MODE = modeSummary();
+if (MODE.generatesLive) {
+  console.warn('[warn] PROVIDER_MODE=live — generation calls are real and billable.');
+}
+
+// Bound to the loopback interface: this is a single-user desktop app, and a
+// server listening on every interface puts your workspace on the local network.
+const server = app.listen(PORT, '127.0.0.1', () => {
+  const actual = server.address().port;
+  console.log(`[db]  ${dbPath}`);
+  console.log(`[web] ${packaged ? webRoot : 'not built — use the dev server for the UI'}`);
+  console.log(`[api] listening on http://localhost:${actual}  mode=${MODE.mode}`);
+  // One machine-readable line, so a parent process never has to parse prose
+  // that was written for a person.
+  console.log(`STUDIO_READY ${JSON.stringify({ port: actual, packaged, dbPath })}`);
+});

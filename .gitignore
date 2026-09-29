@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Builds — regenerated, and never the thing to restore from
+dist/
+build/
+.verify-build/
+desktop/release/
+
+# Secrets. The example files ARE tracked; the real ones never are.
+# A tracked copy is a leaked secret that needs rotating, not deleting.
+.env
+.env.*
+!.env.example
+!.env.template
+
+# The workspace database lives in the OS user-data directory, not in the tree.
+# Any copy that lands here is a stray, not the real one.
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# Leftovers that look like work and are not (PREP-05)
+*.bak
+*.bak.*
+*.orig
+*~
+*.log
+__pycache__/
+.DS_Store
+test-results/
+playwright-report/
+.claude-*cache.json

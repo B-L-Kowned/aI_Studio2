@@ -1,0 +1,189 @@
+const { app, BrowserWindow, dialog, ipcMain, shell, Menu } = require('electron');
+const { spawn } = require('node:child_process');
+const { join, resolve } = require('node:path');
+const { existsSync } = require('node:fs');
+
+// The desktop shell.
+//
+// It owns three things the browser could not:
+//   · a port nobody else chose        — the API listens on 0, we read it back
+//   · a real file picker              — a web file input gives a name, never a path
+//   · one process the user can quit   — instead of two terminals and pm2
+//
+// It deliberately owns nothing else. All product logic stays in the backend, so
+// the same build runs headless in CI and under `npm run verify`.
+
+const isDev = !app.isPackaged;
+const root = isDev ? resolve(__dirname, '..') : resolve(process.resourcesPath, 'app');
+const backendEntry = join(root, 'backend', 'server.js');
+const webRoot = join(root, 'frontend', 'dist');
+
+let backend = null;
+let win = null;
+let ready = null; // { port, packaged, dbPath }
+
+/** Start the API and wait for it to say which port it actually got. */
+function startBackend() {
+  return new Promise((ok, no) => {
+    if (!existsSync(backendEntry)) {
+      return no(new Error(`The backend is missing at ${backendEntry}.`));
+    }
+
+    backend = spawn(process.execPath, [backendEntry], {
+      cwd: join(root, 'backend'),
+      env: {
+        ...process.env,
+        // Port 0 asks the OS for a free one. A fixed port collides with whatever
+        // else is on the machine, and with a second copy of this app.
+        PORT: '0',
+        WEB_ROOT: webRoot,
+        // Electron's own node; the backend must not try to re-exec Electron.
+        ELECTRON_RUN_AS_NODE: '1',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let buffered = '';
+    const settleTimer = setTimeout(
+      () => no(new Error(`The backend did not report a port within 20s.\n${buffered.slice(-800)}`)),
+      20000
+    );
+
+    backend.stdout.on('data', (chunk) => {
+      buffered += chunk;
+      process.stdout.write(chunk);
+      const line = /STUDIO_READY (\{.*\})/.exec(buffered);
+      if (line) {
+        clearTimeout(settleTimer);
+        ok(JSON.parse(line[1]));
+      }
+    });
+    backend.stderr.on('data', (chunk) => {
+      buffered += chunk;
+      process.stderr.write(chunk);
+    });
+    backend.on('error', (err) => { clearTimeout(settleTimer); no(err); });
+    backend.on('exit', (code) => {
+      clearTimeout(settleTimer);
+      backend = null;
+      // A backend that dies takes the app with it rather than leaving a window
+      // whose every action fails with a network error.
+      if (code !== 0 && !app.isQuitting) {
+        dialog.showErrorBox('AI Video Studio stopped',
+          `The backend exited with code ${code}.\n\n${buffered.slice(-1200)}`);
+        app.quit();
+      }
+    });
+  });
+}
+
+function createWindow(port) {
+  win = new BrowserWindow({
+    width: 1400,
+    height: 940,
+    minWidth: 960,
+    minHeight: 640,
+    backgroundColor: '#f6f6f4',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, 'preload.js'),
+      // The renderer is our own build, but it also renders provider data. No
+      // reason to hand it Node.
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+
+  win.once('ready-to-show', () => win.show());
+  win.loadURL(`http://127.0.0.1:${port}/`);
+
+  // A link to somewhere else is somewhere else: open it in the real browser
+  // rather than turning this window into one.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith(`http://127.0.0.1:${port}`)) {
+      e.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+}
+
+// ------------------------------------------------------------------- IPC ---
+// The renderer asks; the main process decides. Every handler below returns a
+// path the USER chose in a native dialog — the renderer can never name a file
+// on its own.
+
+ipcMain.handle('studio:pick-video', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Choose a video to analyse',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Video', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  return r.canceled ? null : r.filePaths[0];
+});
+
+ipcMain.handle('studio:pick-folder', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Where should exports go?',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  return r.canceled ? null : r.filePaths[0];
+});
+
+ipcMain.handle('studio:reveal', async (_e, path) => {
+  if (typeof path === 'string' && path.startsWith('/')) shell.showItemInFolder(path);
+});
+
+ipcMain.handle('studio:info', async () => ({
+  version: app.getVersion(),
+  platform: process.platform,
+  dbPath: ready?.dbPath ?? null,
+}));
+
+// ----------------------------------------------------------------- lifecycle
+
+app.whenReady().then(async () => {
+  try {
+    ready = await startBackend();
+  } catch (err) {
+    dialog.showErrorBox('AI Video Studio could not start', err.message);
+    app.quit();
+    return;
+  }
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' },
+        { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
+        { type: 'separator' }, { role: 'togglefullscreen' },
+      ],
+    },
+    { role: 'windowMenu' },
+  ]));
+
+  createWindow(ready.port);
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(ready.port);
+  });
+});
+
+app.on('before-quit', () => { app.isQuitting = true; });
+
+// The backend is a child of this app, not a service left running on the
+// machine. Quitting the window quits the server with it.
+app.on('window-all-closed', () => app.quit());
+app.on('quit', () => backend?.kill('SIGTERM'));
+process.on('exit', () => backend?.kill('SIGTERM'));
