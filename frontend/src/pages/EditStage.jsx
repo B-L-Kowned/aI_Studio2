@@ -5,10 +5,13 @@ import { api } from '../services/api.js';
 
 const clock = (sec) =>
   `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+const SUPPORTED = new Set(['Trim / Cut', 'Create Short Clip']);
 
 export default function EditStage() {
   const { production, meta, mutate } = useStudio();
   const [state, setState] = useState(null);
+  const [editingTool, setEditingTool] = useState(null);
+  const [range, setRange] = useState({ from: '', to: '', note: '' });
 
   const load = useCallback(async () => setState(await api.render(production.id)), [production.id]);
   useEffect(() => { load(); }, [load]);
@@ -53,16 +56,53 @@ export default function EditStage() {
       </div>
 
       <div className="editorgrid">
-        {meta.editorTools.map((tool) => (
+        {meta.editorTools.map((tool) => {
+          const built = SUPPORTED.has(tool);
+          return (
           <button
             key={tool}
-            disabled={!ready}
-            onClick={() => mutate(() => api.applyEdit(production.id, latest.id, { kind: tool }), apply)}
+            className={built ? '' : 'roadmap'}
+            disabled={!ready || !built}
+            title={built ? 'Add a precise range to the edit decision list' : 'Roadmap — this tool is not built yet'}
+            onClick={() => setEditingTool(tool)}
           >
             <Scissors size={14} /> {tool}
           </button>
-        ))}
+          );
+        })}
       </div>
+
+      {editingTool && (
+        <div className="editform">
+          <label>Start
+            <input value={range.from} placeholder="0:05" onChange={(e) => setRange({ ...range, from: e.target.value })} />
+          </label>
+          <label>End
+            <input value={range.to} placeholder="0:12" onChange={(e) => setRange({ ...range, to: e.target.value })} />
+          </label>
+          <label>Decision note
+            <input value={range.note} placeholder="Why this is the range to keep"
+              onChange={(e) => setRange({ ...range, note: e.target.value })} />
+          </label>
+          <button className="primary" disabled={!range.from.trim() || !range.to.trim()}
+            onClick={async () => {
+              try {
+                await mutate(
+                  () => api.applyEdit(production.id, latest.id, {
+                    kind: editingTool,
+                    target: `${range.from.trim()}-${range.to.trim()}`,
+                    note: range.note.trim(),
+                  }),
+                  apply
+                );
+                setEditingTool(null);
+                setRange({ from: '', to: '', note: '' });
+              } catch { /* mutate reports it */ }
+            }}>
+            Apply range
+          </button>
+        </div>
+      )}
 
       {ready && latest.editDecisions.length > 0 && (
         <div className="edl">

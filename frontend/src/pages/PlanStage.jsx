@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sparkles, Users, Clock, Video, Upload, FileText, Link, FolderKanban,
-  Lock, Check, AlertCircle, UserPlus, Trash2, X, RefreshCw,
+  Lock, Check, AlertCircle, UserPlus, Trash2, X, RefreshCw, Image as ImageIcon,
 } from 'lucide-react';
 import { useStudio, toSeconds, toClock } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import PeoplePage from './PeoplePage.jsx';
 
-const VIEWS = ['Brief', 'Outline', 'Scenes', 'People', 'Sources', 'Decisions'];
+const VIEWS = ['Brief', 'Outline', 'Scenes', 'People', 'Sources', 'Appearance', 'Decisions'];
 
 export default function PlanStage({ goToStage }) {
   const [view, setView] = useState('Outline');
@@ -49,6 +49,7 @@ export default function PlanStage({ goToStage }) {
         {view === 'Scenes' && <Scenes goToStage={goToStage} />}
         {view === 'People' && <PeoplePage compact />}
         {view === 'Sources' && <Sources />}
+        {view === 'Appearance' && <Appearance />}
         {view === 'Decisions' && <Decisions />}
       </section>
     </div>
@@ -291,7 +292,9 @@ function Sources() {
   const canImportVideo = workspace.capabilities.includes('source.existing_video');
 
   const [state, setState] = useState(null);
+  const [workflow, setWorkflow] = useState(null);
   const [path, setPath] = useState('');
+  const [website, setWebsite] = useState('');
   const [busy, setBusy] = useState(false);
   // The desktop shell exposes exactly one thing here: a native file picker.
   const desktop = typeof window !== 'undefined' && window.studio?.desktop;
@@ -301,10 +304,14 @@ function Sources() {
     if (picked) setPath(picked);
   };
 
-  const load = useCallback(
-    () => api.analysis(production.id).then(setState),
-    [production.id]
-  );
+  const load = useCallback(async () => {
+    const [analysis, flow] = await Promise.all([
+      api.analysis(production.id),
+      api.workflow(production.id),
+    ]);
+    setState(analysis);
+    setWorkflow(flow);
+  }, [production.id]);
   useEffect(() => { load(); }, [load]);
 
   const add = (name, kind) =>
@@ -317,13 +324,100 @@ function Sources() {
     finally { setBusy(false); }
   };
 
+  const research = async () => {
+    setBusy(true);
+    try {
+      await mutate(() => api.researchWebsite(production.id, website), (res) => setWorkflow(res.data));
+      setWebsite('');
+      const opened = await api.openProduction(production.id);
+      applyProduction(opened);
+    } catch { /* mutate reports it */ }
+    finally { setBusy(false); }
+  };
+
+  const approveResearch = async (item) => {
+    try {
+      await mutate(
+        () => api.reviewResearch(production.id, item.id, true),
+        (res) => setWorkflow(res.data)
+      );
+      // Research may have filled empty brief fields, so refresh the production
+      // rather than leaving Brief one save behind the evidence on this page.
+      applyProduction(await api.openProduction(production.id));
+    } catch { /* mutate reports it */ }
+  };
+
   const analysed = state?.sources.find((s) => s.analysis);
   const a = analysed?.analysis;
 
   return (
     <>
       <h2>Sources</h2>
-      <p>Everything the Producer may use to plan this production.</p>
+      <p>Everything the Producer may use to plan this production, with the website claims preserved for review.</p>
+
+      <div className="webresearch">
+        <label>Research a website</label>
+        <div className="analyserrow">
+          <input
+            type="text"
+            inputMode="url"
+            placeholder="https://example.com"
+            value={website}
+            onChange={(e) => setWebsite(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && website.trim() && !busy && research()}
+          />
+          <button className="primary" onClick={research} disabled={!website.trim() || busy}>
+            <Link size={13} /> {busy ? 'Researching…' : 'Research website'}
+          </button>
+        </div>
+        <small>The app reads the public page, stores the evidence it used, and proposes brief fields. You approve it before it can unlock production.</small>
+      </div>
+
+      {workflow?.research.map((item) => (
+        <div className={'researchcard ' + item.status} key={item.id}>
+          <div className="researchhead">
+            <div>
+              <b>{item.title || item.url}</b>
+              <a href={item.url} target="_blank" rel="noreferrer">{item.url}</a>
+            </div>
+            <span className={'rstatus ' + (item.reviewed ? 'complete' : item.status)}>
+              {item.reviewed ? 'approved' : item.status}
+            </span>
+          </div>
+          {item.error && <p className="dangerv"><AlertCircle size={13} /> {item.error}</p>}
+          {item.evidence?.summary && <p>{item.evidence.summary}</p>}
+          {item.evidence?.headings?.length > 0 && (
+            <div className="evidencechips">
+              {item.evidence.headings.slice(0, 8).map((heading, i) => <span key={`${heading}-${i}`}>{heading}</span>)}
+            </div>
+          )}
+          {Object.keys(item.suggestedBrief ?? {}).length > 0 && (
+            <dl className="researchbrief">
+              {Object.entries(item.suggestedBrief).map(([label, value]) => (
+                <React.Fragment key={label}><dt>{label}</dt><dd>{value}</dd></React.Fragment>
+              ))}
+            </dl>
+          )}
+          {item.status === 'complete' && !item.reviewed && (
+            <button className="primary" onClick={() => approveResearch(item)}>
+              <Check size={13} /> Approve evidence + fill empty brief fields
+            </button>
+          )}
+          {item.status === 'failed' && (
+            <button onClick={async () => {
+              try {
+                await mutate(
+                  () => api.deleteResearch(production.id, item.id),
+                  (res) => setWorkflow(res.data)
+                );
+                applyProduction(await api.openProduction(production.id));
+              } catch { /* mutate reports it */ }
+            }}>
+              <Trash2 size={13} /> Remove failed source
+            </button>
+          )}
+        </div>
+      ))}
 
       {/* Measuring a video you already have. Every number below comes from
           ffmpeg on this machine — nothing is uploaded and no key is used. */}
@@ -399,7 +493,7 @@ function Sources() {
       )}
 
       <div className="cards">
-        {[[Upload, 'Upload file / video', 'file'], [Link, 'Add URL', 'url'],
+        {[[Upload, 'Upload file / video', 'file'],
           [FileText, 'Paste text', 'text'], [FolderKanban, 'Choose from Library', 'library']]
           .map(([I, t, kind]) => (
             <div className="card clickable" key={t} onClick={() => add(t, kind)}>
@@ -417,6 +511,119 @@ function Sources() {
           </div>
         </div>
       ))}
+    </>
+  );
+}
+
+function Appearance() {
+  const { production, mutate } = useStudio();
+  const [workflow, setWorkflow] = useState(null);
+  const [presenters, setPresenters] = useState([]);
+  const [form, setForm] = useState({
+    presenterId: '', label: 'Approved look', imageUrl: '', outfit: '', background: '', framing: '', notes: '',
+  });
+
+  const load = useCallback(async () => {
+    const [flow, castable] = await Promise.all([
+      api.workflow(production.id),
+      api.castablePresenters(),
+    ]);
+    const proofable = castable.filter((p) => p.kind !== 'avatar');
+    setWorkflow(flow);
+    setPresenters(proofable);
+    setForm((current) => ({
+      ...current,
+      presenterId: current.presenterId || (proofable[0]?.id ? String(proofable[0].id) : ''),
+    }));
+  }, [production.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    try {
+      await mutate(
+        () => api.createAppearance(production.id, { ...form, presenterId: Number(form.presenterId) }),
+        (res) => setWorkflow(res.data)
+      );
+      setForm((current) => ({ ...current, imageUrl: '', outfit: '', background: '', framing: '', notes: '' }));
+    } catch { /* mutate reports it */ }
+  };
+
+  const setStatus = async (proof, status) => {
+    try {
+      await mutate(
+        () => api.updateAppearance(production.id, proof.id, { status }),
+        (res) => setWorkflow(res.data)
+      );
+    } catch { /* mutate reports it */ }
+  };
+
+  if (!workflow) return <p className="muted">Loading…</p>;
+  return (
+    <>
+      <h2>Appearance Approval</h2>
+      <p>Approve the exact look before video generation: performer, outfit, background and framing.</p>
+
+      {presenters.length ? (
+        <div className="appearanceform">
+          <label>Performer
+            <select value={form.presenterId} onChange={(e) => setForm({ ...form, presenterId: e.target.value })}>
+              {presenters.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.kind}</option>)}
+            </select>
+          </label>
+          <label>Proof image URL
+            <input value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+              placeholder="Provider preview or approved reference image" />
+          </label>
+          <label>Outfit
+            <input value={form.outfit} onChange={(e) => setForm({ ...form, outfit: e.target.value })}
+              placeholder="Black crew neck, no logos" />
+          </label>
+          <label>Background
+            <input value={form.background} onChange={(e) => setForm({ ...form, background: e.target.value })}
+              placeholder="Warm neutral studio" />
+          </label>
+          <label>Framing
+            <input value={form.framing} onChange={(e) => setForm({ ...form, framing: e.target.value })}
+              placeholder="9:16, waist-up, centered" />
+          </label>
+          <label>Notes
+            <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="Expression, lighting, continuity notes" />
+          </label>
+          <button className="primary" onClick={save}
+            disabled={!form.presenterId || !form.imageUrl.trim() || !form.outfit.trim() || !form.background.trim() || !form.framing.trim()}>
+            <ImageIcon size={14} /> Save proof for approval
+          </button>
+        </div>
+      ) : (
+        <div className="notice"><Check /> No personal or fictional performer is castable yet. Stock avatars use the selected provider appearance.</div>
+      )}
+
+      <div className="proofgrid">
+        {workflow.appearances.map((proof) => (
+          <article className={'proofcard ' + proof.status} key={proof.id}>
+            {/^https?:\/\//i.test(proof.imageUrl ?? '')
+              ? <img src={proof.imageUrl} alt={`${proof.presenterName} appearance proof`} />
+              : <div className="proofplaceholder"><ImageIcon /></div>}
+            <div>
+              <span className={'rstatus ' + proof.status}>{proof.status}</span>
+              <b>{proof.presenterName} · {proof.label}</b>
+              <small><strong>Outfit</strong> {proof.outfit || '—'}</small>
+              <small><strong>Background</strong> {proof.background || '—'}</small>
+              <small><strong>Framing</strong> {proof.framing || '—'}</small>
+              {proof.notes && <p>{proof.notes}</p>}
+              {proof.status === 'draft' && (
+                <div className="proofactions">
+                  <button onClick={() => setStatus(proof, 'rejected')}>Reject</button>
+                  <button className="primary" onClick={() => setStatus(proof, 'approved')}>
+                    <Check size={13} /> Approve this look
+                  </button>
+                </div>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
     </>
   );
 }

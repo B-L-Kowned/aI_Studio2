@@ -50,6 +50,11 @@ up with a project you cannot open.
 The open production is remembered in `workspace.last_production_id`, so a restart returns to
 where you were. Productions are fully isolated: editing one never marks another stale.
 
+A URL start is now a real workflow: the backend reads one public page, stores the evidence,
+proposes brief fields, and waits for human approval. The approved source summary and CTA feed
+the editable script. Shipping-voice approval and an appearance proof then join the approved
+plan in one Production Lock before any non-Fixtures render can reach HeyGen.
+
 ## Data
 
 **SQLite**, not a database server — a desktop app cannot ask a customer to run one.
@@ -103,8 +108,8 @@ an absolute origin would be compiled into the bundle and pin the app to one host
 | area | endpoints |
 |---|---|
 | workspace | `GET /api/workspace` · `POST /workspace/license\|storage\|ai\|connections\|mode\|complete-onboarding` |
-| planning | `GET /api/productions/current` · brief/outline/scene CRUD · `POST …/outline/rebalance` · `GET …/producer` |
-| pipeline | `…/script/generate\|accept\|reject` · `…/render` · `…/render/:id/edit` · `…/export` · `…/publications/:platform` |
+| planning | `GET /api/productions/current` · brief/outline/scene CRUD · website research/review · appearance proofs · Production Lock · `GET …/producer` |
+| pipeline | `…/script/generate\|accept\|reject` · editable proposed script lines · `…/render` · `…/render/:id/edit` · `…/export` · `…/publications/:platform` |
 | providers | `GET /api/providers` · `POST /providers/:id/connect\|sync\|disconnect` · `GET /provider-jobs/:id` |
 
 ## State rule
@@ -125,7 +130,12 @@ cd frontend && BUILD_DIR=.verify-build npm run build
   local origin. A packaged build is still required for the correct Dock name.
 - BYO keys still need to move to the OS keychain via `safeStorage`;
   `lib/credentials.js` is the seam for that swap.
-- Source/URL import and the collaborator invite landing page are not built.
+- URL research is built for one public page; it is not a crawler. The
+  collaborator invite landing page is not built.
+- Appearance approval is durable, but creating a reusable provider-native
+  HeyGen Look/avatar from it still needs a verified provider operation.
+- The Producer is an assessment/action panel, not yet a free-form conversational
+  collaborator across the full workflow.
 - The editor presents the broader roadmap, but only time-range trim/short-clip
   decisions are currently applied to exported files. Captions, graphics,
   reframing, B-roll and the other listed operations remain unimplemented.

@@ -1,6 +1,6 @@
 # AI Video Studio — Handoff
 
-**Written 2026-09-29.** Last updated the same day, after the two-pocket fix. For someone (or another model) picking this up cold.
+**Written 2026-09-29.** Last updated the same day, after the desktop workflow-parity build. For someone (or another model) picking this up cold.
 Everything here was measured against the running app on the date above, not
 recalled. Where a claim could not be verified, it says so.
 
@@ -31,14 +31,18 @@ changing the words is not approval of the new words.
 ## 2. Where it is right now
 
 ```
-git  4846c7c  Expand production workflow and provider routing
+git  552bb6d  Reconcile handoff with verified commit state
+     4846c7c  Expand production workflow and provider routing
      6326e00  Scope the app by program, make days schedulable, fix breadcrumb and add history
      03b055e  Fix Electron N-API floor, centre header nav, stop Cast claiming artwork, repair dead gate suite
      07929e3  Initial commit
 ```
 
-**Handoff bundle committed as `4846c7c`** (see §7). Tests: **186 assertions,
-exit 0**. Frontend production build: clean.
+The prior handoff is committed through `552bb6d`. The workflow-parity work
+lives on `codex/production-workflow-parity`. Tests: **200 assertions, exit 0**.
+Frontend production build: clean. The Electron build was also walked against a
+temporary Fixtures database: Sources, Appearance, Production Lock and
+Prepare-only destinations all rendered in the desktop shell.
 
 | | |
 |---|---|
@@ -70,8 +74,29 @@ being renderable.
 ## 3. The pipeline, and exactly where it stops for free
 
 ```
-Plan → Script → Segments → Render → Edit → Publish
+Website evidence → Plan → editable Script → Segments / voice approval
+                 → Appearance approval → Production Lock → Render → Edit → Publish
 ```
+
+The parity build makes the process used in the mobile ChatGPT conversation a
+desktop workflow, not a separate mobile product:
+
+1. A URL start now fetches a public page, preserves the evidence and proposes
+   brief fields. Private/local-network URLs are refused.
+2. A person approves that evidence before a script may be generated.
+3. The approved source summary and CTA actually reach the generated script.
+4. Proposed script lines are editable; accepted versions are immutable.
+5. Voice approval remains the existing hard gate: the shipping take must be
+   auditioned and heard.
+6. Personal and fictional performers have durable appearance proofs (image,
+   outfit, background and framing) with explicit approval. A stock avatar's
+   selected provider asset is its fixed appearance.
+7. Render shows one Production Lock with every blocker. Any mode capable of
+   reaching HeyGen is also blocked server-side.
+8. Trim / Cut and Create Short Clip now collect a real time range; all other
+   editor tools are visibly disabled roadmap items.
+9. Social destinations with no connector are Prepare-only. They no longer
+   claim a seeded connection or offer fake scheduling/publishing.
 
 Walked end to end in Fixtures mode on production 51. **Free and working:**
 
@@ -200,8 +225,10 @@ that was not the answer**. Assume more exist.
 
 | | |
 |---|---|
-| **Post-render editing** | The exporter can apply `Trim / Cut` and `Create Short Clip` when an edit decision contains a valid time range, but the current screen does not collect that range, so those buttons do not yet produce a changed file through the UI. The other listed editor tools are roadmap labels only. No lower-thirds, burn-in captions or branding. `caption` exists only as publish metadata. |
-| **Source / URL import** | 1 of 6 start sources. The UI refuses rather than making a blank production. |
+| **Post-render editing** | `Trim / Cut` and `Create Short Clip` are built end to end and collect a valid time range. The other listed editor tools are disabled roadmap labels. No lower-thirds, burn-in captions or branding. `caption` exists only as publish metadata. |
+| **Source / URL import** | **Built in the parity branch.** Public page evidence, human review, brief proposal, script context and SSRF protections are included. It reads one page; it is not a crawler. |
+| **Conversational producer** | The durable workflow states now exist, and proposed script lines can be revised directly. A free-form assistant that proposes controlled mutations across all stages is not built yet. |
+| **Provider-native reusable Look creation** | Appearance proof and approval are built. Creating a new reusable HeyGen avatar/look from that proof still needs a verified provider operation; the app does not pretend the approval record created one remotely. |
 | **QR / invite destination** | `POST /people/invite` mints a token and returns `/invite/<token>`. **There is no page at that path** — it falls through to the dashboard. No QR. **Open question: whether HeyGen's API can mint an avatar-creation link at all.** Establish that before designing anything. |
 | **OS keychain** | Specified in `desktop/KEYCHAIN.md`. Blocked by this machine's credential guard, which refuses commands naming a credential source. |
 | **Transcription** | Needs whisper.cpp or faster-whisper installed. The analyser says so rather than returning an empty transcript. |
@@ -304,6 +331,8 @@ render gate.** Two questions, two tools: *"are these the right words"* is free;
 5. **Delete the seeded fixture campaigns** (`Product Launches`, `AI Education`)
    — demo data polluting a real workspace.
 6. Decide on **overlays** and the **QR/invite** flow.
+7. Add a controlled conversational producer over the new durable research,
+   script, voice, appearance and lock states.
 
 ---
 

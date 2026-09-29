@@ -6,11 +6,19 @@ import { api } from '../services/api.js';
 export default function RenderStage() {
   const { production, mutate } = useStudio();
   const [state, setState] = useState(null);
+  const [lock, setLock] = useState(null);
   const [path, setPath] = useState(null);
   const [confirming, setConfirming] = useState(false);
   const timer = useRef(null);
 
-  const load = useCallback(async () => setState(await api.render(production.id)), [production.id]);
+  const load = useCallback(async () => {
+    const [render, productionLock] = await Promise.all([
+      api.render(production.id),
+      api.productionLock(production.id),
+    ]);
+    setState(render);
+    setLock(productionLock);
+  }, [production.id]);
   useEffect(() => { load(); }, [load]);
 
   // Which pocket pays, said BEFORE the button is pressed. The router already
@@ -41,8 +49,10 @@ export default function RenderStage() {
         </div>
         <button
           className="primary"
-          disabled={path?.path === 'none'}
-          title={path?.path === 'none' ? path.reason : path?.reason ?? ''}
+          disabled={!lock?.ready || path?.path === 'none'}
+          title={!lock?.ready
+            ? `${lock?.blockers?.length ?? 0} production approval${lock?.blockers?.length === 1 ? '' : 's'} still block rendering`
+            : path?.path === 'none' ? path.reason : path?.reason ?? ''}
           // A paid render needs explicit confirmation. The button used to send
           // the request without it and get a 402 every time, so in Live mode it
           // could never succeed — the safety gate had no door.
@@ -90,6 +100,20 @@ export default function RenderStage() {
             </b>{' '}
             {path.reason}
           </span>
+        </div>
+      )}
+
+      {lock && (
+        <div className="productionlock">
+          <b>Production Lock · {lock.ready ? 'ready to render' : `${lock.blockers.length} blocker${lock.blockers.length === 1 ? '' : 's'}`}</b>
+          {lock.gates.map((gate) => (
+            <div className={'lockrow ' + gate.status} key={gate.key}>
+              {gate.status === 'pass' ? <Check /> : gate.status === 'warn' ? <AlertCircle /> : <X />}
+              <strong>{gate.label}</strong>
+              <span>{gate.detail}</span>
+              {gate.action && <em>{gate.action}</em>}
+            </div>
+          ))}
         </div>
       )}
 

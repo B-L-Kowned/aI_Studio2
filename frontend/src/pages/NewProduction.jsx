@@ -28,7 +28,11 @@ const SOURCE = {
     needs: 'project',
     help: 'Brief, outline and scenes are copied. Scripts, renders and publications are not — those are work, not plan.',
   },
-  url: { label: 'a source URL', needs: 'unavailable' },
+  url: {
+    label: 'a source URL',
+    needs: 'url',
+    help: 'The app reads the public page, preserves the evidence and waits for your review before rendering.',
+  },
 };
 
 export default function NewProduction({
@@ -50,6 +54,7 @@ export default function NewProduction({
   const [videoFile, setVideoFile] = useState('');
   const [scriptText, setScriptText] = useState('');
   const [copyFromId, setCopyFromId] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
   // null = not creating one; a string = the name being typed.
   const [newCampaignName, setNewCampaignName] = useState(null);
   const [err, setErr] = useState(null);
@@ -68,7 +73,8 @@ export default function NewProduction({
     source.needs !== 'unavailable' &&
     (source.needs !== 'video' || !!videoFile.trim()) &&
     (source.needs !== 'script' || !!scriptText.trim()) &&
-    (source.needs !== 'project' || !!copyFromId);
+    (source.needs !== 'project' || !!copyFromId) &&
+    (source.needs !== 'url' || !!sourceUrl.trim());
 
   const submit = async (e) => {
     e.preventDefault();
@@ -91,6 +97,7 @@ export default function NewProduction({
         videoFile: videoFile.trim() || null,
         scriptText: scriptText.trim() || null,
         copyFromId: copyFromId ? Number(copyFromId) : null,
+        sourceUrl: sourceUrl.trim() || null,
       });
       onDone?.();
       onClose();
@@ -100,28 +107,6 @@ export default function NewProduction({
       setBusy(false);
     }
   };
-
-  if (source.needs === 'unavailable') {
-    return (
-      <>
-        <div className="scrim" onClick={onClose} />
-        <div className="modal">
-          <div className="modalhead">
-            <b>Not built yet</b>
-            <button onClick={onClose}><X size={15} /></button>
-          </div>
-          <p className="muted">
-            Building a production from a URL means fetching the page, deciding what on it is
-            the content, and reading it — a real piece of work that is not done. Rather than
-            create a blank production and call it a URL import, this route says so.
-          </p>
-          <div className="actions">
-            <button className="primary" onClick={onClose}>Understood</button>
-          </div>
-        </div>
-      </>
-    );
-  }
 
   return (
     <>
@@ -173,6 +158,22 @@ export default function NewProduction({
                 placeholder={'Pat: So the thing about agents is that they fail quietly.\nChristine: Which is the worst way to fail.'}
                 value={scriptText}
                 onChange={(e) => setScriptText(e.target.value)}
+                autoFocus
+              />
+              <small className="obhelp">{source.help}</small>
+            </label>
+          )}
+
+          {source.needs === 'url' && (
+            <label className="oblabel">
+              Website URL
+              <input
+                className="obinput"
+                type="text"
+                inputMode="url"
+                placeholder="https://example.com"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
                 autoFocus
               />
               <small className="obhelp">{source.help}</small>
@@ -262,7 +263,7 @@ export default function NewProduction({
             <button type="button" onClick={onClose}>Cancel</button>
             <button className="primary" type="submit" disabled={busy || !ready}>
               {busy
-                ? (source.needs === 'video' ? 'Measuring…' : 'Creating…')
+                ? (source.needs === 'video' ? 'Measuring…' : source.needs === 'url' ? 'Researching…' : 'Creating…')
                 : 'Create production'}
             </button>
           </div>

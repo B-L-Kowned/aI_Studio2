@@ -17,7 +17,8 @@ export default function PublishStage() {
     // Same fallback the select uses. They disagreed, so a card showing "Publish
     // via connection" could send "prepare" and report success for the wrong act.
     const target = state.targets.find((t) => t.platform === platform);
-    const mode = modes[platform] ?? target?.mode ?? 'prepare';
+    const requested = modes[platform] ?? target?.mode ?? 'prepare';
+    const mode = target?.availableModes?.includes(requested) ? requested : 'prepare';
     try {
       await mutate(() => api.publish(production.id, platform, mode), null);
     } catch { /* mutate reports it */ }
@@ -46,15 +47,19 @@ export default function PublishStage() {
             <b>{t.platform}</b>
             <span className="chandetail">{t.domain ?? t.detail}</span>
             <span className={'conn ' + (t.connected ? 'on' : 'off')}>
-              {t.connected ? <><Check size={12} /> Connected</> : 'Not connected'}
+              {t.connected
+                ? <><Check size={12} /> Connected</>
+                : t.canReallyPublish ? 'Not connected' : 'Manual handoff · connector not built'}
             </span>
             <select
               value={modes[t.platform] ?? t.mode}
               onChange={(e) => setModes((m) => ({ ...m, [t.platform]: e.target.value }))}
             >
-              <option value="prepare">Prepare only</option>
-              <option value="schedule">Schedule via connection</option>
-              <option value="publish">Publish via connection</option>
+              {t.availableModes.map((mode) => (
+                <option value={mode} key={mode}>
+                  {{ prepare: 'Prepare only', schedule: 'Schedule via connection', publish: 'Publish via connection' }[mode]}
+                </option>
+              ))}
             </select>
             <button
               className={(modes[t.platform] ?? t.mode) === 'publish' ? 'primary' : ''}

@@ -108,6 +108,47 @@ CREATE TABLE IF NOT EXISTS sources (
   kind          TEXT NOT NULL DEFAULT 'video'
 );
 
+-- A URL is evidence, not merely a string pasted into the brief. Keep the
+-- fetched facts and the operator's review separately so a script can always
+-- show what it relied on and whether a person accepted that reading.
+CREATE TABLE IF NOT EXISTS website_research (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  production_id INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+  source_id     INTEGER REFERENCES sources(id) ON DELETE SET NULL,
+  url           TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (status IN ('pending','complete','failed')),
+  title         TEXT,
+  description   TEXT,
+  evidence      TEXT,
+  snapshot      TEXT,
+  suggested_brief TEXT,
+  reviewed      INTEGER NOT NULL DEFAULT 0,
+  error         TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  researched_at TEXT,
+  reviewed_at   TEXT
+);
+
+-- The exact visual proof approved before a personal or fictional performer is
+-- sent to video generation. Provider ids may change; this evidence stays with
+-- the production.
+CREATE TABLE IF NOT EXISTS appearance_proofs (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  production_id INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+  presenter_id  INTEGER REFERENCES presenters(id) ON DELETE SET NULL,
+  label         TEXT NOT NULL DEFAULT 'Appearance proof',
+  image_url     TEXT,
+  outfit        TEXT NOT NULL DEFAULT '',
+  background    TEXT NOT NULL DEFAULT '',
+  framing       TEXT NOT NULL DEFAULT '',
+  notes         TEXT NOT NULL DEFAULT '',
+  status        TEXT NOT NULL DEFAULT 'draft'
+                     CHECK (status IN ('draft','approved','rejected')),
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  approved_at   TEXT
+);
+
 CREATE TABLE IF NOT EXISTS people (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT NOT NULL,
@@ -215,6 +256,8 @@ CREATE INDEX IF NOT EXISTS idx_outline_production ON outline_sections(production
 CREATE INDEX IF NOT EXISTS idx_scenes_production  ON scenes(production_id, position);
 CREATE INDEX IF NOT EXISTS idx_script_production  ON script_versions(production_id, version);
 CREATE INDEX IF NOT EXISTS idx_render_production  ON render_versions(production_id, version);
+CREATE INDEX IF NOT EXISTS idx_research_production ON website_research(production_id, id);
+CREATE INDEX IF NOT EXISTS idx_appearance_production ON appearance_proofs(production_id, presenter_id, id);
 
 -- Provider integration (HeyGen and any future generation provider).
 -- The UI never names a provider; the router in lib/providers/index.js does.

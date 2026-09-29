@@ -856,6 +856,45 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 .source b { font-size: 13px; }
 .source small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 
+.webresearch, .appearanceform {
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: 14px; margin: 14px 0; background: var(--surface-2);
+}
+.webresearch > label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 7px; }
+.webresearch > small { display: block; color: var(--faint); font-size: 11.5px; margin-top: 7px; line-height: 1.5; }
+.researchcard {
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: 14px; margin: 12px 0; background: var(--surface);
+}
+.researchcard.failed { border-left: 3px solid var(--danger); }
+.researchhead { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.researchhead > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.researchhead b { font-size: 13.5px; }
+.researchhead a { font: 11px var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.researchcard > p { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
+.researchcard > p.dangerv { display: flex; align-items: flex-start; gap: 6px; color: var(--danger); }
+.evidencechips { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 0; }
+.evidencechips span { padding: 3px 7px; border: 1px solid var(--line); border-radius: 20px; color: var(--muted); font-size: 10.5px; }
+.researchbrief { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; padding: 10px 0; margin: 0; }
+.researchbrief dt { color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.researchbrief dd { margin: 0; font-size: 12px; color: var(--ink-2); }
+
+.appearanceform { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.appearanceform label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.appearanceform button { justify-self: start; align-self: end; }
+.proofgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; margin-top: 14px; }
+.proofcard { display: grid; grid-template-columns: 120px 1fr; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); }
+.proofcard.approved { border-color: #c5e3d5; }
+.proofcard.rejected { opacity: .65; }
+.proofcard > img, .proofplaceholder { width: 120px; height: 150px; object-fit: cover; background: var(--canvas); }
+.proofplaceholder { display: grid; place-items: center; color: var(--line-2); }
+.proofcard > div:last-child { display: flex; flex-direction: column; gap: 5px; padding: 11px; min-width: 0; }
+.proofcard b { font-size: 12.5px; }
+.proofcard small { color: var(--muted); font-size: 11px; }
+.proofcard small strong { color: var(--ink-2); font-weight: 600; }
+.proofcard p { font-size: 11.5px; color: var(--muted); margin: 2px 0; }
+.proofactions { display: flex; gap: 6px; margin-top: auto; }
+
 /* --------------------------------------------------------------- stages -- */
 .stagepane {
   background: var(--surface);
@@ -902,6 +941,8 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 .scriptline { display: grid; grid-template-columns: 96px 1fr; gap: 14px; padding: 5px 0; }
 .scriptline b { font-size: 12px; color: var(--muted); text-align: right; font-weight: 560; }
 .scriptline p { margin: 0; line-height: 1.6; font-size: 13.5px; color: var(--ink); }
+.scriptspeaker { font-size: 11.5px; padding: 6px 7px; align-self: start; }
+.scripttext { width: 100%; min-height: 54px; resize: vertical; font: 13px/1.5 inherit; }
 
 /* The Produce stage's styles were removed with the stage itself. Deleting the
    selector with a regex left its declarations behind as an orphan block, which
@@ -951,6 +992,24 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 .editorgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 16px; }
 .editorgrid button { display: flex; gap: 6px; align-items: center; justify-content: flex-start; font-size: 12px; }
 .editorgrid svg { color: var(--muted); flex-shrink: 0; }
+.editorgrid button.roadmap { opacity: .5; cursor: not-allowed; }
+.editform {
+  display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: 8px; align-items: end;
+  padding: 12px; margin-top: 10px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surface-2);
+}
+.editform label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 10.5px; font-weight: 600; }
+.editform input { min-width: 0; }
+
+.productionlock { border: 1px solid var(--line); border-radius: var(--r); margin: 12px 0; overflow: hidden; }
+.productionlock > b { display: block; padding: 9px 12px; background: var(--surface-2); font-size: 12px; }
+.lockrow { display: grid; grid-template-columns: 18px 145px 1fr auto; gap: 8px; align-items: center; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 11.5px; }
+.lockrow svg { width: 14px; height: 14px; }
+.lockrow.pass svg { color: var(--ok); }
+.lockrow.block svg { color: var(--danger); }
+.lockrow.warn svg { color: var(--warn); }
+.lockrow span { color: var(--muted); }
+.lockrow em { color: var(--faint); font-style: normal; font-size: 10.5px; }
 
 .edl { border: 1px solid var(--line); border-radius: var(--r); padding: 13px 15px; margin-top: 16px; }
 .edl > b { display: block; font-size: 11px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }

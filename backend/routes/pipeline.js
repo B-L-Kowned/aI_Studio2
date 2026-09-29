@@ -3,13 +3,14 @@ import { getDb } from '../db/index.js';
 import { markStaleFrom, clearStale, staleSummary } from '../lib/stale.js';
 import { generateScript, estimateRuntime } from '../lib/script-generator.js';
 import { publishTargets, publishChannels, editorTools } from '../data/fixtures.js';
-import { buildExport } from '../lib/exporter.js';
+import { buildExport, planEdits } from '../lib/exporter.js';
 import { audienceFor } from '../lib/companies.js';
 import * as artificialFunny from '../lib/publishers/artificial-funny.js';
 import { pushRenderJob, jobsForRender, pollJob } from '../lib/providers/index.js';
-import { isDryRun } from '../lib/providers/mode.js';
+import { isDryRun, providerMode } from '../lib/providers/mode.js';
 import { castingReadiness } from '../lib/casting.js';
 import { renderGate } from '../lib/segments.js';
+import { productionLock } from '../lib/production-lock.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -63,6 +64,18 @@ router.post(
     const p = db.prepare('SELECT * FROM productions WHERE id = ?').get(id);
     if (!p) return fail(res, 404, 'NOT_FOUND', 'Production not found');
 
+    const websiteSources = db
+      .prepare('SELECT status, reviewed FROM website_research WHERE production_id = ?')
+      .all(id);
+    if (websiteSources.some((source) => source.status !== 'complete' || !source.reviewed)) {
+      return fail(
+        res,
+        409,
+        'RESEARCH_NOT_APPROVED',
+        'Review and approve the website evidence in Plan · Sources before generating a script'
+      );
+    }
+
     // Script is downstream of an approved plan — the handoff makes this explicit.
     if (!p.outline_approved)
       return fail(res, 409, 'OUTLINE_NOT_APPROVED', 'Approve the outline before generating a script');
@@ -90,7 +103,15 @@ router.post(
     // investors and to buyers, and a script that does not know which it is
     // doing is the reason one video has to be rewritten into the other.
     const track = audienceFor(id);
-    const segments = generateScript(scenes, p.title, personas, track);
+    // Approved website evidence is copied into the brief, but recording it is
+    // not enough: the script must actually receive it. The deterministic
+    // generator uses Source summary in the opening and CTA at the close.
+    const brief = Object.fromEntries(
+      db.prepare('SELECT label, value FROM brief_fields WHERE production_id = ? ORDER BY position')
+        .all(id)
+        .map((field) => [field.label, field.value])
+    );
+    const segments = generateScript(scenes, p.title, personas, track, brief);
 
     db.transaction(() => {
       const versionId = db
@@ -127,6 +148,33 @@ router.post(
 
     const affected = action === 'accept' ? markStaleFrom(id, 'script', `Script v${v.version} accepted`) : {};
     return ok(res, { ...scriptState(id), stale: staleSummary(id), affected }, `Script v${v.version} ${action}ed`);
+  })
+);
+
+router.patch(
+  '/:id/script/:versionId/segments/:segmentId',
+  route(async (req, res) => {
+    const db = getDb();
+    const id = Number(req.params.id);
+    const version = db.prepare(
+      'SELECT * FROM script_versions WHERE id = ? AND production_id = ?'
+    ).get(req.params.versionId, id);
+    if (!version) return fail(res, 404, 'NOT_FOUND', 'Script version not found');
+    if (version.status !== 'proposed') {
+      return fail(res, 409, 'SCRIPT_LOCKED', 'Accepted and rejected scripts are immutable; regenerate to make a new proposal');
+    }
+    const segment = db.prepare(
+      'SELECT * FROM script_segments WHERE id = ? AND script_version_id = ?'
+    ).get(req.params.segmentId, version.id);
+    if (!segment) return fail(res, 404, 'NOT_FOUND', 'Script line not found');
+
+    const speaker = req.body?.speaker === undefined ? segment.speaker : String(req.body.speaker).trim();
+    const text = req.body?.text === undefined ? segment.text : String(req.body.text).trim();
+    if (!speaker) return fail(res, 400, 'SPEAKER_REQUIRED', 'A script line needs a speaker');
+    if (!text) return fail(res, 400, 'TEXT_REQUIRED', 'A script line cannot be empty');
+    db.prepare('UPDATE script_segments SET speaker = ?, text = ? WHERE id = ?')
+      .run(speaker.slice(0, 120), text.slice(0, 5000), segment.id);
+    return ok(res, scriptState(id), `Updated script v${version.version}`);
   })
 );
 
@@ -323,6 +371,22 @@ router.post(
       .get(id);
     if (!accepted) return fail(res, 409, 'NO_ACCEPTED_SCRIPT', 'Accept a script version before rendering');
 
+    // Fixtures remains an explicit sandbox for exercising downstream export
+    // and publication code. Any path that can reach HeyGen — including Test's
+    // free, watermarked API-key route — must pass the whole approval chain.
+    const lock = productionLock(id);
+    if (providerMode() !== 'fixtures' && !lock?.ready) {
+      const blockers = lock?.blockers ?? [];
+      return fail(
+        res,
+        409,
+        'PRODUCTION_LOCKED',
+        `Production Lock has ${blockers.length} blocker${blockers.length === 1 ? '' : 's'}: `
+          + blockers.slice(0, 4).map((item) => `${item.label} — ${item.detail}`).join('; ')
+          + (blockers.length > 4 ? '…' : '')
+      );
+    }
+
     // The hard gate applies to the whole production too: if segments exist, every
     // one of them must be cast and heard. Rendering the whole thing must not be a
     // way around a gate that stops you rendering one line of it.
@@ -414,6 +478,15 @@ router.post(
     if (render.status !== 'complete')
       return fail(res, 409, 'RENDER_INCOMPLETE', 'Edits apply to a completed render');
 
+    const supported = new Set(['Trim / Cut', 'Create Short Clip']);
+    if (!supported.has(kind)) {
+      return fail(res, 501, 'NOT_IMPLEMENTED', `${kind} is visible on the editor roadmap but is not built yet`);
+    }
+    const planned = planEdits([{ kind, target, note }]);
+    if (!planned.applied.length) {
+      return fail(res, 400, 'BAD_RANGE', 'Enter a valid time range such as 0:05-0:12; the end must be after the start');
+    }
+
     // Non-destructive: the edit is recorded as a decision; the render is untouched.
     db.prepare('INSERT INTO edit_decisions (render_version_id, kind, target, note) VALUES (?,?,?,?)')
       .run(render.id, kind, String(target ?? '').slice(0, 200), String(note ?? '').slice(0, 500));
@@ -481,9 +554,6 @@ router.get(
     const id = Number(req.params.id);
     const rows = db.prepare('SELECT * FROM publications WHERE production_id = ?').all(id);
     const realConnections = { artificialFunny: await artificialFunny.isConnected() };
-    const connections = Object.fromEntries(
-      db.prepare('SELECT platform, status FROM publishing_connections').all().map((c) => [c.platform, c.status])
-    );
     const latestExport = db
       .prepare('SELECT * FROM exports WHERE production_id = ? ORDER BY version DESC')
       .get(id);
@@ -501,11 +571,14 @@ router.get(
           // For a platform this build can actually reach, "connected" means a
           // key that works — not a row in a seeded table. The card used to say
           // Connected next to a Publish button that could only ever refuse.
-          connected: channel.platform === artificialFunny.PLATFORM
-            ? realConnections.artificialFunny
-            : connections[platform] === 'connected',
+          connected: channel.platform === artificialFunny.PLATFORM && realConnections.artificialFunny,
           canReallyPublish: channel.platform === artificialFunny.PLATFORM,
-          mode: row?.mode ?? 'prepare',
+          availableModes: channel.platform === artificialFunny.PLATFORM && realConnections.artificialFunny
+            ? ['prepare', 'schedule', 'publish']
+            : ['prepare'],
+          mode: channel.platform === artificialFunny.PLATFORM && realConnections.artificialFunny
+            ? (row?.mode ?? 'prepare')
+            : 'prepare',
           status: row?.status ?? 'not_prepared',
           stale: !!row?.stale,
           staleReason: row?.stale_reason ?? null,
@@ -542,18 +615,17 @@ router.post(
     // A platform this build can actually reach decides for itself whether it is
     // connected. The fixtures table only ever knew what it was seeded with.
     const canReallyPublish = platform === artificialFunny.PLATFORM;
-    const connected = canReallyPublish
-      ? await artificialFunny.isConnected()
-      : db.prepare('SELECT status FROM publishing_connections WHERE platform = ?')
-          .get(platform)?.status === 'connected';
+    const connected = canReallyPublish && await artificialFunny.isConnected();
 
     // Publishing philosophy: an unavailable connection degrades to Prepare only,
     // it never blocks the export.
     let effectiveMode = mode;
     let message = `${platform}: ${mode}`;
-    if (mode !== 'prepare' && !connected) {
+    if (mode !== 'prepare' && (!canReallyPublish || !connected)) {
       effectiveMode = 'prepare';
-      message = `${platform} is not connected — prepared a package instead (never blocks export)`;
+      message = canReallyPublish
+        ? `${platform} is not connected — prepared a package instead (never blocks export)`
+        : `${platform} direct publishing is not built — prepared a package for manual upload`;
     }
 
     let postId = null;

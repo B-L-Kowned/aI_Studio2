@@ -100,8 +100,10 @@ Company                     who the work is for
   └── Campaign (track)      what it is for + WHO IT TALKS TO
         └── Production      one video
               ├── Brief · Outline · Scene      the plan
+              ├── Source → WebsiteResearch     evidence + human review
               ├── ScriptVersion → ScriptSegment
               ├── Segment → Take → SegmentRender   one line each
+              ├── Presenter → AppearanceProof  approved visual treatment
               ├── RenderVersion → Export → Publication
               └── Source (imported video + its measurements)
 ```
@@ -136,7 +138,8 @@ deadline is a production; that is the line between them.
 ## 3. The pipeline and its gates
 
 ```
-Plan → Script → Segments → Render → Edit → Publish
+Website evidence → Plan → editable Script → Segments / shipping-voice approval
+                 → Appearance approval → Production Lock → Render → Edit → Publish
 ```
 
 Each stage refuses to run until the one before it is genuinely done. The refusals
@@ -158,6 +161,26 @@ voice approves a sound the video never makes.
 
 **Paid renders need explicit confirmation** (`confirmPaid`), on the whole
 production *and* per segment.
+
+**Website evidence is reviewed before it becomes script context.** URL research
+stores the page title, description, headings, summary, a bounded text snapshot
+and proposed brief fields. A human approves the reading; only then may script
+generation proceed. The approved `Source summary` reaches the opening and the
+approved `CTA` reaches the close. Failed/unreviewed sources keep the lock shut
+but may be removed before review.
+
+**Appearance is a separate approval from casting.** Personal and fictional
+performers need one approved proof per production: image, outfit, background
+and framing. Stock avatars already refer to a fixed provider appearance. The
+approval is a local production record; it does not claim to create a reusable
+provider-native avatar/look.
+
+**`productionLock()` is the one answer to “may this render?”** It returns every
+gate and every blocker together: research, outline, scenes, accepted non-stale
+script, built segments, approved shipping takes, appearance and open-decision
+warnings. The desktop Render screen draws that answer directly. Any provider
+mode that can reach HeyGen enforces it server-side; Fixtures remains an explicit
+offline sandbox for testing export and publication code.
 
 ---
 
@@ -246,6 +269,9 @@ stored at sync time works right up until it silently does not.
 - **Key checks have three verdicts** — `ok` / `refused` / `unknown`. A network
   failure is not a verdict on a key.
 - No inbound auth: the server is loopback-only and single-user.
+- Website fetches accept only HTTP(S), resolve DNS before each hop, refuse
+  loopback/private/link-local addresses, cap redirects and response bytes, and
+  accept only text pages. This is the SSRF boundary for URL research.
 
 ---
 
@@ -265,7 +291,7 @@ extension, so client routing is unaffected.
 |---|---|
 | `/api/workspace` | licence, entitlement, storage, provider mode, LLM routing |
 | `/api/companies`, `/api/campaigns/:id/track` | company → track layer |
-| `/api/productions/*` | production CRUD, pipeline, segments, analysis |
+| `/api/productions/*` | production CRUD, pipeline, segments, analysis, website research, appearance proofs and Production Lock |
 | `/api/series` | bulk episode creation (gated on `plan.series`) |
 | `/api/schedule`, `/api/calendar` | what is blocked, what is due |
 | `/api/ideas` | the parking lot |
@@ -278,7 +304,7 @@ extension, so client routing is unaffected.
 
 ## 8. Tests
 
-`npm run verify` — **184 assertions across three suites**, run against a
+`npm run verify` — **200 assertions across three suites**, run against a
 throwaway database on its own port. It prints a per-suite verdict and a closing
 summary, because a suite that *throws* prints no total and exits non-zero: read
 only the "N passed" lines and an aborted suite is indistinguishable from a clean
@@ -294,9 +320,9 @@ it trains you to read red as normal.
 
 | Suite | Covers |
 |---|---|
-| `verify.mjs` | licence, onboarding, planning, stale propagation, provider sync, publish |
+| `verify.mjs` | licence, onboarding, planning, script revision, editing, stale propagation, provider sync, honest publish |
 | `verify-gate.mjs` | the hard gate — nothing renders unheard |
-| `verify-build.mjs` | series planning, local video analysis, roster import, the parking lot |
+| `verify-build.mjs` | website evidence, appearance approval, Production Lock, series planning, local video analysis, roster import, the parking lot |
 
 ---
 
@@ -310,7 +336,9 @@ it trains you to read red as normal.
 | Character artwork | **Not a gap — an opt-in override.** The previous build's README: each character *borrows a realistic human HeyGen avatar* by default; dropping an image in makes it a mascot/creature instead (HeyGen talking-photo). `images/` was always empty. 158 of 166 now borrow a real face via `backing`; 8 need a hand. This entry previously called it missing artwork, twice. |
 | `/v2/templates` | The one HeyGen endpoint still flagged unverified. |
 | API-key render path | Written, never exercised — no key stored. |
-| Source / URL import | Not built; the UI says so rather than making a blank production. 1 of 6 start sources. |
-| Post-render editing | **Partial.** The exporter can apply `Trim / Cut` and `Create Short Clip` when a decision has a valid time range, but the current screen does not collect that range, so those buttons do not yet change the exported file through the UI. The other listed tools are roadmap labels only. No lower-thirds, burn-in captions or branding. `caption` exists only as publish metadata. |
+| Source / URL import | **Closed in `codex/production-workflow-parity`.** One public page is researched, evidence is preserved and reviewed, and approved context reaches the script. This is intentionally not a crawler. |
+| Post-render editing | **Partial.** `Trim / Cut` and `Create Short Clip` collect ranges and are applied to the exported file. The other tools are disabled roadmap labels. No lower-thirds, burn-in captions or branding. `caption` exists only as publish metadata. |
+| Conversational producer | Durable workflow states and direct script revision are built. A free-form assistant that proposes controlled mutations across stages is not yet built. |
+| Provider-native reusable Look | Local appearance proof/approval is built; a verified HeyGen operation to create a reusable remote look/avatar from it is not. |
 | Script → Segments | Accepting a script does **not** create segments; "Build from script" is a separate press on an otherwise-empty Segments page. The join between the two halves of the pipeline is a button you have to know about. |
 | Free audio review | **Closed 2026-09-29.** Auditions are HeyGen speech and spend the plan, which made the only way to hear a script a paid one. `lib/readthrough.js` reads it with local `say`: free, offline, with per-line and total duration against the target. It deliberately cannot satisfy the render gate — it answers "are these the right words", not "is this the right delivery". |

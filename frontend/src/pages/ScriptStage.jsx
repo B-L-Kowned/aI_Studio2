@@ -6,14 +6,23 @@ import { api } from '../services/api.js';
 export default function ScriptStage() {
   const { production, mutate } = useStudio();
   const [state, setState] = useState(null);
+  const [workflow, setWorkflow] = useState(null);
 
-  const load = useCallback(async () => setState(await api.script(production.id)), [production.id]);
+  const load = useCallback(async () => {
+    const [script, flow] = await Promise.all([
+      api.script(production.id),
+      api.workflow(production.id),
+    ]);
+    setState(script);
+    setWorkflow(flow);
+  }, [production.id]);
   useEffect(() => { load(); }, [load]);
 
-  const ready = production.outlineApproved && production.scenesApproved;
+  const researchGate = workflow?.lock?.gates.find((gate) => gate.key === 'research');
+  const ready = production.outlineApproved && production.scenesApproved && researchGate?.status !== 'block';
   const apply = (res) => setState(res.data);
 
-  if (!state) return <p className="muted">Loading script…</p>;
+  if (!state || !workflow) return <p className="muted">Loading script…</p>;
   const latest = state.latest;
 
   return (
@@ -34,7 +43,8 @@ export default function ScriptStage() {
 
       {!ready && (
         <div className="notice warn">
-          <Lock /> Locked until the outline and scenes are approved in Plan.
+          <Lock /> Locked until source evidence, the outline and scenes are approved in Plan.
+          {' '}Research: {researchGate?.status === 'pass' ? 'approved' : researchGate?.detail ?? 'not approved'} ·
           {' '}Outline: {production.outlineApproved ? 'approved' : 'not approved'} ·
           {' '}Scenes: {production.scenesApproved ? 'approved' : 'not approved'}
         </div>
@@ -70,8 +80,30 @@ export default function ScriptStage() {
                 <React.Fragment key={s.id}>
                   {newScene && <div className="scriptscene">Scene {s.sceneRef} — {s.sceneTitle}</div>}
                   <div className="scriptline">
-                    <b>{s.speaker}</b>
-                    <p>{s.text}</p>
+                    {latest.status === 'proposed' ? (
+                      <>
+                        <input className="scriptspeaker" defaultValue={s.speaker} aria-label="Speaker"
+                          onBlur={(e) => {
+                            if (e.target.value !== s.speaker) {
+                              mutate(
+                                () => api.updateScriptSegment(production.id, latest.id, s.id, { speaker: e.target.value }),
+                                apply
+                              ).catch(() => {});
+                            }
+                          }} />
+                        <textarea className="scripttext" defaultValue={s.text} aria-label="Script line" rows={2}
+                          onBlur={(e) => {
+                            if (e.target.value !== s.text) {
+                              mutate(
+                                () => api.updateScriptSegment(production.id, latest.id, s.id, { text: e.target.value }),
+                                apply
+                              ).catch(() => {});
+                            }
+                          }} />
+                      </>
+                    ) : (
+                      <><b>{s.speaker}</b><p>{s.text}</p></>
+                    )}
                   </div>
                 </React.Fragment>
               );

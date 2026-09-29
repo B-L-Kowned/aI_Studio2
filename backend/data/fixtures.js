@@ -133,8 +133,7 @@ export const startSources = [
   { icon: 'FolderKanban', title: 'Existing Project',
     body: 'Copy the plan from another production — brief, outline and scenes. The work is not copied, only the plan.' },
   { icon: 'Link', title: 'Source / URL',
-    body: 'Build a production from a link. Not built yet — fetching and reading a page is its own piece of work.',
-    available: false },
+    body: 'Research a website, preserve the evidence and propose brief fields for your approval.' },
 ];
 
 export const setupCards = [

@@ -4,6 +4,9 @@
 // and did nothing, and "Analyze & build outline" was a button with no handler.
 // These assertions exist so neither can quietly return to that state.
 
+import { extractWebsiteEvidence, researchWebsite } from './lib/web-research.js';
+import { generateScript } from './lib/script-generator.js';
+
 const BASE = process.env.VERIFY_BASE;
 if (!BASE) { console.error('Run through:  npm run verify'); process.exit(2); }
 
@@ -19,11 +22,68 @@ const check = (l, c, d = '') => { c ? (pass++, console.log(`  ok   ${l}`)) : (fa
 const S = (s) => console.log(`\n=== ${s} ===`);
 
 await call('POST', '/workspace/provider-mode', { mode: 'fixtures' });
+let r;
+
+S('Website evidence and approval records are durable');
+const html = `<!doctype html><html><head><title>Acme — Better Widgets</title>
+  <meta name="description" content="Acme helps teams ship dependable widgets."></head>
+  <body><h1>Dependable widgets</h1><p>Built for teams that need a clear, repeatable process from brief to launch.</p></body></html>`;
+const extracted = extractWebsiteEvidence(html, new URL('https://acme.example/'));
+check('website facts come from the page',
+  extracted.title === 'Acme — Better Widgets' && extracted.headings[0] === 'Dependable widgets',
+  JSON.stringify(extracted));
+const researched = await researchWebsite('acme.example', {
+  resolveHost: async () => [{ address: '93.184.216.34', family: 4 }],
+  fetchImpl: async () => new Response(html, { status: 200, headers: { 'content-type': 'text/html' } }),
+});
+check('a bare hostname is normalised and produces a brief proposal',
+  researched.url === 'https://acme.example/' && researched.suggestedBrief.Brand === 'Acme',
+  JSON.stringify(researched.suggestedBrief));
+const evidenceScript = generateScript(
+  [{ id: 1, title: 'Open', participants: 'Narrator', purpose: 'Introduce the offer' }],
+  'Acme launch', {}, { purpose: 'promotion' }, researched.suggestedBrief
+);
+check('approved website evidence reaches the script and closing CTA',
+  evidenceScript.some((line) => line.text.includes('Acme helps teams'))
+    && evidenceScript.some((line) => line.text === 'Visit acme.example'),
+  JSON.stringify(evidenceScript));
+
+const workflowPid = (await call('GET', '/productions/current')).body.data.id;
+r = await call('POST', `/productions/${workflowPid}/research`, { url: 'http://127.0.0.1/private' });
+check('private-network research is blocked', r.status === 400 && r.body.error === 'PRIVATE_URL',
+  `${r.status} ${r.body.error}`);
+let workflow = (await call('GET', `/productions/${workflowPid}/workflow`)).body.data;
+const failedResearch = workflow.research.find((item) => item.status === 'failed');
+check('a failed attempt is visible instead of disappearing', !!failedResearch);
+r = await call('DELETE', `/productions/${workflowPid}/research/${failedResearch.id}`);
+check('an unreviewed failed source can be removed', r.status === 200 && r.body.data.research.length === 0,
+  `${r.status} ${r.body.message}`);
+check('the production lock returns every gate at once',
+  Array.isArray(r.body.data.lock.gates) && r.body.data.lock.gates.some((gate) => gate.key === 'appearance'));
+
+const proofable = (await call('GET', '/presenters/castable')).body.data.find((p) => p.kind !== 'avatar');
+if (!proofable) {
+  console.log('  ..   no castable personal/character performer, skipping proof mutation');
+} else {
+  r = await call('POST', `/productions/${workflowPid}/appearance`, {
+    presenterId: proofable.id,
+    label: 'Vertical ad look',
+    imageUrl: 'https://example.com/proof.jpg',
+    outfit: 'Black crew neck',
+    background: 'Warm neutral studio',
+    framing: '9:16 waist-up',
+  });
+  const proof = r.body.data.appearances[0];
+  check('appearance saves as a draft', r.status === 200 && proof.status === 'draft', r.body.message);
+  r = await call('PATCH', `/productions/${workflowPid}/appearance/${proof.id}`, { status: 'approved' });
+  check('a complete appearance proof can be approved',
+    r.status === 200 && r.body.data.appearances[0].status === 'approved', r.body.message);
+}
 
 S('Series planning is licensed, then real');
 // A comedy-only licence does not include plan.series.
 await call('POST', '/workspace/license', { key: 'COMEDY-A1B2-C3D4' });
-let r = await call('POST', '/series', { name: 'Nope', count: 2 });
+r = await call('POST', '/series', { name: 'Nope', count: 2 });
 check('refused without the licence', r.status === 402 && r.body.error === 'NOT_LICENSED',
   `${r.status} ${r.body.error}`);
 

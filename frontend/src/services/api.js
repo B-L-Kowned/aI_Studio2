@@ -189,9 +189,22 @@ export const api = {
     post(`/productions/${id}/decisions/${decisionId}/resolve`, { resolution }),
   addSource: (id, body) => post(`/productions/${id}/sources`, body),
 
+  // The approval chain shared by Plan and Render. Website research and
+  // appearance proofs are durable records, not transient modal state.
+  workflow: (id) => get(`/productions/${id}/workflow`),
+  researchWebsite: (id, url) => post(`/productions/${id}/research`, { url }),
+  deleteResearch: (id, researchId) => del(`/productions/${id}/research/${researchId}`),
+  reviewResearch: (id, researchId, applyBrief = true) =>
+    post(`/productions/${id}/research/${researchId}/review`, { applyBrief }),
+  createAppearance: (id, body) => post(`/productions/${id}/appearance`, body),
+  updateAppearance: (id, proofId, body) => patch(`/productions/${id}/appearance/${proofId}`, body),
+  productionLock: (id) => get(`/productions/${id}/lock`),
+
   // pipeline
   script: (id) => get(`/productions/${id}/script`),
   generateScript: (id) => post(`/productions/${id}/script/generate`),
+  updateScriptSegment: (id, versionId, segmentId, body) =>
+    patch(`/productions/${id}/script/${versionId}/segments/${segmentId}`, body),
   acceptScript: (id, versionId) => post(`/productions/${id}/script/${versionId}/accept`),
   rejectScript: (id, versionId) => post(`/productions/${id}/script/${versionId}/reject`),
   render: (id) => get(`/productions/${id}/render`),

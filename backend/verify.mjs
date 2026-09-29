@@ -166,13 +166,21 @@ const v1 = r.body.data.latest.id;
 
 r = await call('POST', `/productions/${pid}/script/generate`);
 check('regenerating makes v2, keeps v1', r.body.data.versions.length === 2);
+const v2 = r.body.data.latest.id;
+const editableLine = r.body.data.latest.segments[0];
+r = await call('PATCH', `/productions/${pid}/script/${v2}/segments/${editableLine.id}`, {
+  text: 'A person reviewed this line before approving the script.',
+});
+check('a proposed script line can be revised',
+  r.status === 200 && r.body.data.latest.segments[0].text.includes('person reviewed'));
 
 r = await call('POST', `/productions/${pid}/render`);
 check('render blocked with no accepted script', r.status === 409 && r.body.error === 'NO_ACCEPTED_SCRIPT');
 
-const v2 = (await call('GET', `/productions/${pid}/script`)).body.data.latest.id;
 r = await call('POST', `/productions/${pid}/script/${v2}/accept`);
 check('script accepted', r.body.data.latest.status === 'accepted');
+r = await call('PATCH', `/productions/${pid}/script/${v2}/segments/${editableLine.id}`, { text: 'late change' });
+check('an accepted script is immutable', r.status === 409 && r.body.error === 'SCRIPT_LOCKED');
 
 // ------------------------------------------------------------ Stale rule
 section('Stale propagation (upstream never overwrites downstream)');
@@ -205,6 +213,12 @@ check('progress reached 100', r.body.data.latest.progress === 100);
 r = await call('POST', `/productions/${pid}/render/${renderId}/edit`, { kind: 'Nonsense Tool' });
 check('rejects unknown edit tool', r.status === 400);
 r = await call('POST', `/productions/${pid}/render/${renderId}/edit`, { kind: 'Remove Silence', target: 'scene 5.2' });
+check('roadmap edit tools do not pretend to work', r.status === 501 && r.body.error === 'NOT_IMPLEMENTED');
+r = await call('POST', `/productions/${pid}/render/${renderId}/edit`, { kind: 'Trim / Cut', target: 'not a range' });
+check('a real edit requires a real time range', r.status === 400 && r.body.error === 'BAD_RANGE');
+r = await call('POST', `/productions/${pid}/render/${renderId}/edit`, {
+  kind: 'Trim / Cut', target: '0:01-0:05', note: 'Keep the useful beat',
+});
 check('edit decision recorded', r.body.data.latest.editDecisions.length === 1);
 check('render row survives the edit', r.body.data.latest.status === 'complete');
 check('edit marks export stale', !!r.body.data.affected.export || r.body.data.exports.some((e) => e.stale));
@@ -229,13 +243,16 @@ check('artificialfunny.com present', !!af);
 check('af is an owned channel', af?.kind === 'owned', af?.kind);
 check('af carries its domain', af?.domain === 'artificialfunny.com', af?.domain);
 check('af listed first', r.body.data.targets[0].platform === 'Artificial Funny');
-check('YouTube shows connected', r.body.data.targets.find((t) => t.platform === 'YouTube').connected === true);
+check('YouTube does not claim a connector that is not built',
+  r.body.data.targets.find((t) => t.platform === 'YouTube').connected === false);
+check('YouTube offers prepare only',
+  r.body.data.targets.find((t) => t.platform === 'YouTube').availableModes.join() === 'prepare');
 check('TikTok shows disconnected', r.body.data.targets.find((t) => t.platform === 'TikTok').connected === false);
 
 r = await call('POST', `/productions/${pid}/publications/TikTok`, { mode: 'publish' });
 check('unconnected publish degrades to prepare', r.body.data.degraded === true, JSON.stringify(r.body));
 r = await call('POST', `/productions/${pid}/publications/YouTube`, { mode: 'schedule' });
-check('connected schedule succeeds', r.body.data.degraded === false);
+check('unimplemented YouTube scheduling degrades honestly', r.body.data.degraded === true);
 
 // artificialfunny.com is a REAL upload now, so a row in a table saying
 // "connected" cannot make it one. Flipping that row used to be enough to get

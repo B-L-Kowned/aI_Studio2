@@ -53,10 +53,12 @@ const PURPOSE_FRAME = {
   internal:   'This is for the team, so I will skip the preamble.',
 };
 
-export function generateScript(scenes, productionTitle, personas = {}, track = null) {
+export function generateScript(scenes, productionTitle, personas = {}, track = null, brief = {}) {
   const segments = [];
   let position = 0;
   const lastScene = scenes.length - 1;
+  const sourceSummary = String(brief['Source summary'] ?? '').trim();
+  const cta = String(brief.CTA ?? '').trim();
 
   scenes.forEach((scene, sceneIndex) => {
     const speakers = speakersOf(scene.participants);
@@ -75,7 +77,9 @@ export function generateScript(scenes, productionTitle, personas = {}, track = n
         // video starts.
         line = persona.signatureOpening;
       } else if (i === 0 && sceneIndex === 0 && track?.purpose && PURPOSE_FRAME[track.purpose]) {
-        line = PURPOSE_FRAME[track.purpose];
+        line = [PURPOSE_FRAME[track.purpose], sourceSummary].filter(Boolean).join(' ');
+      } else if (i === 0 && sceneIndex === 0 && sourceSummary) {
+        line = `${seededPick(OPENERS, seed)} ${sourceSummary}`;
       } else if (i === 0) {
         line = `${seededPick(OPENERS, seed)} ${scene.purpose || scene.title}.`;
       } else {
@@ -88,6 +92,11 @@ export function generateScript(scenes, productionTitle, personas = {}, track = n
     // whoever is carrying it.
     if (sceneIndex === lastScene) {
       const persona = personas[cast[0]];
+      if (cta) {
+        segments.push({
+          scene_id: scene.id, position: position++, speaker: cast[0], text: cta,
+        });
+      }
       if (persona?.signOff) {
         segments.push({
           scene_id: scene.id, position: position++, speaker: cast[0], text: persona.signOff,

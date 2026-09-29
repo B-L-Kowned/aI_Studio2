@@ -6,6 +6,8 @@ import { templateById, BLANK_TEMPLATE, SOURCE_TYPES } from '../data/templates.js
 import { allowedModes } from '../lib/capabilities.js';
 import { importScript, copyPlanFrom } from '../lib/sources.js';
 import { analyse } from '../lib/video-analysis.js';
+import { researchSource } from '../lib/research.js';
+import { normaliseWebsiteUrl } from '../lib/web-research.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -148,11 +150,16 @@ router.post(
       // What the starting point actually needs. Asking for these AFTER creating
       // the production is what made "New production from an existing video" a
       // dialog that never mentioned a video.
-      videoFile = null, scriptText = null, copyFromId = null,
+      videoFile = null, scriptText = null, copyFromId = null, sourceUrl = null,
     } = req.body ?? {};
 
     if (!SOURCE_TYPES.includes(sourceType)) {
       return fail(res, 400, 'BAD_SOURCE', `sourceType must be one of ${SOURCE_TYPES.join(', ')}`);
+    }
+    let validatedSourceUrl = null;
+    if (sourceType === 'url') {
+      try { validatedSourceUrl = normaliseWebsiteUrl(sourceUrl).href; }
+      catch (err) { return fail(res, 400, err.code ?? 'BAD_URL', err.message); }
     }
 
     const template = templateId ? templateById(templateId) : null;
@@ -259,6 +266,18 @@ router.post(
         // The production still exists; only the measurement failed, and saying
         // so beats a source row that silently reads "awaiting ingest" forever.
         extras.push(`the video could not be measured: ${err.message}`);
+      }
+    }
+
+    if (sourceType === 'url' && validatedSourceUrl) {
+      try {
+        const researched = await researchSource(newId, validatedSourceUrl);
+        extras.push(`website researched: ${researched.title || new URL(researched.url).hostname} — review the evidence in Plan → Sources`);
+      } catch (err) {
+        // Keep the production and the failed research row. A network failure is
+        // not a reason to discard the title, campaign and template the user
+        // already chose, but it must be visible and must keep the lock closed.
+        extras.push(`website research needs attention: ${err.message}`);
       }
     }
 
