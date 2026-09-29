@@ -79,13 +79,10 @@ export default function ConnectionsSection() {
                     </span>
                     {c.hint && <code className="dim">{c.hint}</code>}
 
-                    {/* HeyGen has TWO pockets and they are not alternatives.
-                        The plan (MCP) renders on your subscription and has no
-                        test mode — its only render is a real one. The API key
-                        renders watermarked test videos for free. Having both
-                        is what lets you prove a production end to end without
-                        spending, then render it for real. This used to report
-                        whichever one won and hide the other. */}
+                    {/* HeyGen has two independent ways in. MCP is sufficient
+                        for normal Live production. The API key is optional and
+                        adds the free watermarked Test-render path. This used to
+                        report whichever one won and hide the other. */}
                     {c.id === 'heygen' && c.pockets && (
                       <span className="pockets">
                         <em className={'pocketchip' + (c.pockets.mcp.connected ? '' : ' off')}>
@@ -116,13 +113,12 @@ export default function ConnectionsSection() {
                       </form>
                     ) : (
                       <>
-                        {/* Always offered for HeyGen, signed in or not. It was
-                            hidden whenever MCP was connected, so the free test
-                            render path could not be reached at all — and the
-                            label said "instead", which is the wrong idea. */}
+                        {/* The optional key remains addable after MCP sign-in so
+                            Test mode can be enabled without implying that Live
+                            production needs both connections. */}
                         <button onClick={() => { setEditing(c.id); setKey(''); setErr(null); }}>
                           {c.id === 'heygen'
-                            ? (c.pockets?.key?.connected ? 'Replace API key' : 'Add an API key')
+                            ? (c.pockets?.key?.connected ? 'Replace API key' : 'Add optional API key')
                             : c.connected ? 'Replace key' : 'Connect'}
                         </button>
                         {c.connected && (
@@ -153,10 +149,9 @@ export default function ConnectionsSection() {
                     <>
                       <div />
                       <p className="keywarn">
-                        <AlertCircle size={13} /> An API key is billed against a separate
-                        pay-as-you-go balance. Your HeyGen web subscription funds none of it,
-                        so this charges a second time for capacity you already own. Sign in
-                        instead unless you specifically need un-watermarked or high-volume work.
+                        <AlertCircle size={13} /> Optional: Test uses this key for free,
+                        watermarked renders. Live may bill its separate API balance if MCP is
+                        unavailable. Your MCP sign-in already covers normal Live production.
                       </p>
                     </>
                   )}

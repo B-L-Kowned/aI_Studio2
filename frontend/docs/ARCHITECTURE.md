@@ -211,9 +211,9 @@ separate pay-as-you-go balance. They are not interchangeable, and
 `chooseRenderPath()` decides between them from what the MCP server actually
 exposes (`tools/list`) plus the current mode — never from an assumption.
 
-**You want BOTH, and they are not alternatives.** The plan path renders for
-real and has no test mode; the key path renders HeyGen's own watermarked test
-videos for free. With both stored:
+**Either connection works independently.** MCP alone covers normal Live
+production. The API key is optional; it adds HeyGen's watermarked free Test
+render and can act as a separately billed Live fallback. With both stored:
 
 | mode | path | free |
 |---|---|---|

@@ -80,9 +80,10 @@ The UI requests a **capability** (`render`, `generate_scene`, `draft_voice`) and
 
 HeyGen has two independent connections. MCP/OAuth spends the web plan and has no
 free test render. An API key uses a separate balance and supports HeyGen's
-watermarked `test: true` render. Keep both connected: Test routes to the key and
-Live prefers MCP. If Test has no key, it returns `NO_FREE_PATH` rather than
-quietly spending the plan.
+watermarked `test: true` render. Either connection can be used independently:
+MCP alone is sufficient for normal Live production, while an API key is optional
+and primarily adds the free watermarked Test-render path. If Test has no key, it
+returns `NO_FREE_PATH` rather than quietly spending the MCP plan.
 
 ## Publishing
 

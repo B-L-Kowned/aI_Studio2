@@ -156,11 +156,11 @@ vanishing while the code looks correct.
 **Three provider modes:** `fixtures` (spend: none) · `live_read`/"Test" (spend:
 metered — renders free, **auditions cost**) · `live` (billable).
 
-**Two HeyGen pockets — you want BOTH, they are not alternatives.** MCP/OAuth
-spends the web plan and has **no test mode** (`create_video_from_studio` takes
-no `test` parameter — its only render is a real one). An API key spends a
-separate pay-as-you-go balance **and can render HeyGen's own watermarked test
-videos for free**. With both stored:
+**Two independent HeyGen connection paths.** MCP/OAuth alone is sufficient for
+normal Live production and spends the web plan. It has **no test mode**
+(`create_video_from_studio` takes no `test` parameter). An API key is optional,
+uses a separate pay-as-you-go balance, and adds HeyGen's watermarked free Test
+render. With both stored:
 
 | mode | path | free |
 |---|---|---|
@@ -169,9 +169,9 @@ videos for free**. With both stored:
 | live | `mcp` | no — spends your plan |
 
 With no key, Test returns `NO_FREE_PATH` and refuses rather than quietly
-spending. **This is the single thing standing between you and rehearsing a
-render for free.** Add a key in Settings → Connections → HeyGen → *Add an API
-key*; the connect call verifies it and pulls the catalogue in one step.
+spending. This affects only the optional free rehearsal path; MCP-only Live
+production remains available. Add a key in Settings → Connections → HeyGen →
+*Add optional API key* only if that Test path is useful.
 
 ---
 
@@ -278,7 +278,7 @@ What it contains:
 4. **Free read-through** (`lib/readthrough.js`) — see §8.
 5. **Empty-state fix.** `counts.campaigns` was derived from productions, so a
    campaign you had just set up read as "0 campaigns" until it had a video.
-6. **Both HeyGen pockets visible.** `lib/connections.js` reported a single
+6. **Both HeyGen connection states visible.** `lib/connections.js` reported a single
    `pocket` with MCP winning, so a stored API key was invisible once you signed
    in — and the UI hid the key field behind a button saying "Use an API key
    *instead*". The free test-render path was unreachable in practice. Now
@@ -315,11 +315,10 @@ render gate.** Two questions, two tools: *"are these the right words"* is free;
 
 ## 9. What to do next
 
-1. **Add a HeyGen API key.** Verified 2026-09-29: `pockets.key.connected` is
-   **false**, so Test mode returns `NO_FREE_PATH` and there is no way to
-   rehearse a render for free. Settings → Connections → HeyGen → *Add an API
-   key*. Once stored, Test flips to `path=key, free=true`. This is the highest
-   -value single action available.
+1. **Choose whether free watermarked Test renders matter.** MCP sign-in already
+   covers normal Live production. Verified 2026-09-29:
+   `pockets.key.connected` is **false**, so Test returns `NO_FREE_PATH`. Add an
+   optional API key only if that free rehearsal path is useful.
 2. **Cast the remaining 8 characters** — Dr. Prakash Nope, Tina from
    Procurement, Conspiracy Carl, Hada Glimmer, Queen Violante, Vivianna
    Sterling, Yola Vibra, Babcia Zosia. The searchable picker makes this seconds

@@ -70,11 +70,10 @@ export function listConnections() {
       verified: !!cred?.verified || viaMcp,
       hint: viaMcp ? 'signed in' : cred?.hint ?? null,
       // `pocket` reported ONE of the two, MCP winning, so a stored API key was
-      // invisible the moment you were also signed in. They are not
-      // alternatives: the plan path (MCP) renders on your subscription and has
-      // no test mode, and the key path renders watermarked test videos for
-      // free. You want BOTH, and the render router already reads them
-      // independently — only this report pretended otherwise.
+      // invisible the moment you were also signed in. Either path may stand on
+      // its own: MCP covers normal Live production; the optional key adds a
+      // free watermarked Test-render path and can be a Live fallback. The
+      // router reads them independently, so the report must too.
       pocket: c.id === 'heygen' ? (viaMcp ? 'mcp' : cred ? 'key' : 'none') : null,
       pockets: c.id === 'heygen'
         ? {
