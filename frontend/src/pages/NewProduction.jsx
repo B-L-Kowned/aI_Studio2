@@ -111,7 +111,7 @@ export default function NewProduction({
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <div className={'modal' + (source.needs === 'script' ? ' wide' : '')}>
+      <div className={'modal newproductionmodal' + (source.needs !== 'project' ? ' has-template-picker' : '')}>
         <div className="modalhead">
           <b>
             {onBack && (

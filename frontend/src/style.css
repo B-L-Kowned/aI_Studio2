@@ -1377,6 +1377,36 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 .modal .oblabel:first-of-type { margin-top: 0; }
 .modal .actions { margin-top: 20px; }
 
+/* New-production setup carries a real catalogue, not a confirmation prompt.
+   Give it the desktop canvas instead of forcing seventeen templates through
+   the generic 460px dialog used for small forms. */
+.modal.newproductionmodal {
+  top: 6vh; max-height: 88vh; overflow-y: auto;
+}
+.modal.newproductionmodal.has-template-picker {
+  width: min(820px, calc(100vw - 48px));
+}
+.newproductionmodal.has-template-picker .tpick {
+  max-height: min(340px, 42vh); padding: 6px;
+}
+.newproductionmodal.has-template-picker .tpickgroup {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 6px; align-content: start;
+}
+.newproductionmodal.has-template-picker .tpickgroup + .tpickgroup { margin-top: 8px; }
+.newproductionmodal.has-template-picker .tpickgroup > small { grid-column: 1 / -1; }
+.newproductionmodal.has-template-picker .tpickrow { min-height: 50px; }
+
+@media (max-width: 720px) {
+  .modal.newproductionmodal {
+    top: 20px; max-height: calc(100vh - 40px);
+  }
+  .modal.newproductionmodal.has-template-picker {
+    width: calc(100vw - 32px);
+  }
+  .newproductionmodal.has-template-picker .tpickgroup { grid-template-columns: 1fr; }
+}
+
 /* ------------------------------------------------------------ campaigns -- */
 .camptable {
   background: var(--surface);
