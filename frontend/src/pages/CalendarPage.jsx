@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, ArrowRight, CalendarDays } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ArrowRight, CalendarDays, Plus } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { Section, PageHead } from '../components/Section.jsx';
@@ -32,15 +32,32 @@ const shiftMonth = (key, by) => {
 };
 
 export default function CalendarPage({ go }) {
-  const { openProduction, setPendingStage, mutate, pendingDate, setPendingDate } = useStudio();
-  const [monthKey, setMonthKey] = useState(null);
+  const {
+    openProduction, setPendingStage, mutate, pendingDate, setPendingDate, scopeMode,
+  } = useStudio();
+  // Seeded from the day that was clicked elsewhere, so the FIRST fetch asks for
+  // the right month. Setting it in an effect afterwards raced the initial load:
+  // the load started with monthKey=null (the current month), the effect set
+  // October, and then the September response landed and called setMonthKey with
+  // its own month, overwriting it. Clicking 1 October from the dashboard left
+  // you in September looking at 1 October as a greyed-out trailing day — a cell
+  // that, being out of month, has no add button either.
+  const [monthKey, setMonthKey] = useState(() => (pendingDate ? pendingDate.slice(0, 7) : null));
   const [data, setData] = useState(null);
   const [scheduling, setScheduling] = useState(null);
   const [highlight, setHighlight] = useState(null);
+  // Which day cell is open for "put something here". A calendar whose days are
+  // not targets is a picture of a calendar: the only way to schedule anything
+  // used to be a capped list below the month grid.
+  const [addingOn, setAddingOn] = useState(null);
 
   const load = useCallback(
-    () => api.calendar(monthKey).then((d) => { setData(d); setMonthKey(d.month); }),
-    [monthKey]
+    // `?? d.month` and not `= d.month`: the response may only ever FILL IN a
+    // month nobody asked for. A response must not overwrite a month that was
+    // explicitly requested, or a late reply silently navigates you.
+    () => api.calendar(monthKey, scopeMode)
+      .then((d) => { setData(d); setMonthKey((k) => k ?? d.month); }),
+    [monthKey, scopeMode]
   );
   useEffect(() => { load(); }, [load]);
 
@@ -48,7 +65,7 @@ export default function CalendarPage({ go }) {
   // day it was, so the answer is visible rather than merely present.
   useEffect(() => {
     if (!pendingDate) return;
-    setMonthKey(pendingDate.slice(0, 7));
+    setMonthKey(pendingDate.slice(0, 7));   // for arrivals after the first load
     setHighlight(pendingDate);
     setPendingDate(null);
   }, [pendingDate, setPendingDate]);
@@ -57,6 +74,12 @@ export default function CalendarPage({ go }) {
     await openProduction(id);
     if (stage) setPendingStage(stage);
     go('Create');
+  };
+
+  const putOnDay = async (id, date) => {
+    setAddingOn(null);
+    try { await mutate(() => api.setDueDate(id, date), null); await load(); }
+    catch { /* mutate reports it */ }
   };
 
   const schedule = async (id, date) => {
@@ -103,6 +126,44 @@ export default function CalendarPage({ go }) {
             key={d.date}
           >
             <span className="caldate">{d.dayOfMonth}</span>
+
+            {/* Every in-month day takes work. This is the gesture people
+                actually reach for on a calendar, and it did not exist: days
+                were containers, never targets, so an empty day was inert and
+                scheduling meant scrolling past the whole grid to a list. */}
+            {d.inMonth && (
+              <button
+                className="caladdbtn"
+                title={`Put a production on ${d.date}`}
+                aria-label={`Put a production on ${d.date}`}
+                onClick={() => setAddingOn(addingOn === d.date ? null : d.date)}
+              >
+                <Plus size={12} />
+              </button>
+            )}
+
+            {addingOn === d.date && (
+              <div className="caladd" onKeyDown={(e) => e.key === 'Escape' && setAddingOn(null)}>
+                {unscheduled.length === 0 ? (
+                  <p className="muted">Everything already has a date.</p>
+                ) : (
+                  <>
+                    <small>Put on {d.date}</small>
+                    {/* Not capped. With fifty companies a list that silently
+                        stops at ten hides the thing you are looking for. */}
+                    <div className="caladdlist">
+                      {unscheduled.map((u) => (
+                        <button key={u.id} onClick={() => putOnDay(u.id, d.date)}>
+                          {u.title}
+                          <i>{u.campaign ?? 'No campaign'}</i>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {d.items.map((i) => (
               <button
                 className={'calitem ' + (STAGE[i.stage]?.tone ?? '') + (i.late ? ' late' : '')}
@@ -128,7 +189,7 @@ export default function CalendarPage({ go }) {
           flush
         >
           <div className="schedlist">
-            {unscheduled.slice(0, 10).map((p) => (
+            {unscheduled.map((p) => (
               <div className="schedrow tight" key={p.id}>
                 <span className="schedwho">
                   <b>{p.title}</b>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, AlertCircle, Check, Lock, X, Trash2, Pencil, CalendarDays } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
@@ -22,6 +22,7 @@ export default function Campaigns({ go }) {
   const {
     collections, workspace, productions, production,
     openProduction, refreshProductions, reload, mutate,
+    pendingCampaign, setPendingCampaign, inScope,
   } = useStudio();
 
   const [creatingIn, setCreatingIn] = useState(undefined); // undefined = closed
@@ -41,19 +42,50 @@ export default function Campaigns({ go }) {
 
   const open = async (id) => { await openProduction(id); go('Create'); };
 
+  // Arrived by going UP from a production. Landing at the top of a list of
+  // every campaign is not arriving anywhere, so scroll to the one we came from
+  // and mark it — the answer has to be visible, not merely present.
+  const [cameFrom, setCameFrom] = useState(null);
+  useEffect(() => {
+    if (pendingCampaign == null) return;
+    setCameFrom(pendingCampaign);
+    setPendingCampaign(null);
+  }, [pendingCampaign, setPendingCampaign]);
+
+  useEffect(() => {
+    if (cameFrom == null) return;
+    const el = document.querySelector(`[data-campaign="${cameFrom}"]`);
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const t = setTimeout(() => setCameFrom(null), 2400);
+    return () => clearTimeout(t);
+  }, [cameFrom, collections.campaigns.length]);
+
+  // Scoped by the program bubble in the header, the same way Home is. Without
+  // this the bubble changed the dashboard's counts and left Plan showing all
+  // fifteen productions — the two pages describing different slates while
+  // claiming to be the same workspace.
+  //
+  // `inScope` keeps `both` rows in BOTH programs; see the note on it.
+  const inView = productions.filter((p) => inScope(p.mode));
+
   const groups = [
-    ...collections.campaigns.map((c) => ({
-      ...c,
-      items: productions.filter((p) => p.campaignId === c.id),
-      real: true,
-    })),
+    ...collections.campaigns
+      .map((c) => ({
+        ...c,
+        items: inView.filter((p) => p.campaignId === c.id),
+        real: true,
+      }))
+      // A campaign belonging to the other program goes away entirely. An empty
+      // campaign that IS in this program stays: it is real, and hiding it is
+      // how a container you meant to fill gets forgotten.
+      .filter((g) => inScope(g.mode) || g.items.length > 0),
     {
       id: null, name: 'One-offs', mode: 'both', real: false,
-      items: productions.filter((p) => !p.campaignId),
+      items: inView.filter((p) => !p.campaignId),
     },
   ].filter((g) => g.real || g.items.length > 0);
 
-  const needsAttention = productions.filter((p) => p.stale > 0).length;
+  const needsAttention = inView.filter((p) => p.stale > 0).length;
 
   return (
     <>
@@ -121,14 +153,19 @@ export default function Campaigns({ go }) {
 
       <Section
         title="All productions"
-        meta={`${collections.campaigns.length} campaign${collections.campaigns.length === 1 ? '' : 's'} · ${productions.length} production${productions.length === 1 ? '' : 's'}${needsAttention ? ` · ${needsAttention} need${needsAttention === 1 ? 's' : ''} attention` : ''}`}
+        meta={`${groups.filter((g) => g.real).length} campaign${groups.filter((g) => g.real).length === 1 ? '' : 's'} · ${inView.length} production${inView.length === 1 ? '' : 's'}${needsAttention ? ` · ${needsAttention} need${needsAttention === 1 ? 's' : ''} attention` : ''}`}
         flush
       >
       <div className="camptable">
         {groups.map((g) => {
           const visible = covers(g.mode);
           return (
-            <section className={'campgroup' + (visible ? '' : ' dimmed')} key={g.id ?? 'oneoff'}>
+            <section
+              className={'campgroup' + (visible ? '' : ' dimmed')
+                + (cameFrom != null && g.id === cameFrom ? ' cameFrom' : '')}
+              data-campaign={g.id ?? 'oneoff'}
+              key={g.id ?? 'oneoff'}
+            >
               <header>
                 <b>{g.name}</b>
                 <span className="cmode">{g.mode}</span>

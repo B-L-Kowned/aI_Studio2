@@ -57,12 +57,15 @@ export default function Presenters({ tab: externalTab, onTabs }) {
         </div>
       </div>
 
-      <div className="prodmeta">
-        <span className="path">
-          Who appears on screen. Your licence decides which rosters you get.
-        </span>
-        {data.programs.map((p) => <span className="badge" key={p}>{p}</span>)}
-      </div>
+      {/* The "funny"/"content" badges that used to sit here restated the licence,
+          which the program bubbles in the header now say once, in words, and
+          act on. Under Cast the roster bar above already names what you are
+          looking at, so this whole strip was the third header in a row. */}
+      {externalTab === undefined && (
+        <div className="prodmeta">
+          <span className="path">Who appears on screen.</span>
+        </div>
+      )}
 
       {/* When Cast supplies the roster, it draws the bar too. */}
       {externalTab === undefined && (

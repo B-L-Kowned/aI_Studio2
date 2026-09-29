@@ -12,6 +12,7 @@ router.get(
       idleDays: Number(req.query.idleDays) || undefined,
       dueSoonDays: Number(req.query.dueSoonDays) || undefined,
       weekStart: req.query.weekStart || null,
+      mode: req.query.mode || null,
     }))
   )
 );

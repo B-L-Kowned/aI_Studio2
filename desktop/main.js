@@ -199,6 +199,22 @@ app.whenReady().then(async () => {
     {
       label: 'View',
       submenu: [
+        // Electron binds no back/forward of its own, so the app had history
+        // but no way to reach it from the keyboard. These are the macOS
+        // standards, and they drive the same history the UI pushes to.
+        {
+          label: 'Back',
+          accelerator: 'CmdOrCtrl+[',
+          click: (_i, w) => w?.webContents.navigationHistory.canGoBack()
+            && w.webContents.navigationHistory.goBack(),
+        },
+        {
+          label: 'Forward',
+          accelerator: 'CmdOrCtrl+]',
+          click: (_i, w) => w?.webContents.navigationHistory.canGoForward()
+            && w.webContents.navigationHistory.goForward(),
+        },
+        { type: 'separator' },
         { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' },
         { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
         { type: 'separator' }, { role: 'togglefullscreen' },

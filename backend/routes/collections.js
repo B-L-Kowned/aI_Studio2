@@ -210,7 +210,7 @@ router.get(
   '/calendar',
   // Real dates, real productions. The old shape was 28 rows keyed by an integer
   // day-of-month, which cannot be overdue and cannot point at anything.
-  route(async (req, res) => ok(res, month(req.query.month)))
+  route(async (req, res) => ok(res, month(req.query.month, req.query.mode || null)))
 );
 
 export default router;

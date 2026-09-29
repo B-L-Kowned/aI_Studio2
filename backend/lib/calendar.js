@@ -64,8 +64,16 @@ const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate(
  * months and are marked, because a calendar that hides them makes the first of
  * the month look like it starts mid-air.
  */
-export function month(monthKey) {
+/**
+ * `mode` scopes the calendar to one program, matching the dashboard and Plan.
+ * `both` productions belong to each program, so they appear under either — the
+ * same rule as `schedule()`; see the note there.
+ */
+export function month(monthKey, mode = null) {
   const db = getDb();
+  const scoped = mode === 'comedy' || mode === 'content';
+  const scopeSql = scoped ? " AND (p.mode = ? OR p.mode = 'both')" : '';
+  const scopeArg = scoped ? [mode] : [];
   const [y, m] = (monthKey ?? '').split('-').map(Number);
   const base = Number.isInteger(y) && Number.isInteger(m)
     ? new Date(y, m - 1, 1)
@@ -80,9 +88,9 @@ export function month(monthKey) {
       `SELECT p.id, p.title, p.due_at, c.name AS campaign
          FROM productions p
          LEFT JOIN campaigns c ON c.id = p.campaign_id
-        WHERE p.due_at IS NOT NULL`
+        WHERE p.due_at IS NOT NULL${scopeSql}`
     )
-    .all();
+    .all(...scopeArg);
 
   const byDay = new Map();
   for (const r of rows) {
@@ -125,10 +133,10 @@ export function month(monthKey) {
         `SELECT p.id, p.title, c.name AS campaign
            FROM productions p
            LEFT JOIN campaigns c ON c.id = p.campaign_id
-          WHERE p.due_at IS NULL
+          WHERE p.due_at IS NULL${scopeSql}
           ORDER BY p.updated_at DESC`
       )
-      .all()
+      .all(...scopeArg)
       .map((r) => ({ id: r.id, title: r.title, campaign: r.campaign ?? null, stage: stageOf(r.id) })),
     counts: {
       scheduled: inMonth.length,

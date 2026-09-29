@@ -72,7 +72,13 @@ export const api = {
   deleteCampaign: (id) => del(`/campaigns/${id}`),
   library: () => get('/library'),
   deleteAsset: (id) => del(`/library/${id}`),
-  calendar: (month) => get(`/calendar${month ? `?month=${month}` : ''}`),
+  calendar: (month, mode) => {
+    const q = new URLSearchParams();
+    if (month) q.set('month', month);
+    if (mode) q.set('mode', mode);
+    const s = q.toString();
+    return get(`/calendar${s ? `?${s}` : ''}`);
+  },
   publishTargets: () => get('/publish-targets'),
   editorTools: () => get('/editor-tools'),
   setup: () => get('/setup'),
@@ -125,7 +131,16 @@ export const api = {
   markIdeaPromoted: (id, productionId) => post(`/ideas/${id}/promoted`, { productionId }),
 
   // the production schedule — what is blocked on you, and what is due
-  schedule: (weekStart) => get(`/schedule${weekStart ? `?weekStart=${weekStart}` : ''}`),
+  // `mode` scopes the schedule to one program. It is built here rather than by
+  // the caller so the counts and the lists can never be fetched with different
+  // scopes and disagree on screen.
+  schedule: (weekStart, mode) => {
+    const q = new URLSearchParams();
+    if (weekStart) q.set('weekStart', weekStart);
+    if (mode) q.set('mode', mode);
+    const s = q.toString();
+    return get(`/schedule${s ? `?${s}` : ''}`);
+  },
   setDueDate: (id, dueAt) => post(`/productions/${id}/due`, { dueAt }),
 
   // segments — the unit of script, take, presenter, shot, quality and render

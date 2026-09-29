@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Lock, AlertCircle, Check, X, KeyRound } from 'lucide-react';
 import { StudioProvider, useStudio } from './context/studio-context.jsx';
@@ -40,9 +40,60 @@ function pagesFor(program) {
   return PAGES.filter((p) => !routes[p] || granted.includes(routes[p]));
 }
 
+/** A page name as it appears in the address bar, and back again. */
+const toPath = (name) => '/' + String(name).toLowerCase();
+const fromPath = (path) =>
+  PAGES.find((p) => toPath(p) === String(path).replace(/\/+$/, '').toLowerCase()) ?? null;
+
 function App() {
-  const [page, setPage] = useState(null);
+  // Seeded from the address so a deep link opens the page it names. Before
+  // this, every URL rendered Home — the server answered /plan with the app
+  // (correctly, it IS the app) and the app then ignored the path entirely.
+  const [page, setPageState] = useState(() => fromPath(window.location.pathname));
   const { status, error, reload, workspace, toast } = useStudio();
+
+  /**
+   * Navigating pushes a history entry, which is the whole point: there was no
+   * router and no history, so Cmd-[, the trackpad swipe and the View menu had
+   * nothing to go back THROUGH. They did not fail — there was never anything
+   * there.
+   *
+   * `replace` for the first paint so the landing page does not become an entry
+   * you can go "back" to from itself.
+   */
+  const setPage = useCallback((name, { replace = false } = {}) => {
+    setPageState(name);
+    const url = toPath(name);
+    if (window.location.pathname === url) return;
+    try {
+      window.history[replace ? 'replaceState' : 'pushState']({ page: name }, '', url);
+    } catch { /* a packaged build may restrict this; navigation still works */ }
+  }, []);
+
+  // The browser moved: follow it. Without this, back changes the address and
+  // leaves the app rendering the old page — worse than back doing nothing.
+  useEffect(() => {
+    const onPop = (e) => setPageState(e.state?.page ?? fromPath(window.location.pathname));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  // First paint lands somewhere the address does not name — "/" while the app
+  // shows Home. REPLACE it so the landing page is not an entry you can press
+  // back into from itself. This sits above the early returns below because a
+  // hook cannot run conditionally; it no-ops until the workspace is loaded.
+  const landedRef = React.useRef(false);
+  useEffect(() => {
+    if (landedRef.current || !workspace?.onboarded) return;
+    if (fromPath(window.location.pathname)) { landedRef.current = true; return; }
+    const allowedNow = pagesFor(workspace.program);
+    const raw = workspace.program?.landing;
+    const start = allowedNow.includes(raw)
+      ? raw
+      : (raw === 'Training' ? 'Plan' : 'Create');
+    landedRef.current = true;
+    setPage(start, { replace: true });
+  }, [workspace, setPage]);
 
   if (status === 'loading') {
     return <main><p className="muted">Loading studio…</p></main>;
@@ -100,7 +151,7 @@ function App() {
       <main>
         {current === 'Home' && <Home go={setPage} />}
         {current === 'Plan' && <Plan go={setPage} />}
-        {current === 'Create' && <Create />}
+        {current === 'Create' && <Create go={setPage} />}
         {current === 'Cast' && <Cast />}
         {current === 'Library' && <Library />}
         {current === 'Settings' && <Setup />}
@@ -119,25 +170,46 @@ function App() {
  * asked the same question twice in two vocabularies.
  */
 function ProgramBadge({ go }) {
-  const { workspace } = useStudio();
+  const { workspace, scope, setScope, grantedPrograms } = useStudio();
   const program = workspace.program;
   if (!program?.info?.length) return null;
 
-  // Two pills in the top-right corner is where a segmented CONTROL lives, and
-  // this used to be one — a Comedy/Content switch. The switch is gone because
-  // casting a presenter already says which program you are in, but the shape
-  // stayed and kept inviting clicks. So: one line, labelled, that reads as a
-  // fact about the licence and opens the place where the licence is changed.
+  // With one program there is nothing to choose, so this stays what it was: a
+  // fact about the licence that opens where the licence is changed.
+  if (grantedPrograms.length < 2) {
+    return (
+      <button
+        className="licencebadge"
+        onClick={() => go?.('Settings')}
+        title={`Licence ${workspace.licenseHint ?? ''} — opens Settings`}
+      >
+        <KeyRound size={12} />
+        <span>Licence</span>
+        <b>{program.info.map((p) => p.label).join(' + ')}</b>
+      </button>
+    );
+  }
+
+  // With two, the licence badge said "Comedy + Content" and did nothing but
+  // link to Settings — it named the programs without letting you work in one.
+  // These bubbles ARE that licence, made usable. There is no "Both": a
+  // production whose mode is `both` belongs to each program and shows under
+  // either bubble, which is a fact about the production, not a place to stand.
   return (
-    <button
-      className="licencebadge"
-      onClick={() => go?.('Settings')}
-      title={`Licence ${workspace.licenseHint ?? ''} — opens Settings`}
-    >
-      <KeyRound size={12} />
-      <span>Licence</span>
-      <b>{program.info.map((p) => p.label).join(' + ')}</b>
-    </button>
+    <div className="scopeswitch" role="group" aria-label="Which program you are working in">
+      {program.info.map((p) => (
+        <button
+          key={p.id}
+          type="button"
+          className={p.id === scope ? 'on' : ''}
+          aria-pressed={p.id === scope}
+          onClick={() => setScope(p.id)}
+          title={p.detail}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

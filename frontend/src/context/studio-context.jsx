@@ -20,6 +20,49 @@ export function StudioProvider({ children }) {
   const [pendingStage, setPendingStage] = useState(null);
   const [pendingView, setPendingView] = useState(null);
   const [pendingDate, setPendingDate] = useState(null);
+  const [pendingCampaign, setPendingCampaign] = useState(null);
+
+  // ── Which program you are working in ───────────────────────────────────────
+  // Comedy or Content. There is deliberately NO "both" button: `both` is a
+  // property a production HAS (it belongs to comedy and to content), not a
+  // third place to stand. Such a production appears under BOTH bubbles.
+  //
+  // This lives in the WORKSPACE, not localStorage. The desktop build binds
+  // PORT=0, so every launch serves from a different origin and per-origin
+  // browser storage starts empty every time — a preference kept there survives
+  // a reload and is silently lost on restart, which is the worst of both.
+  // `workspace.active_mode` already existed for exactly this and was never
+  // wired to anything.
+  const activeMode = workspace?.activeMode ?? null;
+  const grantedPrograms = workspace?.program?.programs ?? [];
+  const info = workspace?.program?.info ?? [];
+
+  // Stored 'both' predates this control and is not a choice the UI can make,
+  // so it reads as "not chosen yet" and falls back to the first granted program.
+  const scope =
+    info.find((i) => i.mode === activeMode)?.id ?? grantedPrograms[0] ?? null;
+  const scopeMode = info.find((i) => i.id === scope)?.mode ?? null;
+
+  const setScope = useCallback(async (program) => {
+    const mode = info.find((i) => i.id === program)?.mode;
+    if (!mode) return;
+    // The server validates against the licence and returns the whole workspace,
+    // so the new scope arrives the same way every other workspace fact does.
+    const res = await api.setMode(mode);
+    if (res?.data) setWorkspace(res.data);
+  }, [info.map((i) => i.id).join(',')]);
+
+  /**
+   * Does a thing carrying `mode` belong to the program in view?
+   *
+   * `mode === scopeMode` ALONE IS WRONG: it hides every `both` row from both
+   * bubbles. 5 of 15 productions are `both`, so that bug would quietly drop a
+   * third of the slate while looking like it worked.
+   */
+  const inScope = useCallback((mode) => {
+    if (!scopeMode) return true;
+    return mode === scopeMode || mode === 'both';
+  }, [scopeMode]);
 
   const notify = useCallback((message, tone = 'info') => {
     setToast({ message, tone, at: Date.now() });
@@ -146,6 +189,12 @@ export function StudioProvider({ children }) {
     pendingView, setPendingView,
     // A date to open the calendar on, so a day you clicked lands on that day.
     pendingDate, setPendingDate,
+    // A campaign to open Plan on. Going UP from a production has to land on
+    // that production's campaign, not at the top of a list of all of them.
+    pendingCampaign, setPendingCampaign,
+    // The program in view, the mode it maps to, and the predicate every
+    // list must use to filter by it.
+    scope, setScope, scopeMode, inScope, grantedPrograms,
     productions, refreshProductions, openProduction, createProduction,
     workspace, setWorkspace, loadWorkspace,
     production, setProduction, applyProduction,

@@ -34,13 +34,19 @@ const TOP = 5;
 export default function Home({ go }) {
   const {
     openProduction, setPendingStage, setPendingView, setPendingDate, mutate, notify,
+    scopeMode,
   } = useStudio();
   const [data, setData] = useState(null);
 
   const [idea, setIdea] = useState('');
   const [weekStart, setWeekStart] = useState(null);
 
-  const load = useCallback(() => api.schedule(weekStart).then(setData), [weekStart]);
+  // Refetches when the program bubble changes, so the counts in the title
+  // and the work queue below always describe the same slate.
+  const load = useCallback(
+    () => api.schedule(weekStart, scopeMode).then(setData),
+    [weekStart, scopeMode],
+  );
 
   const park = async (e) => {
     e.preventDefault();
@@ -147,8 +153,14 @@ export default function Home({ go }) {
               className={'weekday' + (d.isToday ? ' today' : '') + (d.isWeekend ? ' weekend' : '')
                 + (d.count ? ' has' : '')}
               key={d.date}
-              disabled={!d.count}
-              title={d.count ? `Open ${d.date} in the calendar` : undefined}
+              // An empty day used to be `disabled`, so six or seven of the
+              // seven buttons in this strip were dead — it looked like a
+              // control and behaved like a picture. An empty day is precisely
+              // the one you want to put work on, so it opens the calendar
+              // there, where a day can now take a production.
+              title={d.count
+                ? `Open ${d.date} in the calendar`
+                : `Nothing on ${d.date} — open the calendar to put something here`}
               // The calendar is the place that shows a day properly. Expanding
               // a list inline here built a second, worse calendar inside the
               // dashboard and left you somewhere that could not show the rest
@@ -165,7 +177,7 @@ export default function Home({ go }) {
 
         {!dueCount && (
           <p className="sectionnote">
-            Nothing due this week. Put a production on a day in Plan → Calendar.
+            Nothing due this week. Click any day to put a production on it.
           </p>
         )}
       </Section>

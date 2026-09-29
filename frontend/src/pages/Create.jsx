@@ -14,7 +14,7 @@ import NewProductionFlow from './NewProductionFlow.jsx';
 // row that describes the life of the one you are already working on.
 const STAGES = ['Plan', 'Script', 'Segments', 'Render', 'Edit', 'Publish'];
 
-export default function Create() {
+export default function Create({ go }) {
   const [stage, setStage] = useState('Plan');
   const [creating, setCreating] = useState(false);
   const { production, saveState, workspace, pendingStage, setPendingStage } = useStudio();
@@ -35,7 +35,7 @@ export default function Create() {
           were three stacked bands — a title block, a stage bar and a save chip —
           costing about 120px before any of the work appeared. */}
       <div className="prodhead">
-        <ProductionSwitcher onNew={() => setCreating(true)} />
+        <ProductionSwitcher onNew={() => setCreating(true)} go={go} />
 
         <div className="stagebar inline">
         {STAGES.map((s) => {
@@ -75,10 +75,29 @@ export default function Create() {
   );
 }
 
-/** Breadcrumb that opens the list of productions, plus a way to add one. */
-function ProductionSwitcher({ onNew }) {
+/**
+ * The breadcrumb.
+ *
+ * Campaign and title used to sit inside ONE button that opened the production
+ * switcher. It reads as a breadcrumb, so the natural click — the campaign name,
+ * to get back to the campaign — switched productions instead. A breadcrumb that
+ * does not go up is worse than no breadcrumb: it is the one thing on the page
+ * that looks like the way back.
+ *
+ * Two controls now. The campaign goes UP. The title opens the switcher, and
+ * carries the chevron so it is obvious which one does that.
+ */
+function ProductionSwitcher({ onNew, go }) {
   const [open, setOpen] = useState(false);
-  const { production, productions, openProduction } = useStudio();
+  const {
+    production, productions, openProduction, setPendingView, setPendingCampaign,
+  } = useStudio();
+
+  const upToCampaign = () => {
+    setPendingView('Campaigns');
+    setPendingCampaign(production.campaignId ?? null);
+    go?.('Plan');
+  };
 
   const byCampaign = productions.reduce((acc, p) => {
     const key = p.campaign ?? 'No campaign';
@@ -88,14 +107,26 @@ function ProductionSwitcher({ onNew }) {
 
   return (
     <div className="switcher">
-      {/* Reads as a picker, not a heading: the campaign sits above the name and
-          the chevron is always visible, so it is obvious this opens something. */}
+      <div className="crumb">
+        {production.campaignId ? (
+          <button
+            className="crumbup"
+            onClick={upToCampaign}
+            title={`Back to ${production.campaign}`}
+          >
+            {production.campaign}
+          </button>
+        ) : (
+          // A one-off has no campaign to go up to. Saying so flatly beats a
+          // dead control that looks like the others.
+          <span className="crumbup none">No campaign</span>
+        )}
+        <span className="crumbsep">›</span>
+      </div>
+
       <button className="switchbtn" onClick={() => setOpen((v) => !v)} title="Switch production">
-        <span className="switchlabel">
-          {production.campaign ?? 'No campaign'}
-          <ChevronDown size={13} />
-        </span>
         <h1>{production.title}</h1>
+        <ChevronDown size={13} />
       </button>
 
       {open && (

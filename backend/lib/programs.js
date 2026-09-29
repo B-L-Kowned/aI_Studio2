@@ -19,16 +19,24 @@
 /** Programs this build can draw. The licence decides which are granted. */
 export const KNOWN_PROGRAMS = ['funny', 'content'];
 
+// Two vocabularies meet here and they are NOT the same word. A program is
+// identified as `funny`; the same thing on a campaign or production is a `mode`
+// of `comedy`. `programsForEntitlement` bridges one way only, so anything that
+// filters productions by program had to hard-code the pairing and get it right.
+// Stating it once, here, is the only copy — see the note on `mode` below.
 export const PROGRAM_INFO = {
   funny: {
     id: 'funny',
     label: 'Comedy',
+    // The value this program wears in campaigns.mode / productions.mode.
+    mode: 'comedy',
     presenterTab: 'characters',
-    detail: 'Invented characters with artwork',
+    detail: 'Invented characters you write and cast yourself',
   },
   content: {
     id: 'content',
     label: 'Content',
+    mode: 'content',
     presenterTab: 'avatars',
     detail: 'A stock roster of real presenters',
   },

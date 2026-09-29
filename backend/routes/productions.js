@@ -34,10 +34,19 @@ export function loadProduction(id) {
     { kind: 'locked', label: 'LOCKED' },
   ];
 
+  // The LIST serializer resolves this and the detail one did not, so the same
+  // production read "AI for Operators — Season 1" on Home and "No campaign" one
+  // click later in Create. Two endpoints describing one row have to agree.
+  const campaign = p.campaign_id
+    ? db.prepare('SELECT name FROM campaigns WHERE id = ?').get(p.campaign_id)?.name ?? null
+    : null;
+
   return {
     id: p.id,
     slug: p.slug,
     title: p.title,
+    campaignId: p.campaign_id ?? null,
+    campaign,
     breadcrumb: p.breadcrumb,
     subtitle: p.subtitle,
     targetRuntime: p.target_runtime,

@@ -132,15 +132,30 @@ function blockers(p) {
   return out;
 }
 
-export function schedule({ idleDays = IDLE_DAYS, dueSoonDays = DUE_SOON_DAYS, weekStart = null } = {}) {
+/**
+ * `mode` scopes the whole schedule to one program.
+ *
+ * A production is 'comedy', 'content' or 'both'. `both` belongs to EACH
+ * program, so it must match either scope — `p.mode = ?` alone would hide every
+ * `both` row from both programs and quietly shrink the slate by a third.
+ *
+ * The filter lives in this one query on purpose: the counts, the campaign
+ * rollup and the work queue are all derived from these rows, so they cannot
+ * disagree with each other about what is in view.
+ */
+export function schedule({
+  idleDays = IDLE_DAYS, dueSoonDays = DUE_SOON_DAYS, weekStart = null, mode = null,
+} = {}) {
   const db = getDb();
+  const scoped = mode === 'comedy' || mode === 'content';
   const rows = db
     .prepare(
       `SELECT p.*, c.name AS campaign_name
          FROM productions p
-         LEFT JOIN campaigns c ON c.id = p.campaign_id`
+         LEFT JOIN campaigns c ON c.id = p.campaign_id
+        ${scoped ? "WHERE p.mode = ? OR p.mode = 'both'" : ''}`
     )
-    .all();
+    .all(...(scoped ? [mode] : []));
 
   const needsYou = [];
   const inFlight = [];
