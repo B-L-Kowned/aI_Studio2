@@ -85,6 +85,17 @@ MCP alone is sufficient for normal Live production, while an API key is optional
 and primarily adds the free watermarked Test-render path. If Test has no key, it
 returns `NO_FREE_PATH` rather than quietly spending the MCP plan.
 
+### Script models
+
+Scripting has three explicit paths: **Built-in deterministic** (offline and
+reproducible), **Local Ollama** (real on-device generation over loopback), and
+connected OpenAI, Claude, Groq or Grok accounts. Fixtures never calls a model;
+Test may use Ollama; cloud generation requires Live because it can incur token
+charges. Settings reports whether the configured Ollama model is actually
+installed. Every model response is validated against the approved scenes and
+speakers before it is stored, and each script version records its provider and
+model.
+
 ## Publishing
 
 `Artificial Funny` (**artificialfunny.com**) is an **owned channel**: publishing pushes
@@ -137,6 +148,9 @@ cd frontend && BUILD_DIR=.verify-build npm run build
   HeyGen Look/avatar from it still needs a verified provider operation.
 - The Producer is an assessment/action panel, not yet a free-form conversational
   collaborator across the full workflow.
+- Real LLM execution is wired for Scripting. Planning and Clarification keep
+  their deterministic implementations and are visibly marked as reserved in
+  Model routing; they do not yet invoke the selected provider.
 - The editor presents the broader roadmap, but only time-range trim/short-clip
   decisions are currently applied to exported files. Captions, graphics,
   reframing, B-roll and the other listed operations remain unimplemented.

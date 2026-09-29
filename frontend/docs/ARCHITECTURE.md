@@ -18,6 +18,7 @@ recorded in `SANDY_REPORT.md`.
 | Database | SQLite via `better-sqlite3` | OS user-data dir, **not** the repo |
 | Desktop shell | Electron **44** (main + preload) | `desktop/` |
 | Video | HeyGen, over **MCP** (OAuth) or an API key | `backend/lib/providers/` |
+| Script AI | deterministic · local Ollama · connected cloud providers | `backend/lib/llm*.js` |
 | Media tooling | ffmpeg / ffprobe, invoked as subprocesses | system |
 
 **Database location** is `~/Library/Application Support/AIVideoStudio/studio.db`
@@ -90,6 +91,15 @@ node desktop/node_modules/electron/install.js
 
 The server binds `127.0.0.1` — a single-user desktop app that listened on every
 interface would put the workspace on the local network.
+
+### Active product versus salvage source
+
+This architecture describes `aI_Studio2` in
+`~/Desktop/Projects/ai-video-frontend`. The older
+`~/Desktop/thoughts/artificial_funny/desktop` program is reference-only. Its
+multi-provider LLM contract, constrained Ollama JSON pattern and safe parsing
+were ported selectively; its hosted tier, accounts, licensing and application
+shell were not.
 
 ---
 
@@ -204,6 +214,26 @@ must keep the promise or refuse the job.
 Test mode is labelled `spend: metered`, not `none`: renders are free but
 auditions are real speech and cost credits.
 
+### LLM routing is separate from video routing
+
+The built-in route is deterministic code, **not** a disguised local model.
+Ollama is a separate provider restricted to loopback and probed through
+`/api/tags`. OpenAI, Anthropic, Groq and xAI read their encrypted credentials
+only inside the backend. Fixtures never makes an LLM call. Test may call local
+Ollama; cloud generation requires Live because it may incur provider charges.
+
+Only `script` executes through this runtime today. `plan` and `clarify` remain
+visible but disabled in Settings and continue through deterministic code. The
+separation is deliberate: a saved route is not evidence that a feature calls
+that route.
+
+Structured output has one contract. Ollama receives `format: "json"`; cloud
+providers receive JSON-only instructions and supported JSON-object mode. The
+parser accepts direct/fenced/outer-object JSON but never includes malformed
+customer output in exceptions. `segmentsFromLlmScript()` then requires every
+approved scene exactly once, rejects unknown speakers and caps stored line
+sizes. Script versions preserve the provider and model for audit.
+
 ### Two HeyGen pockets
 
 **MCP (OAuth)** spends the web plan you already pay for. **API key** spends a
@@ -304,7 +334,7 @@ extension, so client routing is unaffected.
 
 ## 8. Tests
 
-`npm run verify` — **200 assertions across three suites**, run against a
+`npm run verify` — **218 assertions across four suites**, run against a
 throwaway database on its own port. It prints a per-suite verdict and a closing
 summary, because a suite that *throws* prints no total and exits non-zero: read
 only the "N passed" lines and an aborted suite is indistinguishable from a clean
@@ -323,6 +353,7 @@ it trains you to read red as normal.
 | `verify.mjs` | licence, onboarding, planning, script revision, editing, stale propagation, provider sync, honest publish |
 | `verify-gate.mjs` | the hard gate — nothing renders unheard |
 | `verify-build.mjs` | website evidence, appearance approval, Production Lock, series planning, local video analysis, roster import, the parking lot |
+| `verify-llm.mjs` | safe structured parsing, constrained Ollama JSON, local status, prompt context and script-shape validation |
 
 ---
 
@@ -339,6 +370,7 @@ it trains you to read red as normal.
 | Source / URL import | **Closed in `codex/production-workflow-parity`.** One public page is researched, evidence is preserved and reviewed, and approved context reaches the script. This is intentionally not a crawler. |
 | Post-render editing | **Partial.** `Trim / Cut` and `Create Short Clip` collect ranges and are applied to the exported file. The other tools are disabled roadmap labels. No lower-thirds, burn-in captions or branding. `caption` exists only as publish metadata. |
 | Conversational producer | Durable workflow states and direct script revision are built. A free-form assistant that proposes controlled mutations across stages is not yet built. |
+| LLM-routed planning/clarification | The shared execution runtime and routing UI exist; only Scripting invokes it today. Planning and Clarification are explicitly disabled/reserved. |
 | Provider-native reusable Look | Local appearance proof/approval is built; a verified HeyGen operation to create a reusable remote look/avatar from it is not. |
 | Script → Segments | Accepting a script does **not** create segments; "Build from script" is a separate press on an otherwise-empty Segments page. The join between the two halves of the pipeline is a button you have to know about. |
 | Free audio review | **Closed 2026-09-29.** Auditions are HeyGen speech and spend the plan, which made the only way to hear a script a paid one. `lib/readthrough.js` reads it with local `say`: free, offline, with per-line and total duration against the target. It deliberately cannot satisfy the render gate — it answers "are these the right words", not "is this the right delivery". |

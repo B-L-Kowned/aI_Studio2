@@ -139,7 +139,7 @@ export const startSources = [
 export const setupCards = [
   { title: 'License', icon: 'KeyRound', body: 'Validate key · upgrade without reinstall', step: 'license' },
   { title: 'Storage', icon: 'HardDrive', body: 'Local · Google Drive · Dropbox', step: 'storage' },
-  { title: 'Planning AI', icon: 'Sparkles', body: 'Included LLM · OpenAI · Claude · Grok (BYO keys)', step: 'ai' },
+  { title: 'Planning AI', icon: 'Sparkles', body: 'Built-in deterministic · local Ollama · cloud keys', step: 'ai' },
   { title: 'Generation', icon: 'Video', body: 'Provider abstraction · HeyGen connection · Dry Run default', step: 'generation' },
   { title: 'Publishing', icon: 'Share2', body: 'YouTube · LinkedIn · TikTok · Instagram · Facebook · X', step: 'publishing' },
   { title: 'Safety / Cost', icon: 'Lock', body: 'Preview first · explicit paid render confirmation · usage ledger', step: 'safety' },

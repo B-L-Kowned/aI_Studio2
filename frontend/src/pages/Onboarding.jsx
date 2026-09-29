@@ -128,7 +128,9 @@ function StorageStep({ apply, next, mutate, workspace }) {
   );
 }
 
-const PROVIDER_LABEL = { included: 'Included LLM', openai: 'OpenAI', anthropic: 'Claude', xai: 'Grok' };
+const PROVIDER_LABEL = {
+  included: 'Built-in deterministic', openai: 'OpenAI', anthropic: 'Claude', xai: 'Grok',
+};
 
 function AiStep({ apply, next, mutate, workspace }) {
   const [provider, setProvider] = useState(workspace.llmProvider ?? 'included');
@@ -162,9 +164,9 @@ function AiStep({ apply, next, mutate, workspace }) {
     <form onSubmit={submit}>
       <h2><Sparkles /> Planning AI</h2>
       <p className="muted">
-        The included model handles planning by default. Bring your own key if you would rather
-        route planning through your own account — it is tested before it is saved, encrypted at
-        rest, and never displayed again.
+        The built-in deterministic engine works offline by default. Bring your own key if you
+        want cloud scripting through your account — it is tested before it is saved, encrypted
+        at rest, and never displayed again. Local Ollama can be selected later under Settings.
       </p>
       <div className="choicegrid">
         {Object.entries(PROVIDER_LABEL).map(([v, label]) => (

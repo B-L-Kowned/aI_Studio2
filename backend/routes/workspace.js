@@ -7,6 +7,7 @@ import {
 } from '../lib/credentials.js';
 import { publishTargets, publishChannels, setupCards, editorTools, startSources } from '../data/fixtures.js';
 import { llmState, setRouting, isLlmProvider } from '../lib/llm.js';
+import { ollamaStatus } from '../lib/llm-runtime.js';
 import { listConnections, ROLE_LABEL } from '../lib/connections.js';
 import { programState } from '../lib/programs.js';
 import { modeSummary, setProviderMode } from '../lib/providers/mode.js';
@@ -35,13 +36,21 @@ export function workspaceState() {
     // presenter tabs, what a creation is called, where to land.
     program: programState(w.entitlement, !!w.onboarded_at),
     llm: llmState(),
-    connections: { roles: ROLE_LABEL, items: listConnections() },
+    vendorConnections: { roles: ROLE_LABEL, items: listConnections() },
     providerMode: modeSummary(),
     connections: connections.map((c) => ({ platform: c.platform, status: c.status })),
   };
 }
 
 router.get('/workspace', route(async (_req, res) => ok(res, workspaceState())));
+
+// Local model reachability is a live probe and therefore separate from the
+// synchronous workspace snapshot. It calls loopback only and never sends a
+// prompt or incurs provider usage.
+router.get(
+  '/workspace/llm/status',
+  route(async (_req, res) => ok(res, { ollama: await ollamaStatus() }))
+);
 
 // --- Onboarding step 1: license -------------------------------------------
 router.post(

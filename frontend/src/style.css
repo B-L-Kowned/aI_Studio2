@@ -1493,6 +1493,7 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 .setlabel small { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 .setcontrol { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .setcontrol select { min-width: 190px; }
+.routehint { flex-basis: 100%; font-size: 11.5px; }
 .bigval { font-size: 14px; font-weight: 600; text-transform: capitalize; }
 .dim { color: var(--muted); }
 .okv { display: inline-flex; align-items: center; gap: 5px; color: var(--ok); font-size: 12.5px; }

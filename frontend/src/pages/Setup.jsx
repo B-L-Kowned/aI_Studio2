@@ -151,35 +151,66 @@ function LicenseSection() {
 function AiSection() {
   const { workspace, setWorkspace, mutate } = useStudio();
   const llm = workspace.llm;
+  const [runtime, setRuntime] = useState(null);
+  const loadRuntime = useCallback(() => api.llmStatus().then(setRuntime).catch(() => setRuntime(null)), []);
+  useEffect(() => { loadRuntime(); }, [loadRuntime]);
   const apply = (r) => setWorkspace(r.data);
+  const local = runtime?.ollama;
 
   return (
     <>
       <h2>Model routing</h2>
       <p className="muted">
-        Which model does which job. Add or remove keys under Connections; anything routed to
-        a model whose key is gone falls back to the included one rather than failing.
+        Which engine does which job. Built-in deterministic is the offline $0 fallback;
+        Local Ollama is a real on-device model; cloud models use your connected provider account.
       </p>
+
+      <div className={'notice ' + (local?.connected && local?.installed ? '' : 'warn')}>
+        {local?.connected && local?.installed ? <Check /> : <AlertCircle />}
+        <span>
+          <b>Local Ollama:</b>{' '}
+          {!runtime ? 'checking…' : local.connected
+            ? local.installed
+              ? `ready · ${local.model}`
+              : `${local.issue} Run: ollama pull ${local.model}`
+            : `${local.issue} Run: ollama serve`}
+        </span>
+        <button onClick={loadRuntime}><RefreshCw size={13} /> Re-check</button>
+      </div>
+
+      {workspace.providerMode?.mode !== 'live' && llm.routing.script !== 'included'
+        && llm.routing.script !== 'ollama' && (
+        <div className="notice warn">
+          <Lock />
+          <span>
+            Cloud scripting is held at the billing boundary. Enable <b>Live</b> under Generation
+            before this route can call {llm.routing.script}.
+          </span>
+        </div>
+      )}
 
       {llm.capabilities.map((c) => (
         <Row key={c.key} label={c.label} hint={c.detail}>
           <select
             value={llm.routing[c.key]}
+            disabled={!c.active}
             onChange={(e) => mutate(() => api.setLlmRouting(c.key, e.target.value), apply)}
           >
             {llm.providers.map((p) => (
               <option key={p.id} value={p.id}>{p.label}</option>
             ))}
           </select>
+          {!c.active && <span className="dim routehint">route reserved · deterministic today</span>}
+          {c.active && <span className="dim routehint">active in script generation</span>}
         </Row>
       ))}
 
-      {llm.providers.length === 1 && (
+      {llm.providers.filter((p) => p.kind === 'cloud').length === 0 && (
         <div className="notice">
           <Sparkles />
           <span>
-            Only the included model is available. Connect ChatGPT, Claude, Groq or Grok under
-            Connections to route work to them.
+            No cloud model is connected. Built-in deterministic still works offline; start Ollama
+            for local generation or connect ChatGPT, Claude, Groq or Grok under Connections.
           </span>
         </div>
       )}

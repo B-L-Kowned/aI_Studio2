@@ -14,13 +14,13 @@ import { mcpStatus } from './providers/heygen-mcp.js';
 
 export const CONNECTIONS = [
   { id: 'openai',     role: 'llm',   label: 'ChatGPT',    vendor: 'OpenAI',
-    detail: 'Planning, clarification and scripting' },
+    detail: 'Connected cloud model for script generation' },
   { id: 'anthropic',  role: 'llm',   label: 'Claude',     vendor: 'Anthropic',
-    detail: 'Planning, clarification and scripting' },
+    detail: 'Connected cloud model for script generation' },
   { id: 'groq',       role: 'llm',   label: 'Groq',       vendor: 'Groq',
-    detail: 'Fast inference for planning work' },
+    detail: 'Fast connected model for script generation' },
   { id: 'xai',        role: 'llm',   label: 'Grok',       vendor: 'xAI',
-    detail: 'Planning, clarification and scripting' },
+    detail: 'Connected cloud model for script generation' },
   { id: 'elevenlabs', role: 'voice', label: 'ElevenLabs', vendor: 'ElevenLabs',
     detail: 'Voice synthesis for drafts and finals' },
   { id: 'heygen',     role: 'video', label: 'HeyGen',     vendor: 'HeyGen',

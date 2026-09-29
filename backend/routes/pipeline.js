@@ -1,13 +1,17 @@
 import { Router } from 'express';
 import { getDb } from '../db/index.js';
 import { markStaleFrom, clearStale, staleSummary } from '../lib/stale.js';
-import { generateScript, estimateRuntime } from '../lib/script-generator.js';
+import {
+  generateScript, estimateRuntime, buildLlmScriptRequest, segmentsFromLlmScript,
+} from '../lib/script-generator.js';
+import { getRouting } from '../lib/llm.js';
+import { generateStructured, LlmRuntimeError } from '../lib/llm-runtime.js';
 import { publishTargets, publishChannels, editorTools } from '../data/fixtures.js';
 import { buildExport, planEdits } from '../lib/exporter.js';
 import { audienceFor } from '../lib/companies.js';
 import * as artificialFunny from '../lib/publishers/artificial-funny.js';
 import { pushRenderJob, jobsForRender, pollJob } from '../lib/providers/index.js';
-import { isDryRun, providerMode } from '../lib/providers/mode.js';
+import { isDryRun, providerMode, canGenerateLive } from '../lib/providers/mode.js';
 import { castingReadiness } from '../lib/casting.js';
 import { renderGate } from '../lib/segments.js';
 import { productionLock } from '../lib/production-lock.js';
@@ -36,11 +40,13 @@ function scriptState(productionId) {
   return {
     versions: versions.map((v) => ({
       id: v.id, version: v.version, status: v.status,
+      generatorProvider: v.generator_provider, generatorModel: v.generator_model,
       stale: !!v.stale, staleReason: v.stale_reason, createdAt: v.created_at,
     })),
     latest: latest
       ? {
           id: latest.id, version: latest.version, status: latest.status,
+          generatorProvider: latest.generator_provider, generatorModel: latest.generator_model,
           stale: !!latest.stale, staleReason: latest.stale_reason,
           segments: segments.map((s) => ({
             id: s.id, speaker: s.speaker, text: s.text,
@@ -111,12 +117,44 @@ router.post(
         .all(id)
         .map((field) => [field.label, field.value])
     );
-    const segments = generateScript(scenes, p.title, personas, track, brief);
+    const routedProvider = getRouting().script;
+    let generatorProvider = 'included';
+    let generatorModel = null;
+    let segments;
+
+    // Fixtures is an offline promise, even if a cloud route and key are saved.
+    // Local Ollama is allowed in Test because it stays on this machine and does
+    // not consume provider credits. Cloud text generation is allowed only in
+    // Live, the same explicit billing boundary used for finished renders.
+    if (providerMode() === 'fixtures' || routedProvider === 'included') {
+      segments = generateScript(scenes, p.title, personas, track, brief);
+    } else if (routedProvider !== 'ollama' && !canGenerateLive()) {
+      return fail(
+        res,
+        409,
+        'PAID_AI_DISABLED',
+        `Scripting is routed to ${routedProvider}, which may bill your provider account. Enable Live or route Scripting to Built-in deterministic or Local Ollama.`
+      );
+    } else {
+      const request = buildLlmScriptRequest(scenes, p.title, personas, track, brief);
+      try {
+        const generated = await generateStructured(routedProvider, request);
+        segments = segmentsFromLlmScript(generated.data, scenes);
+        generatorProvider = generated.provider;
+        generatorModel = generated.model;
+      } catch (err) {
+        const code = err instanceof LlmRuntimeError ? err.code : err.code ?? 'SCRIPT_GENERATION_FAILED';
+        const status = code === 'BAD_SCRIPT_SHAPE' ? 502 : code === 'NO_KEY' ? 409 : 502;
+        return fail(res, status, code, err.message || 'The selected model could not generate a valid script.');
+      }
+    }
 
     db.transaction(() => {
       const versionId = db
-        .prepare('INSERT INTO script_versions (production_id, version, status) VALUES (?,?,?)')
-        .run(id, nextVersion, 'proposed').lastInsertRowid;
+        .prepare(
+          'INSERT INTO script_versions (production_id, version, status, generator_provider, generator_model) VALUES (?,?,?,?,?)'
+        )
+        .run(id, nextVersion, 'proposed', generatorProvider, generatorModel).lastInsertRowid;
       const ins = db.prepare(
         'INSERT INTO script_segments (script_version_id, scene_id, position, speaker, text) VALUES (?,?,?,?,?)'
       );
@@ -126,7 +164,9 @@ router.post(
     return ok(
       res,
       { ...scriptState(id), stale: staleSummary(id) },
-      `Script v${nextVersion} proposed (dry run — deterministic, no paid call)`
+      generatorProvider === 'included'
+        ? `Script v${nextVersion} proposed (built-in deterministic · $0)`
+        : `Script v${nextVersion} proposed with ${generatorProvider}/${generatorModel}`
     );
   })
 );

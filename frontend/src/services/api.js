@@ -49,6 +49,7 @@ export const api = {
   recheckVendor: (id) => post(`/connections/${id}/recheck`),
   disconnectVendor: (id) => del(`/connections/${id}`),
   setLlmRouting: (capability, provider) => post('/workspace/llm/routing', { capability, provider }),
+  llmStatus: () => get('/workspace/llm/status'),
   setProviderMode: (mode, confirmBilling) => post('/workspace/provider-mode', { mode, confirmBilling }),
   setConnection: (platform, status) => post('/workspace/connections', { platform, status }),
   completeOnboarding: () => post('/workspace/complete-onboarding'),

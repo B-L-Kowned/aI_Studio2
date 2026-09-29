@@ -188,6 +188,8 @@ CREATE TABLE IF NOT EXISTS script_versions (
                      CHECK (status IN ('proposed','accepted','rejected')),
   stale         INTEGER NOT NULL DEFAULT 0,
   stale_reason  TEXT,
+  generator_provider TEXT NOT NULL DEFAULT 'included',
+  generator_model TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

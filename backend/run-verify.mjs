@@ -61,7 +61,7 @@ try {
     // green. So every suite gets an explicit verdict line, and the run ends
     // with one summary nobody has to reconstruct by eye.
     const verdicts = [];
-    for (const suite of ['verify.mjs', 'verify-gate.mjs', 'verify-build.mjs']) {
+    for (const suite of ['verify.mjs', 'verify-gate.mjs', 'verify-build.mjs', 'verify-llm.mjs']) {
       console.log(`\n────────── ${suite} ──────────`);
       const child = spawn(process.execPath, [suite], {
         env: Object.assign({}, process.env, { VERIFY_BASE: base }),

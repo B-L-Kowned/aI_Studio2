@@ -101,6 +101,10 @@ const ADDED_COLUMNS = [
   ['sources', 'file_path', 'TEXT'],
   ['sources', 'analysis', 'TEXT'],
   ['sources', 'analysed_at', 'TEXT'],
+  // Audit which engine wrote each proposal. A generated script must not become
+  // indistinguishable from the deterministic offline fixture after the fact.
+  ['script_versions', 'generator_provider', "TEXT NOT NULL DEFAULT 'included'"],
+  ['script_versions', 'generator_model', 'TEXT'],
 ];
 
 function migrate(db) {
