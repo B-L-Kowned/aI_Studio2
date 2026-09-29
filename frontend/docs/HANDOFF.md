@@ -31,12 +31,14 @@ changing the words is not approval of the new words.
 ## 2. Where it is right now
 
 ```
-git  6326e00  Scope the app by program, make days schedulable, fix breadcrumb and add history
+git  4846c7c  Expand production workflow and provider routing
+     6326e00  Scope the app by program, make days schedulable, fix breadcrumb and add history
      03b055e  Fix Electron N-API floor, centre header nav, stop Cast claiming artwork, repair dead gate suite
      07929e3  Initial commit
 ```
 
-**24 files uncommitted** (see §7). Tests: **186 assertions, exit 0**.
+**Handoff bundle committed as `4846c7c`** (see §7). Tests: **186 assertions,
+exit 0**. Frontend production build: clean.
 
 | | |
 |---|---|
@@ -215,7 +217,7 @@ always empty on purpose.
 
 ---
 
-## 7. Uncommitted work (24 files)
+## 7. Commit `4846c7c` (27 files)
 
 Modified: `backend/data/templates.js`, `lib/capabilities.js`,
 `lib/roster-import.js`, `lib/schedule.js`, `routes/collections.js`,
@@ -226,7 +228,9 @@ Modified: `backend/data/templates.js`, `lib/capabilities.js`,
 New: `backend/lib/readthrough.js`, `frontend/src/components/PresenterPick.jsx`,
 `frontend/src/components/TemplatePicker.jsx`, `frontend/docs/HANDOFF.md`
 (this file). Also modified: `backend/lib/connections.js`,
-`frontend/src/pages/ConnectionsSection.jsx` (the two-pocket fix).
+`frontend/src/pages/ConnectionsSection.jsx` (the two-pocket fix), plus
+`README.md`, `docs/TEST_PLAN.md` and `docs/CLAUDE_HANDOFF.md` to reconcile the
+repository-level documentation with the running application.
 
 What it contains:
 
@@ -255,8 +259,8 @@ What it contains:
    always addable. The render router always read them separately; only the
    report pretended otherwise.
 
-Commit with an explicit pathspec. **Never `git add -A`** — this is a shared
-checkout with other sessions.
+This bundle was staged with an explicit pathspec. Keep that rule: **never
+`git add -A`** in this shared checkout.
 
 ---
 

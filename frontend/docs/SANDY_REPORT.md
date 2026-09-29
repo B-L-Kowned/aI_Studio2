@@ -1,5 +1,9 @@
 # SANDY_REPORT
 
+> Historical report for the 2026-09-28 run. Its commit-state notes describe
+> that moment, not the current repository. For the current verified state use
+> `HANDOFF.md` and `ARCHITECTURE.md` in this directory.
+
 **Program:** AI Video Studio (`/Users/patrickbialko/Desktop/Projects/ai-video-frontend`)
 **Run:** 2026-09-28 · operator path, local
 **Verdict:** **NOT CERTIFIABLE — and not because it failed.** This program is not
