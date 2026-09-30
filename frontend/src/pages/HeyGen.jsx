@@ -21,6 +21,14 @@ import { Section } from '../components/Section.jsx';
 
 const ASSET_PAGE = 40;
 
+// The state panel's accent, by which pocket pays.
+const POCKET_CLASS = {
+  mcp: 'border-l-[3px] border-l-ok bg-ok-soft',
+  key: 'border-l-[3px] border-l-warn bg-warn-soft',
+  none: 'border-l-[3px] border-l-faint bg-surface-2',
+};
+const CONN_P = 'm-[6px_0_0] text-[12.5px] leading-[1.55]';
+
 export default function HeyGen({ embedded }) {
   const { mutate, notify } = useStudio();
   const [status, setStatus] = useState(null);
@@ -65,8 +73,8 @@ export default function HeyGen({ embedded }) {
     <>
       {/* Inside Settings the rail already names this section, so a second <h1>
           would be the page title repeated one line below itself. */}
-      <div className={embedded ? 'embedhead' : 'title'}>
-        {embedded ? <h2>HeyGen account</h2> : <h1>HeyGen</h1>}
+      <div className={embedded ? 'flex items-center justify-between mb-[14px]' : 'title'}>
+        {embedded ? <h2 className="m-0 text-[17px]">HeyGen account</h2> : <h1>HeyGen</h1>}
         <div className="quickrow">
           <button onClick={load}><RefreshCw size={14} /> Refresh</button>
           {connected && (
@@ -78,28 +86,28 @@ export default function HeyGen({ embedded }) {
       </div>
 
       {/* One state panel. It carries the action, so nothing below needs to. */}
-      <div className={'connpanel ' + status.pocket}>
-        <div className="connmain">
-          <b>
+      <div className={`flex gap-[20px] items-start border border-solid border-line rounded-lg p-[16px_18px] m-[14px_0] ${status.pocket} ${POCKET_CLASS[status.pocket] ?? ''}`}>
+        <div className="flex-1 min-w-0">
+          <b className="inline-flex items-center gap-[8px] text-[14px]">
             {connected && <><Check size={15} /> Signed in — using your HeyGen plan</>}
             {!connected && status.pocket === 'key' && <><AlertCircle size={15} /> Using an API key</>}
             {!connected && status.pocket === 'none' && <><Lock size={15} /> Not connected</>}
           </b>
-          <p>{status.explanation}</p>
-          {status.recommendation && <p className="pocketwarn">{status.recommendation}</p>}
+          <p className={CONN_P}>{status.explanation}</p>
+          {status.recommendation && <p className={CONN_P + ' !mt-[8px] font-[560] text-warn'}>{status.recommendation}</p>}
           {!connected && (
-            <p className="connfine">
+            <p className={CONN_P + ' text-muted'}>
               Opens a browser tab. Signing in only reads your account — nothing is charged.
-              The consent screen reads <b>“HeyGen MCP Default”</b>; HeyGen overrides the name.
+              The consent screen reads <b className="inline-flex items-center gap-[8px] text-[14px]">“HeyGen MCP Default”</b>; HeyGen overrides the name.
             </p>
           )}
         </div>
-        <div className="connside">
+        <div className="flex flex-col gap-[8px] items-end shrink-0">
           {status.credits != null && (
             <span className="credits"><Wallet size={13} /> {status.credits} credits</span>
           )}
           {!connected && (
-            <button className="primary" onClick={connect} disabled={busy}>
+            <button className="primary whitespace-nowrap" onClick={connect} disabled={busy}>
               {busy ? 'Opening…' : <><ExternalLink size={15} /> Sign in to HeyGen</>}
             </button>
           )}
@@ -119,18 +127,22 @@ export default function HeyGen({ embedded }) {
         ) : videos.length === 0 ? (
           <p className="sectionempty">No videos in this account yet.</p>
         ) : (
-          <div className="vidgrid">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(228px,1fr))] gap-[12px] lte860:grid-cols-[repeat(2,1fr)] lte620:grid-cols-[1fr]">
             {videos.map((v) => (
-              <div className="vidcard" key={v.id}>
-                <div className="vidthumb" style={v.thumbnailUrl ? { backgroundImage: `url(${v.thumbnailUrl})` } : undefined}>
+              <div className="bg-surface border border-solid border-line rounded-lg p-[12px] flex flex-col gap-[7px]" key={v.id}>
+                {/* HeyGen renders 9:16 portrait. `contain` letterboxed it on black and a
+                    centred `cover` crop is a chin on a talking head: fill the frame,
+                    biased upward to the face. */}
+                <div className="aspect-[16/10] rounded [background-color:#17181a] bg-cover bg-no-repeat bg-[position:center_28%] grid place-items-center text-[rgba(255,255,255,.45)]" style={v.thumbnailUrl ? { backgroundImage: `url(${v.thumbnailUrl})` } : undefined}>
                   {!v.thumbnailUrl && <Play size={20} />}
                 </div>
-                <b>{v.title}</b>
-                <div className="vidmeta">
+                <b className="text-[13px] leading-[1.35] min-h-[2.7em] line-clamp-2">{v.title}</b>
+                <div className="flex gap-[8px] items-center text-[11.5px] text-muted mt-[-2px]">
                   <span className={'vchip ' + (v.status === 'completed' ? 'complete' : v.status)}>{v.status}</span>
                   {v.duration && <span>{Math.round(v.duration)}s</span>}
                 </div>
                 <button
+                  className="text-[12px] p-[6px_10px] justify-center flex items-center gap-[6px]"
                   disabled={v.status !== 'completed'}
                   onClick={() => mutate(() => api.importHeygenVideo(v.id), null).then(load)}
                 >
@@ -158,13 +170,14 @@ export default function HeyGen({ embedded }) {
           <p className="sectionempty">Nothing synced yet.</p>
         ) : (
           <>
-            <div className="assetfilter">
+            <div className="flex gap-[8px] mb-[10px]">
               <input
+                className="flex-1 text-[13px] p-[6px_9px]"
                 placeholder={`Search ${assets.length} avatars and voices…`}
                 value={assetQuery}
                 onChange={(e) => { setAssetQuery(e.target.value); setAssetLimit(ASSET_PAGE); }}
               />
-              <select value={assetKind} onChange={(e) => { setAssetKind(e.target.value); setAssetLimit(ASSET_PAGE); }}>
+              <select className="text-[13px] p-[6px_8px]" value={assetKind} onChange={(e) => { setAssetKind(e.target.value); setAssetLimit(ASSET_PAGE); }}>
                 <option value="all">All kinds</option>
                 <option value="avatar">Avatars</option>
                 <option value="voice">Voices</option>
@@ -191,7 +204,7 @@ export default function HeyGen({ embedded }) {
                         {a.isFixture
                           ? <em className="sample">sample</em>
                           : <em className="realmark"><Check size={11} /> yours</em>}
-                        <code className="dim">{a.remoteId}</code>
+                        <code className="text-muted">{a.remoteId}</code>
                       </div>
                     ))}
                   </div>
@@ -199,7 +212,7 @@ export default function HeyGen({ embedded }) {
                     Showing {shown.length} of {matched.length}
                     {matched.length < assets.length ? ` (filtered from ${assets.length})` : ''}
                     {shown.length < matched.length && (
-                      <> · <button className="linkish" onClick={() => setAssetLimit((n) => n + 200)}>
+                      <> · <button className="[border:0] bg-transparent p-0 text-[length:inherit] text-accent underline rounded-none [&:hover:not(:disabled)]:bg-transparent [&:hover:not(:disabled)]:text-accent" onClick={() => setAssetLimit((n) => n + 200)}>
                         Show 200 more
                       </button></>
                     )}
@@ -216,8 +229,10 @@ export default function HeyGen({ embedded }) {
           title="What your MCP server exposes"
           meta="from tools/list — free to read"
         >
-          <div className="provassets">
-            {status.capabilities.tools.map((t) => <code key={t}>{t}</code>)}
+          <div className="flex gap-[5px] flex-wrap mt-[8px] max-h-[132px] overflow-auto pr-[4px]">
+            {status.capabilities.tools.map((t) => (
+              <code key={t} className="text-[11px] bg-canvas border border-solid border-line p-[3px_7px] rounded-sm text-muted">{t}</code>
+            ))}
           </div>
           <p className={'sectionnote ' + (status.capabilities.canGenerateVideo ? 'ok' : 'warn')}>
             {status.capabilities.canGenerateVideo

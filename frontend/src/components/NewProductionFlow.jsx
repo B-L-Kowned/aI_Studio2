@@ -20,6 +20,14 @@ import NewSeries from './NewSeries.jsx';
  */
 const ICONS = { Sparkles, FileText, Video, Link, FolderKanban };
 
+// Hover/disabled are compound variants so they out-specify the generic
+// `button:hover:not(:disabled)` and `button:disabled`, as the old rules did.
+const CARD = 'flex flex-col gap-[6px] items-start text-left p-[13px_14px] rounded-lg border border-solid border-line bg-surface cursor-pointer'
+  + ' [&:hover:not(:disabled)]:border-line-2 [&:hover:not(:disabled)]:bg-surface-2 disabled:opacity-[.55] disabled:cursor-not-allowed';
+const CARD_TOP = 'flex items-center gap-[7px] [&>svg]:text-muted';
+const CARD_TEXT = 'text-muted text-[12px] leading-[1.5]';
+const MARK = 'not-italic text-[10.5px] tracking-[.04em] uppercase p-[1px_6px] rounded-[3px]';
+
 const SOURCE_FOR = {
   'An Idea': 'idea',
   'A Template': 'template',
@@ -54,7 +62,7 @@ export default function NewProductionFlow({
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <div className="modal widest">
+      <div className="modal w-[min(760px,calc(100vw_-_48px))]">
         <div className="modalhead">
           <b>What are we making?</b>
           <button onClick={onClose}><X size={15} /></button>
@@ -63,41 +71,41 @@ export default function NewProductionFlow({
         {/* Several at once is a different KIND of answer to the ones below, so
             it sits apart rather than being a seventh card of the same shape. */}
         {canSeries && (
-          <button type="button" className="sourcecard wide" onClick={() => setPicked('series')}>
-            <span className="sourcetop">
+          <button type="button" className={`${CARD} wide w-full mb-[4px]`} onClick={() => setPicked('series')}>
+            <span className={CARD_TOP}>
               <Layers size={16} />
-              <b>A series</b>
-              <em className="countmark">several at once</em>
+              <b className="text-[13.5px]">A series</b>
+              <em className={`${MARK} text-accent bg-accent-soft`}>several at once</em>
             </span>
-            <small>
+            <small className={CARD_TEXT}>
               A season, a course, a run of shorts. Creates the campaign and every episode in it,
               in the order you set — then each one is an ordinary production.
             </small>
           </button>
         )}
 
-        <p className="sourcedivider">
+        <p className="flex items-center gap-[10px] m-[12px_0_8px] text-faint text-[11.5px] before:content-[''] before:flex-1 before:h-[1px] before:bg-line after:content-[''] after:flex-1 after:h-[1px] after:bg-line">
           <span>{canSeries ? 'or one video, starting from' : 'One video, starting from'}</span>
         </p>
 
-        <div className="sourcegrid">
+        <div className="grid grid-cols-[repeat(2,1fr)] gap-[10px] mt-[4px]">
           {meta.startSources.map((s) => {
             const I = ICONS[s.icon] ?? Sparkles;
             return (
               <button
                 type="button"
-                className={'sourcecard' + (s.locked || s.available === false ? ' blocked' : '')}
+                className={CARD + (s.locked || s.available === false ? ' blocked' : '')}
                 key={s.title}
                 disabled={s.locked}
                 onClick={() => setPicked(SOURCE_FOR[s.title] ?? 'idea')}
               >
-                <span className="sourcetop">
+                <span className={CARD_TOP}>
                   <I size={16} />
-                  <b>{s.title}</b>
+                  <b className="text-[13.5px]">{s.title}</b>
                   {s.locked && <Lock size={12} />}
                 </span>
-                <small>{s.locked ? 'Not included in your current licence.' : s.body}</small>
-                {s.available === false && <em className="notbuilt">not built yet</em>}
+                <small className={CARD_TEXT}>{s.locked ? 'Not included in your current licence.' : s.body}</small>
+                {s.available === false && <em className={`${MARK} text-warn bg-warn-soft`}>not built yet</em>}
               </button>
             );
           })}

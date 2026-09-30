@@ -90,16 +90,16 @@ export default function ScriptStage({ goToStage }) {
 
       {latest && (
         <>
-          <div className="scriptbody">
+          <div className="border border-solid border-line rounded p-[16px_18px] m-[14px_0] max-h-[430px] overflow-auto bg-surface-2">
             {latest.segments.map((s, i) => {
               const newScene = i === 0 || latest.segments[i - 1].sceneRef !== s.sceneRef;
               return (
                 <React.Fragment key={s.id}>
-                  {newScene && <div className="scriptscene">Scene {s.sceneRef} — {s.sceneTitle}</div>}
-                  <div className="scriptline">
+                  {newScene && <div className="text-[10px] tracking-[.07em] font-semibold text-muted uppercase border-b border-b-line [border-bottom-style:solid] pb-[6px] m-[20px_0_10px] first:mt-0">Scene {s.sceneRef} — {s.sceneTitle}</div>}
+                  <div className="grid grid-cols-[96px_1fr] gap-[14px] p-[5px_0] lte800:grid-cols-[1fr]">
                     {latest.status === 'proposed' ? (
                       <>
-                        <input className="scriptspeaker" defaultValue={s.speaker} aria-label="Speaker"
+                        <input className="text-[11.5px] p-[6px_7px] self-start" defaultValue={s.speaker} aria-label="Speaker"
                           onBlur={(e) => {
                             if (e.target.value !== s.speaker) {
                               mutate(
@@ -108,7 +108,7 @@ export default function ScriptStage({ goToStage }) {
                               ).catch(() => {});
                             }
                           }} />
-                        <textarea className="scripttext" defaultValue={s.text} aria-label="Script line" rows={2}
+                        <textarea className="w-full min-h-[54px] resize-y" defaultValue={s.text} aria-label="Script line" rows={2}
                           onBlur={(e) => {
                             if (e.target.value !== s.text) {
                               mutate(
@@ -119,7 +119,7 @@ export default function ScriptStage({ goToStage }) {
                           }} />
                       </>
                     ) : (
-                      <><b>{s.speaker}</b><p>{s.text}</p></>
+                      <><b className="text-[12px] text-muted text-right font-[560] lte800:text-left">{s.speaker}</b><p className="m-0 leading-[1.6] text-[13.5px] text-ink">{s.text}</p></>
                     )}
                   </div>
                 </React.Fragment>

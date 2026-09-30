@@ -18,6 +18,9 @@ const STATE_TONE = {
   ready: 'ok', stale: 'warn', failed: 'danger',
   rendering: 'busy', approved: 'busy', scripted: 'idle', draft: 'idle',
 };
+const TONE_COLOR = {
+  ok: 'text-ok', warn: 'text-warn', danger: 'text-danger', busy: 'text-accent', idle: 'text-muted',
+};
 const STATE_ICON = { ready: Check, stale: AlertCircle, failed: AlertCircle };
 
 export default function Training({ go, goView }) {
@@ -84,8 +87,10 @@ export default function Training({ go, goView }) {
             title={c.title}
             meta={
               <>
-                <span className="trprogress" title={`${c.counts.ready} of ${c.counts.lessons} ready`}>
-                  <i style={{ width: `${c.percent}%` }} />
+                <span
+                  className="inline-block w-[90px] h-[5px] rounded-[3px] bg-line overflow-hidden align-middle"
+                  title={`${c.counts.ready} of ${c.counts.lessons} ready`}>
+                  <i className="block h-full bg-ok rounded-[3px]" style={{ width: `${c.percent}%` }} />
                 </span>
                 <small>{c.percent}%</small>
               </>
@@ -111,36 +116,42 @@ export default function Training({ go, goView }) {
                 <GraduationCap size={15} /> No lessons yet — assign a video to this course from Campaigns.
               </p>
             ) : (
-              <div className="trlessons">
+              <div className="flex flex-col">
                 {lessons.map((l, i) => {
                   const I = STATE_ICON[l.state] ?? Clock;
                   return (
-                    <div className="trlesson" key={l.id}>
-                      <span className="trnum">{String(i + 1).padStart(2, '0')}</span>
+                    <div
+                      className="grid grid-cols-[26px_minmax(0,1fr)_auto_auto_46px_auto] gap-[12px] items-center p-[9px_14px] [border-top:1px_solid_var(--line)] first:[border-top:0] lte900:grid-cols-[22px_minmax(0,1fr)_auto]"
+                      key={l.id}
+                    >
+                      <span className="font-mono text-[11px] leading-none font-normal not-italic text-faint text-right">{String(i + 1).padStart(2, '0')}</span>
 
-                      <div className="trmain">
-                        <b>{l.title}</b>
-                        {l.subtitle && <small>{l.subtitle}</small>}
+                      <div className="min-w-0 flex flex-col gap-[1px]">
+                        <b className="text-[13.5px] font-[550]">{l.title}</b>
+                        {l.subtitle && <small className="text-muted text-[11.5px] truncate">{l.subtitle}</small>}
                       </div>
 
-                      <span className="trsegs">
+                      <span className="font-mono text-[11.5px] leading-[normal] font-normal not-italic text-faint whitespace-nowrap lte900:hidden">
                         {l.segments.total
                           ? `${l.segments.heard}/${l.segments.total} approved`
                           : 'no segments'}
                       </span>
 
-                      <span className={'trstate ' + STATE_TONE[l.state]}>
+                      <span
+                        className={'inline-flex items-center gap-[4px] text-[11.5px] whitespace-nowrap '
+                          + STATE_TONE[l.state] + ' ' + (TONE_COLOR[STATE_TONE[l.state]] ?? 'text-muted')}
+                      >
                         <I size={12} /> {l.stateLabel}
                       </span>
 
-                      <span className="trrt">{l.runtime}</span>
+                      <span className="font-mono text-[11.5px] leading-[normal] font-normal not-italic text-faint text-right lte900:hidden">{l.runtime}</span>
 
                       {isOrdering ? (
-                        <span className="trmove">
-                          <button disabled={i === 0} onClick={() => move(i, -1)} title="Move up">
+                        <span className="inline-flex gap-[2px]">
+                          <button className="p-[3px_4px]" disabled={i === 0} onClick={() => move(i, -1)} title="Move up">
                             <ChevronUp size={14} />
                           </button>
-                          <button disabled={i === lessons.length - 1} onClick={() => move(i, 1)} title="Move down">
+                          <button className="p-[3px_4px]" disabled={i === lessons.length - 1} onClick={() => move(i, 1)} title="Move down">
                             <ChevronDown size={14} />
                           </button>
                         </span>

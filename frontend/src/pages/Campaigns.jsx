@@ -7,6 +7,10 @@ import { Section, PageHead } from '../components/Section.jsx';
 
 const STEP_LABEL = { plan: 'Plan', script: 'Script', render: 'Render', export: 'Export', publish: 'Publish' };
 
+// Five pips: how far this production has actually got.
+const PIP_FILL = { done: 'bg-ok', active: 'bg-warn' };
+const TABULAR = '[font-variant-numeric:tabular-nums]';
+
 function relTime(iso) {
   if (!iso) return '';
   const secs = Math.max(0, (Date.now() - Date.parse(iso.replace(' ', 'T') + 'Z')) / 1000);
@@ -156,29 +160,47 @@ export default function Campaigns({ go }) {
         meta={`${groups.filter((g) => g.real).length} campaign${groups.filter((g) => g.real).length === 1 ? '' : 's'} · ${inView.length} production${inView.length === 1 ? '' : 's'}${needsAttention ? ` · ${needsAttention} need${needsAttention === 1 ? 's' : ''} attention` : ''}`}
         flush
       >
-      <div className="camptable">
+      {/* Sits in a flush Section, so it carries no border, radius or margin of its own. */}
+      <div className="bg-surface overflow-hidden">
         {groups.map((g) => {
           const visible = covers(g.mode);
           return (
             <section
-              className={'campgroup' + (visible ? '' : ' dimmed')
-                + (cameFrom != null && g.id === cameFrom ? ' cameFrom' : '')}
+              className={'[&+&]:[border-top:1px_solid_var(--line)]'
+                + (visible ? '' : ' dimmed opacity-50')
+                // Arrived by going up: say which one, briefly, then stop shouting.
+                + (cameFrom != null && g.id === cameFrom
+                  ? ' [box-shadow:0_0_0_2px_var(--accent)] rounded-sm [transition:box-shadow_.4s_ease]'
+                  : '')}
               data-campaign={g.id ?? 'oneoff'}
               key={g.id ?? 'oneoff'}
             >
-              <header>
-                <b>{g.name}</b>
+              <header className="flex items-center gap-[9px] p-[9px_14px] bg-surface-2 [border-bottom:1px_solid_var(--line)]">
+                <b className="text-[12.5px] font-semibold">{g.name}</b>
                 {/* The track. `purpose` is a closed set so "investor" means the
                     same thing across fifty companies; `audience` is free text
                     because no enum survives fifty companies — and it is the one
                     that actually reaches generateScript. Both were in the
                     database and reached this page as null. */}
-                {g.purpose && <span className="ctrack">{g.purpose}</span>}
-                <span className="cmode">{g.mode}</span>
-                <span className="ccount">{g.items.length}</span>
-                {g.audience && <span className="caudience" title={g.audience}>{g.audience}</span>}
+                {g.purpose && (
+                  <span className="text-[10.5px] tracking-[.02em] p-[1px_7px] rounded-[999px] bg-accent-soft text-accent border border-solid border-accent-line">
+                    {g.purpose}
+                  </span>
+                )}
+                <span className="text-[10px] tracking-[.05em] uppercase text-muted border border-solid border-line-2 rounded-sm p-[1px_6px]">
+                  {g.mode}
+                </span>
+                <span className={`text-[11px] text-muted ${TABULAR} bg-canvas rounded-[20px] p-[1px_8px]`}>
+                  {g.items.length}
+                </span>
+                {/* Audience is free text: it truncates rather than pushing the counts off the row. */}
+                {g.audience && (
+                  <span className="text-[11px] text-faint italic truncate max-w-[340px] min-w-0" title={g.audience}>
+                    {g.audience}
+                  </span>
+                )}
                 {!visible && <span className="conn off"><Lock size={11} /> {g.mode} only</span>}
-                <span className="spacer" />
+                <span className="ml-auto" />
                 {/* "Add" lived here on every campaign, next to a "New" button
                     that does the same thing, above an empty campaign that also
                     said "add the first production" — three routes to one modal.
@@ -197,32 +219,49 @@ export default function Campaigns({ go }) {
 
               {g.items.length === 0 ? (
                 <p className="campempty">
-                  Empty — <button className="linkbtn" onClick={() => setCreatingIn(g.id)}>
+                  Empty — <button className="[border:0] bg-transparent p-0 text-accent underline [font-size:inherit]" onClick={() => setCreatingIn(g.id)}>
                     add the first production
                   </button> to "{g.name}".
                 </p>
               ) : (
                 g.items.map((p) => (
-                  <div className={'prow' + (p.id === production.id ? ' cur' : '')} key={p.id}>
-                    <button className="prowmain" onClick={() => open(p.id)} disabled={!visible}>
-                      <span className="ptitle">
+                  <div
+                    className={'grid grid-cols-[1fr_132px_132px] lte760:grid-cols-[1fr_auto] items-center gap-[12px] p-[0_14px_0_0] [border-bottom:1px_solid_var(--line)] last:[border-bottom:0] hover:bg-surface-2'
+                      + (p.id === production.id ? ' [box-shadow:inset_2px_0_0_var(--ink)]' : '')}
+                    key={p.id}
+                  >
+                    <button
+                      className="[border:0] bg-transparent text-left p-[10px_14px] rounded-none min-w-0 [&:hover:not(:disabled)]:bg-transparent"
+                      onClick={() => open(p.id)}
+                      disabled={!visible}
+                    >
+                      <span className="flex items-center gap-[7px] text-[13.5px] font-[520]">
                         {p.title}
-                        {p.id === production.id && <em className="openmark"><Check size={11} /> open</em>}
+                        {p.id === production.id && (
+                          <em className="not-italic text-[10px] text-ok inline-flex items-center gap-[3px] border border-solid border-[#c5e3d5] bg-ok-soft rounded-[20px] p-[1px_6px]">
+                            <Check size={11} /> open
+                          </em>
+                        )}
                       </span>
-                      <span className="psub">
+                      <span className={`block text-[11.5px] text-muted mt-[2px] ${TABULAR}`}>
                         {p.counts.sections} sections · {p.counts.scenes} scenes · {p.targetRuntime}
                         {p.updatedAt && ` · ${relTime(p.updatedAt)}`}
                       </span>
                     </button>
 
-                    <div className="pips" title={p.steps.map((s) => `${STEP_LABEL[s.key]}: ${s.state}`).join('\n')}>
-                      {p.steps.map((s) => <i key={s.key} className={s.state} />)}
-                      <span className="pipstage">{p.stage}/5</span>
+                    <div className="flex lte760:hidden items-center gap-[3px]" title={p.steps.map((s) => `${STEP_LABEL[s.key]}: ${s.state}`).join('\n')}>
+                      {p.steps.map((s) => (
+                        <i
+                          key={s.key}
+                          className={`${s.state} w-[16px] h-[4px] rounded-[2px] block ${PIP_FILL[s.state] ?? 'bg-line'}`}
+                        />
+                      ))}
+                      <span className={`text-[10.5px] text-faint ml-[5px] ${TABULAR}`}>{p.stage}/5</span>
                     </div>
 
-                    <div className="prowactions">
+                    <div className="flex items-center justify-end gap-[4px]">
                       {p.stale > 0 && (
-                        <em className="stalemark" title={Object.values(p.staleDetail)[0]?.reason}>
+                        <em className="not-italic text-[11px] text-warn inline-flex items-center gap-[4px] whitespace-nowrap" title={Object.values(p.staleDetail)[0]?.reason}>
                           <AlertCircle size={12} /> {p.stale} stale
                         </em>
                       )}
@@ -232,7 +271,7 @@ export default function Campaigns({ go }) {
                       {dating === p.id ? (
                         <input
                           type="date"
-                          className="rowdate"
+                          className="text-[12px] p-[4px_6px]"
                           autoFocus
                           defaultValue={p.dueAt ?? ''}
                           onChange={async (e) => {
@@ -244,12 +283,12 @@ export default function Campaigns({ go }) {
                         />
                       ) : (
                         <button
-                          className={'ghostbtn' + (p.dueAt ? ' hasdate' : '')}
+                          className={'ghostbtn' + (p.dueAt ? ' text-ink-2' : '')}
                           title={p.dueAt ? `Due ${p.dueAt}` : 'Set a deadline'}
                           onClick={() => setDating(p.id)}
                         >
                           <CalendarDays size={13} />
-                          {p.dueAt && <span className="rowdue">{p.dueAt.slice(5)}</span>}
+                          {p.dueAt && <span className="font-mono text-[11px] not-italic font-normal leading-[normal] ml-[4px]">{p.dueAt.slice(5)}</span>}
                         </button>
                       )}
                       <button className="ghostbtn" title="Rename" onClick={() => setRenaming(p)}>

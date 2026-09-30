@@ -111,11 +111,19 @@ export default function NewProduction({
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <div className={'modal newproductionmodal' + (source.needs !== 'project' ? ' has-template-picker' : '')}>
+      {/* A real catalogue, not a confirmation prompt: with the template picker it
+          gets the desktop canvas instead of the generic 460px dialog. */}
+      <div
+        className={'modal top-[6vh] max-h-[88vh] overflow-y-auto lte720:top-[20px] lte720:max-h-[calc(100vh_-_40px)]'
+          + (source.needs !== 'project'
+            ? ' group/tpm w-[min(820px,calc(100vw_-_48px))] lte720:w-[calc(100vw_-_32px)]'
+            : '')}
+      >
         <div className="modalhead">
           <b>
+            {/* `.modalhead button` sets border, fill, padding and colour; only the margin is ours. */}
             {onBack && (
-              <button className="backbtn" type="button" onClick={onBack} title="Choose a different starting point">
+              <button className="mr-[2px]" type="button" onClick={onBack} title="Choose a different starting point">
                 <ArrowLeft size={14} />
               </button>
             )}
@@ -130,11 +138,15 @@ export default function NewProduction({
             <label className="oblabel">
               The video
               {desktop ? (
-                <span className="pickrow">
+                <span className="flex flex-col gap-[6px] items-start">
                   <button type="button" onClick={chooseVideo}>
                     <Upload size={13} /> {videoFile ? 'Choose a different file' : 'Choose a video…'}
                   </button>
-                  {videoFile && <code>{videoFile}</code>}
+                  {videoFile && (
+                    <code className="font-mono text-[11px] not-italic font-normal leading-[normal] text-muted break-all">
+                      {videoFile}
+                    </code>
+                  )}
                 </span>
               ) : (
                 <input
@@ -145,7 +157,7 @@ export default function NewProduction({
                   autoFocus
                 />
               )}
-              <small className="obhelp">{source.help}</small>
+              <small className="block mt-[5px] text-faint text-[11.5px] leading-[1.5]">{source.help}</small>
             </label>
           )}
 
@@ -153,14 +165,14 @@ export default function NewProduction({
             <label className="oblabel">
               The script
               <textarea
-                className="obinput scriptbox"
+                className="obinput font-mono text-[12.5px] leading-[1.6] not-italic font-normal resize-y"
                 rows={10}
                 placeholder={'Pat: So the thing about agents is that they fail quietly.\nChristine: Which is the worst way to fail.'}
                 value={scriptText}
                 onChange={(e) => setScriptText(e.target.value)}
                 autoFocus
               />
-              <small className="obhelp">{source.help}</small>
+              <small className="block mt-[5px] text-faint text-[11.5px] leading-[1.5]">{source.help}</small>
             </label>
           )}
 
@@ -176,7 +188,7 @@ export default function NewProduction({
                 onChange={(e) => setSourceUrl(e.target.value)}
                 autoFocus
               />
-              <small className="obhelp">{source.help}</small>
+              <small className="block mt-[5px] text-faint text-[11.5px] leading-[1.5]">{source.help}</small>
             </label>
           )}
 
@@ -196,7 +208,7 @@ export default function NewProduction({
                   </option>
                 ))}
               </select>
-              <small className="obhelp">{source.help}</small>
+              <small className="block mt-[5px] text-faint text-[11.5px] leading-[1.5]">{source.help}</small>
             </label>
           )}
 

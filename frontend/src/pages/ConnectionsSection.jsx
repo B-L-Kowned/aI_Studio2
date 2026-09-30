@@ -11,8 +11,14 @@ import LoadState from '../components/LoadState.jsx';
 const STATUS = {
   connected:    { icon: Check,       cls: 'okv',     text: 'connected' },
   unchecked:    { icon: HelpCircle,  cls: 'unknownv', text: 'stored, not checked' },
-  disconnected: { icon: null,        cls: 'dim',     text: 'not connected' },
+  disconnected: { icon: null,        cls: 'text-muted', text: 'not connected' },
 };
+
+// Same row anatomy as Setup's <Row>, which these rows sit alongside.
+const SETROW = 'grid grid-cols-[210px_1fr] gap-[16px] items-center p-[11px_0] [border-bottom:1px_solid_var(--line)] last:[border-bottom:0] lte860:grid-cols-[1fr] lte860:gap-[6px]';
+const PROV_B = 'text-ink [font-variant-numeric:tabular-nums]';
+// A plan chip is green; the key chip is accent. Neither is a status colour.
+const POCKETCHIP = 'not-italic text-[10.5px] bg-ok-soft border border-solid rounded-[20px] p-[2px_9px] whitespace-nowrap';
 
 export default function ConnectionsSection() {
   const { mutate, workspace } = useStudio();
@@ -39,7 +45,7 @@ export default function ConnectionsSection() {
 
   return (
     <>
-      <h2>Connections</h2>
+      <h2 className="m-[0_0_4px]">Connections</h2>
       <p className="muted">
         Each key is checked against the service that owns it, using a free read —
         a model list or an account lookup. Nothing here can spend credits.
@@ -55,7 +61,7 @@ export default function ConnectionsSection() {
         </div>
       )}
 
-      {note && <p className="obok"><Check size={14} /> {note}</p>}
+      {note && <p className="text-ok flex items-center gap-[6px] text-[12.5px] mt-[9px]"><Check size={14} /> {note}</p>}
       {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
 
       {Object.entries(data.roles).map(([role, label]) => {
@@ -63,32 +69,32 @@ export default function ConnectionsSection() {
         if (!items.length) return null;
         return (
           <React.Fragment key={role}>
-            <h3 className="subhead">{label}</h3>
+            <h3 className="text-[11px] tracking-[.07em] text-faint font-[600] m-[26px_0_4px] uppercase">{label}</h3>
             {items.map((c) => {
               const st = STATUS[c.status];
               const Icon = st.icon;
               return (
-                <div className="setrow" key={c.id}>
-                  <div className="setlabel">
-                    <b>{c.label}</b>
-                    <small>{c.detail}</small>
+                <div className={SETROW} key={c.id}>
+                  <div>
+                    <b className="text-[13px] font-[540] block">{c.label}</b>
+                    <small className="block text-[11.5px] text-muted mt-[2px]">{c.detail}</small>
                   </div>
-                  <div className="setcontrol">
-                    <span className={st.cls + ' statusv'}>
+                  <div className="flex items-center gap-[8px] flex-wrap min-w-0">
+                    <span className={st.cls + ' inline-flex items-center gap-[5px] text-[12.5px]'}>
                       {Icon && <Icon size={13} />} {st.text}
                     </span>
-                    {c.hint && <code className="dim">{c.hint}</code>}
+                    {c.hint && <code className="text-muted">{c.hint}</code>}
 
                     {/* HeyGen has two independent ways in. MCP is sufficient
                         for normal Live production. The API key is optional and
                         adds the free watermarked Test-render path. This used to
                         report whichever one won and hide the other. */}
                     {c.id === 'heygen' && c.pockets && (
-                      <span className="pockets">
-                        <em className={'pocketchip' + (c.pockets.mcp.connected ? '' : ' off')}>
+                      <span className="inline-flex gap-[4px]">
+                        <em className={POCKETCHIP + ' text-ok [border-color:#c5e3d5]' + (c.pockets.mcp.connected ? '' : ' off opacity-[.45]')}>
                           plan {c.pockets.mcp.connected ? '· signed in' : '· not signed in'}
                         </em>
-                        <em className={'pocketchip key' + (c.pockets.key.connected ? '' : ' off')}>
+                        <em className={POCKETCHIP + ' key text-accent border-accent-line' + (c.pockets.key.connected ? '' : ' off opacity-[.45]')}>
                           key {c.pockets.key.connected
                             ? (c.pockets.key.verified ? '· verified' : '· unchecked')
                             : '· none'}
@@ -101,10 +107,10 @@ export default function ConnectionsSection() {
 
                     {editing === c.id ? (
                       <form
-                        className="inlineform"
+                        className="flex gap-[7px] items-center flex-1 min-w-0"
                         onSubmit={(e) => { e.preventDefault(); run(() => api.connectVendor(c.id, key)); }}
                       >
-                        <input type="password" value={key} autoFocus
+                        <input className="flex-1 min-w-[150px]" type="password" value={key} autoFocus
                           onChange={(e) => setKey(e.target.value)} placeholder={`${c.label} API key`} />
                         <button className="primary" type="submit" disabled={!key.trim()}>Save</button>
                         <button type="button" onClick={() => { setEditing(null); setErr(null); }}>
@@ -137,10 +143,10 @@ export default function ConnectionsSection() {
                   {c.connected && (c.quotaRemaining != null || Object.keys(c.assets).length > 0) && (
                     <>
                       <div />
-                      <div className="provline">
-                        {c.quotaRemaining != null && <span>quota <b>{c.quotaRemaining}</b></span>}
-                        {Object.entries(c.assets).map(([k, n]) => <span key={k}>{k}s <b>{n}</b></span>)}
-                        {c.lastSyncAt && <span>synced <b>{c.lastSyncAt}</b></span>}
+                      <div className="flex gap-[16px] flex-wrap text-[12px] text-muted">
+                        {c.quotaRemaining != null && <span>quota <b className={PROV_B}>{c.quotaRemaining}</b></span>}
+                        {Object.entries(c.assets).map(([k, n]) => <span key={k}>{k}s <b className={PROV_B}>{n}</b></span>)}
+                        {c.lastSyncAt && <span>synced <b className={PROV_B}>{c.lastSyncAt}</b></span>}
                       </div>
                     </>
                   )}
@@ -148,8 +154,8 @@ export default function ConnectionsSection() {
                   {c.id === 'heygen' && editing === c.id && (
                     <>
                       <div />
-                      <p className="keywarn">
-                        <AlertCircle size={13} /> Optional: Test uses this key for free,
+                      <p className="flex gap-[7px] items-start m-[4px_0_0] text-[11.5px] leading-[1.5] text-warn bg-warn-soft border border-solid border-warn-line rounded p-[9px_11px]">
+                        <AlertCircle size={13} className="shrink-0 mt-[2px]" /> Optional: Test uses this key for free,
                         watermarked renders. Live may bill its separate API balance if MCP is
                         unavailable. Your MCP sign-in already covers normal Live production.
                       </p>

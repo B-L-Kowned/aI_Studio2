@@ -5,6 +5,16 @@ import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import PaidConfirm from '../components/PaidConfirm.jsx';
 
+// Which pocket pays: every render path is exactly one of these, so the tone
+// carries its whole colour set (the icon inherits it).
+const PATH_TONE = {
+  free: 'border-[#c5e3d5] bg-ok-soft text-ok',
+  billed: 'border-warn-line bg-warn-soft text-warn',
+  blocked: 'border-[#f2ccc9] bg-danger-soft text-danger',
+};
+const GATE_ICON_TONE = { pass: 'text-ok', warn: 'text-warn', block: 'text-danger' };
+const gateIcon = (status) => 'w-[14px] h-[14px] ' + (GATE_ICON_TONE[status] ?? '');
+
 export default function RenderStage() {
   const { production, mutate } = useStudio();
   const [state, setState] = useState(null);
@@ -92,10 +102,11 @@ export default function RenderStage() {
       )}
 
       {path && (
-        <div className={'pathbar' + (path.path === 'none' ? ' blocked' : path.free ? ' free' : ' billed')}>
-          <Wallet size={15} />
+        <div className={'flex items-start gap-[8px] m-[12px_0] p-[9px_12px] border border-solid rounded text-[12.5px] leading-[1.5] '
+          + PATH_TONE[path.path === 'none' ? 'blocked' : path.free ? 'free' : 'billed']}>
+          <Wallet size={15} className="flex-none mt-[1px]" />
           <span>
-            <b>
+            <b className="font-[600]">
               {{
                 mcp: 'Renders on your HeyGen plan',
                 key: 'Renders through your API key',
@@ -109,14 +120,16 @@ export default function RenderStage() {
       )}
 
       {lock && (
-        <div className="productionlock">
-          <b>Production Lock · {lock.ready ? 'ready to render' : `${lock.blockers.length} blocker${lock.blockers.length === 1 ? '' : 's'}`}</b>
+        <div className="border border-solid border-line rounded m-[12px_0] overflow-hidden">
+          <b className="block p-[9px_12px] bg-surface-2 text-[12px]">Production Lock · {lock.ready ? 'ready to render' : `${lock.blockers.length} blocker${lock.blockers.length === 1 ? '' : 's'}`}</b>
           {lock.gates.map((gate) => (
-            <div className={'lockrow ' + gate.status} key={gate.key}>
-              {gate.status === 'pass' ? <Check /> : gate.status === 'warn' ? <AlertCircle /> : <X />}
+            <div className="grid grid-cols-[18px_145px_1fr_auto] gap-[8px] items-center p-[7px_12px] [border-top:1px_solid_var(--line)] text-[11.5px]" key={gate.key}>
+              {gate.status === 'pass' ? <Check className={gateIcon(gate.status)} />
+                : gate.status === 'warn' ? <AlertCircle className={gateIcon(gate.status)} />
+                : <X className={gateIcon(gate.status)} />}
               <strong>{gate.label}</strong>
-              <span>{gate.detail}</span>
-              {gate.action && <em>{gate.action}</em>}
+              <span className="text-muted">{gate.detail}</span>
+              {gate.action && <em className="text-faint not-italic text-[10.5px]">{gate.action}</em>}
             </div>
           ))}
         </div>
@@ -135,9 +148,9 @@ export default function RenderStage() {
 
       {latest && (
         <>
-          <div className="renderbox">
-            <div className="renderhead">
-              <b>Render v{latest.version}</b>
+          <div className="border border-solid border-line rounded-lg p-[16px] m-[14px_0]">
+            <div className="flex justify-between items-center mb-[11px]">
+              <b className="text-[14px]">Render v{latest.version}</b>
               <span className={'rstatus ' + latest.status}>{latest.status}</span>
             </div>
             <div className="progress"><i style={{ width: `${latest.progress}%` }} /></div>
@@ -154,13 +167,13 @@ export default function RenderStage() {
                 src={latest.videoUrl}
               />
             )}
-            <div className="rmeta">
+            <div className="flex gap-[16px] mt-[11px] flex-wrap text-[12px] text-muted tabular-nums">
               <span>Duration {latest.duration || '—'}{latest.videoUrl ? '' : ' (estimate)'}</span>
               <span>Estimated cost ${latest.costEstimate.toFixed(2)}</span>
               <span>{latest.dryRun ?? state.dryRun ? 'nothing charged' : 'charged to your account'}</span>
             </div>
             {['queued', 'processing'].includes(latest.status) && (
-              <button onClick={() => mutate(() => api.cancelRender(production.id, latest.id), apply)}>
+              <button className="mt-[11px]" onClick={() => mutate(() => api.cancelRender(production.id, latest.id), apply)}>
                 <X size={14} /> Cancel
               </button>
             )}
@@ -181,18 +194,19 @@ export default function RenderStage() {
           )}
 
           {latest.providerJobs?.length > 0 && (
-            <div className="edl">
-              <b>Handed to the generation provider</b>
+            <div className="border border-solid border-line rounded p-[13px_15px] mt-[16px]">
+              <b className="block text-[11px] text-muted mb-[8px] font-[600]">Handed to the generation provider</b>
               {latest.providerJobs.map((j) => (
-                <div key={j.id}>
-                  <span>{j.provider[0].toUpperCase()}</span>
-                  <span style={{ flex: 1 }}>
-                    {j.provider} · <code>{j.remoteId}</code>
+                <div key={j.id} className="grid grid-cols-[18px_minmax(0,1fr)_auto_auto] gap-[10px] items-center p-[7px_0] [border-top:1px_solid_var(--line)] text-[13px]">
+                  {/* Only the leading initial is a badge, never every span in the row. */}
+                  <span className="w-[18px] h-[18px] rounded-sm bg-canvas border border-solid border-line text-muted grid place-items-center text-[10px]">{j.provider[0].toUpperCase()}</span>
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap" style={{ flex: 1 }}>
+                    {j.provider} · <code className="font-mono text-[11.5px] leading-[normal] font-normal text-muted">{j.remoteId}</code>
                   </span>
                   <span className={'vchip ' + (j.status === 'completed' ? 'complete' : j.status)}>
                     {j.status}
                   </span>
-                  <span className="pstatus">{j.dryRun ? 'dry run · $0' : `${j.creditsUsed ?? 0} credits`}</span>
+                  <span className="pstatus font-mono text-[11.5px] leading-[normal] font-normal text-faint whitespace-nowrap">{j.dryRun ? 'dry run · $0' : `${j.creditsUsed ?? 0} credits`}</span>
                 </div>
               ))}
             </div>

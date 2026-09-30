@@ -41,47 +41,50 @@ export default function EditStage() {
         <video className="renderplayer" controls preload="metadata"
           poster={latest.thumbnailUrl ?? undefined} src={latest.videoUrl} />
       ) : (
-        <div className="preview big">
+        <div className="preview h-[300px]">
           <Play size={56} />
           <span>{latest ? `Render v${latest.version} · ${latest.duration} · no playable file` : 'No render'}</span>
         </div>
       )}
 
-      <div className="timeline">
+      <div className="flex gap-[3px] m-[14px_0]">
         {production.outline.map((s, i) => (
-          <div key={s.id} style={{ flex: toSeconds(s.runtime) || 1 }}>
-            {i + 1}<small>{s.title}</small>
+          <div key={s.id} className="flex-1 bg-canvas border border-solid border-line p-[13px_4px] text-center rounded-sm text-[11px] text-muted overflow-hidden"
+            style={{ flex: toSeconds(s.runtime) || 1 }}>
+            {i + 1}<small className="block text-[9px] mt-[4px] text-faint">{s.title}</small>
           </div>
         ))}
       </div>
 
-      <div className="editorgrid">
+      <div className="grid grid-cols-[repeat(4,1fr)] lte960:grid-cols-[repeat(2,1fr)] gap-[6px] mt-[16px]">
         {meta.editorTools.map((tool) => {
           const built = SUPPORTED.has(tool);
           return (
           <button
             key={tool}
-            className={built ? '' : 'roadmap'}
+            // Roadmap buttons are always disabled; the disabled: twin out-ranks button:disabled's .42.
+            className={'flex gap-[6px] items-center justify-start text-[12px]'
+              + (built ? '' : ' opacity-50 disabled:opacity-50 cursor-not-allowed')}
             disabled={!ready || !built}
             title={built ? 'Add a precise range to the edit decision list' : 'Roadmap — this tool is not built yet'}
             onClick={() => setEditingTool(tool)}
           >
-            <Scissors size={14} /> {tool}
+            <Scissors size={14} className="text-muted shrink-0" /> {tool}
           </button>
           );
         })}
       </div>
 
       {editingTool && (
-        <div className="editform">
-          <label>Start
-            <input value={range.from} placeholder="0:05" onChange={(e) => setRange({ ...range, from: e.target.value })} />
+        <div className="grid grid-cols-[1fr_1fr_2fr_auto] gap-[8px] items-end p-[12px] mt-[10px] border border-solid border-line rounded bg-surface-2">
+          <label className="flex flex-col gap-[4px] text-muted text-[10.5px] font-[600]">Start
+            <input className="min-w-0" value={range.from} placeholder="0:05" onChange={(e) => setRange({ ...range, from: e.target.value })} />
           </label>
-          <label>End
-            <input value={range.to} placeholder="0:12" onChange={(e) => setRange({ ...range, to: e.target.value })} />
+          <label className="flex flex-col gap-[4px] text-muted text-[10.5px] font-[600]">End
+            <input className="min-w-0" value={range.to} placeholder="0:12" onChange={(e) => setRange({ ...range, to: e.target.value })} />
           </label>
-          <label>Decision note
-            <input value={range.note} placeholder="Why this is the range to keep"
+          <label className="flex flex-col gap-[4px] text-muted text-[10.5px] font-[600]">Decision note
+            <input className="min-w-0" value={range.note} placeholder="Why this is the range to keep"
               onChange={(e) => setRange({ ...range, note: e.target.value })} />
           </label>
           <button className="primary" disabled={!range.from.trim() || !range.to.trim()}
@@ -105,10 +108,11 @@ export default function EditStage() {
       )}
 
       {ready && latest.editDecisions.length > 0 && (
-        <div className="edl">
-          <b>Edit decision list — applied to v{latest.version}, non-destructive</b>
+        <div className="border border-solid border-line rounded p-[13px_15px] mt-[16px]">
+          <b className="block text-[11px] text-muted mb-[8px] font-[600]">Edit decision list — applied to v{latest.version}, non-destructive</b>
           {latest.editDecisions.map((d, i) => (
-            <div key={d.id}><span>{i + 1}</span> {d.kind}{d.target ? ` · ${d.target}` : ''}</div>
+            <div key={d.id} className="grid grid-cols-[18px_minmax(0,1fr)_auto_auto] gap-[10px] items-center p-[7px_0] [border-top:1px_solid_var(--line)] text-[13px]">
+              <span className="w-[18px] h-[18px] rounded-sm bg-canvas border border-solid border-line text-muted grid place-items-center text-[10px]">{i + 1}</span> {d.kind}{d.target ? ` · ${d.target}` : ''}</div>
           ))}
         </div>
       )}
@@ -116,26 +120,27 @@ export default function EditStage() {
       {/* An export is a file. Showing only a version chip made "ready" a word
           with nothing behind it — and for a long time there was nothing. */}
       {state.exports.length > 0 && (
-        <div className="exportlist">
+        <div className="flex flex-col gap-[1px] m-[14px_0] border border-solid border-line rounded overflow-hidden bg-line">
           {state.exports.map((e) => (
-            <div className={'exportrow' + (e.stale ? ' stale' : '')} key={e.id}>
-              <b>v{e.version}</b>
+            <div className={'grid grid-cols-[34px_auto_minmax(0,1fr)_auto] gap-[10px] items-center p-[8px_12px] text-[13px] '
+              + (e.stale ? 'stale bg-warn-soft' : 'bg-surface')} key={e.id}>
+              <b className="font-mono text-[12px] leading-[normal] font-normal text-muted">v{e.version}</b>
               {e.error ? (
                 <span className="dangerv"><AlertCircle size={12} /> {e.error}</span>
               ) : e.filePath ? (
                 <>
-                  <span className="exmeta">
+                  <span className="text-[12px] text-ink-2 whitespace-nowrap">
                     {(e.bytes / 1024 / 1024).toFixed(1)} MB
                     {e.durationSeconds ? ` · ${toClock(e.durationSeconds)}` : ''}
                     {e.editsApplied ? ` · ${e.editsApplied} edit${e.editsApplied === 1 ? '' : 's'} applied` : ''}
                   </span>
-                  <code className="expath" title={e.filePath}>{e.filePath}</code>
+                  <code className="font-mono text-[11px] leading-[normal] font-normal text-faint overflow-hidden text-ellipsis whitespace-nowrap [direction:rtl] text-left" title={e.filePath}>{e.filePath}</code>
                 </>
               ) : (
-                <span className="exmeta">no file — exported before this build wrote one</span>
+                <span className="text-[12px] text-ink-2 whitespace-nowrap">no file — exported before this build wrote one</span>
               )}
-              {e.stale && <span className="warnv">stale</span>}
-              {e.note && <small className="exnote">{e.note}</small>}
+              {e.stale && <span className="text-warn text-[11.5px]">stale</span>}
+              {e.note && <small className="col-[2/-1] text-warn text-[11.5px]">{e.note}</small>}
             </div>
           ))}
         </div>

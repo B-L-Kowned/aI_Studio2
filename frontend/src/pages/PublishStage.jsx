@@ -5,6 +5,13 @@ import { api } from '../services/api.js';
 import { useResource } from '../hooks/use-resource.js';
 import LoadState from '../components/LoadState.jsx';
 
+// The owntag keeps its class; only its placement under a card lived on the card.
+const PUBLISHCARD = 'bg-surface border border-solid rounded-lg p-[15px] flex flex-col gap-[8px] items-stretch'
+  + ' [&>svg]:w-[16px] [&>svg]:h-[16px] [&>svg]:text-muted'
+  + ' [&_.owntag]:text-[10px] [&_.owntag]:tracking-[.05em] [&_.owntag]:font-semibold [&_.owntag]:uppercase'
+  + ' [&_.owntag]:text-ink [&_.owntag]:bg-canvas [&_.owntag]:border [&_.owntag]:border-solid [&_.owntag]:border-line-2'
+  + ' [&_.owntag]:rounded-sm [&_.owntag]:p-[2px_6px] [&_.owntag]:self-start';
+
 export default function PublishStage() {
   const { production, mutate } = useStudio();
   const [modes, setModes] = useState({});
@@ -40,13 +47,13 @@ export default function PublishStage() {
         </div>
       )}
 
-      <div className="publishgrid">
+      <div className="grid grid-cols-[repeat(3,1fr)] gap-[11px] m-[16px_0] lte960:grid-cols-[repeat(2,1fr)] lte800:grid-cols-[1fr]">
         {state.targets.map((t) => (
-          <div className={'publishcard' + (t.kind === 'owned' ? ' owned' : '')} key={t.platform}>
+          <div className={PUBLISHCARD + (t.kind === 'owned' ? ' owned border-ink [box-shadow:var(--shadow)]' : ' border-line')} key={t.platform}>
             <Share2 />
             {t.kind === 'owned' && <span className="owntag">Owned channel</span>}
-            <b>{t.platform}</b>
-            <span className="chandetail">{t.domain ?? t.detail}</span>
+            <b className="text-[13.5px]">{t.platform}</b>
+            <span className="text-[11.5px] text-muted">{t.domain ?? t.detail}</span>
             <span className={'conn ' + (t.connected ? 'on' : 'off')}>
               {t.connected
                 ? <><Check size={12} /> Connected</>
@@ -83,7 +90,7 @@ export default function PublishStage() {
               <small className="pstatus err"><AlertCircle size={12} /> {t.error}</small>
             )}
             {t.status !== 'not_prepared' && !t.error && (
-              <small className={'pstatus' + (t.status === 'published' && !t.verified ? ' unverified' : '')}>
+              <small className={'pstatus' + (t.status === 'published' && !t.verified ? ' text-warn' : '')}>
                 {t.stale ? (
                   <><AlertCircle size={12} /> stale</>
                 ) : t.status === 'published' && !t.verified ? (

@@ -136,12 +136,18 @@ function App() {
 
   return (
     <>
-      <header className="appbar">
+      {/* Only the app bar is sticky: section <header>s must not be, or they
+          slide over it when a page scrolls. */}
+      <header className="bg-surface [border-bottom:1px_solid_var(--line)] sticky top-0 z-20">
         {/* The bar spans the window, but its contents share the same centred
-            column as <main> so the logo lines up with the page content. */}
-        <div className="headerinner">
-          <b>◉ AI Video Studio</b>
-          <nav>
+            column as <main> so the logo lines up with the page content.
+            Three grid tracks, not a flex row: the equal side tracks keep the nav
+            on the header's true centre however wide the licence badge is, and an
+            empty third track keeps it centred with no licence. Below 880px the
+            nav drops to its own row rather than squeezing the wordmark. */}
+        <div className="max-w-[1180px] m-[0_auto] min-h-[56px] grid grid-cols-[1fr_auto_1fr] items-center p-[8px_22px] gap-[10px_26px] lte880:grid-cols-[auto_1fr]">
+          <b className="text-[14px] font-[640] tracking-[-0.01em] whitespace-nowrap justify-self-start lte880:col-[1] lte880:row-[1]">◉ AI Video Studio</b>
+          <nav className="justify-center lte880:col-[1/-1] lte880:row-[2]">
             {allowed.map((n) => (
               <button key={n} className={current === n ? 'on' : ''} onClick={() => setPage(n)}>{n}</button>
             ))}
@@ -192,13 +198,13 @@ function ProgramBadge({ go }) {
   if (grantedPrograms.length < 2) {
     return (
       <button
-        className="licencebadge"
+        className="inline-flex items-center gap-[6px] shrink-0 [border:0] bg-transparent p-[4px_6px] rounded-sm text-[11.5px] text-faint cursor-pointer justify-self-end [&:hover:not(:disabled)]:bg-canvas [&:hover:not(:disabled)]:text-muted [&>svg]:opacity-[.7] lte880:col-[2] lte880:row-[1] lte880:justify-self-end"
         onClick={() => go?.('Settings')}
         title={`Licence ${workspace.licenseHint ?? ''} — opens Settings`}
       >
         <KeyRound size={12} />
         <span>Licence</span>
-        <b>{program.info.map((p) => p.label).join(' + ')}</b>
+        <b className="font-[600] text-ink-2">{program.info.map((p) => p.label).join(' + ')}</b>
       </button>
     );
   }
@@ -209,12 +215,17 @@ function ProgramBadge({ go }) {
   // production whose mode is `both` belongs to each program and shows under
   // either bubble, which is a fact about the production, not a place to stand.
   return (
-    <div className="scopeswitch" role="group" aria-label="Which program you are working in">
+    <div className="inline-flex gap-[2px] p-[2px] border border-solid border-line rounded-sm bg-canvas shrink-0 justify-self-end lte880:col-[2] lte880:row-[1] lte880:justify-self-end" role="group" aria-label="Which program you are working in">
       {program.info.map((p) => (
         <button
           key={p.id}
           type="button"
-          className={p.id === scope ? 'on' : ''}
+          className={
+            '[border:0] p-[4px_12px] rounded-[calc(var(--r-sm)_-_2px)] text-[12px] cursor-pointer whitespace-nowrap hover:text-ink ' +
+            (p.id === scope
+              ? 'on bg-surface text-ink font-[560] [box-shadow:0_1px_2px_rgb(0_0_0_/_0.06)] [&:hover:not(:disabled)]:bg-surface'
+              : 'bg-transparent text-muted')
+          }
           aria-pressed={p.id === scope}
           onClick={() => setScope(p.id)}
           title={p.detail}

@@ -148,27 +148,27 @@ export default function SegmentsStage() {
            run. Deliberately not the shipping voice, and deliberately unable to
            open the render gate — it answers "are these the right words", not
            "is this the right delivery". */
-        <div className="readout">
-          <span className="readhead">
-            <Headphones size={13} />
+        <div className="flex items-center gap-[12px] flex-wrap m-[10px_0] p-[8px_12px] border border-solid border-line rounded-sm bg-canvas">
+          <span className="inline-flex items-center gap-[6px] text-[12px] text-ink">
+            <Headphones size={13} className="text-faint" />
             <b>Read-through</b>
-            <i>local voice · nothing spent</i>
+            <i className="not-italic text-[11px] text-faint">local voice · nothing spent</i>
           </span>
           {(() => {
             // The target is "m:ss"; compare in seconds so "0:21 vs 2:00" is a
             // fact on screen rather than arithmetic you do in your head.
             const target = read.targetRuntime ? toSeconds(read.targetRuntime) : null;
             const off = target ? read.spokenSeconds / target : null;
-            const tone = off == null ? '' : off < 0.6 ? ' short' : off > 1.15 ? ' over' : ' ok';
+            const tone = off == null ? 'text-muted' : off < 0.6 ? 'text-warn' : off > 1.15 ? 'text-[color:var(--bad,#b3261e)]' : 'text-ok';
             return (
-              <span className={'readlen' + tone}>
+              <span className={'text-[12px] ' + tone}>
                 {toClock(read.spokenSeconds)} spoken
                 {read.targetRuntime ? ` · target ${read.targetRuntime}` : ''}
               </span>
             );
           })()}
-          {read.audio && <audio controls preload="none" src={read.audio} />}
-          <button className="readclose" onClick={() => setRead(null)}><X size={13} /></button>
+          {read.audio && <audio className="h-[30px] flex-1 min-w-[200px]" controls preload="none" src={read.audio} />}
+          <button className="[border:0] [background:none] text-faint cursor-pointer p-[2px]" onClick={() => setRead(null)}><X size={13} /></button>
         </div>
       )}
 
@@ -176,12 +176,12 @@ export default function SegmentsStage() {
         <>
           {/* Casting is a decision about a SPEAKER. Making it per line meant the
               one line you missed was the one that blocked the render. */}
-          <div className="castingstrip">
-            <span className="castinglabel"><Users size={13} /> Casting</span>
+          <div className="flex items-center gap-[14px] flex-wrap m-[12px_0] p-[9px_12px] border border-solid border-line rounded bg-surface-2">
+            <span className="inline-flex items-center gap-[5px] text-[11px] font-[600] tracking-[.04em] uppercase text-muted"><Users size={13} /> Casting</span>
             {speakers.map((sp) => (
-              <span className={'castrole' + (sp.mixed ? ' mixed' : '')} key={sp.speaker}>
-                <b>{sp.speaker}</b>
-                <i>{sp.lines} line{sp.lines === 1 ? '' : 's'}</i>
+              <span className="inline-flex items-center gap-[7px]" key={sp.speaker}>
+                <b className="text-[12.5px] font-[550]">{sp.speaker}</b>
+                <i className="not-italic text-[11px] text-faint">{sp.lines} line{sp.lines === 1 ? '' : 's'}</i>
                 <PresenterPick
                   items={castable}
                   value={sp.mixed ? null : (sp.presenter?.id ?? null)}
@@ -196,7 +196,7 @@ export default function SegmentsStage() {
               </span>
             ))}
             {castable.length === 0 && (
-              <small className="castwarn">
+              <small className="text-warn text-[11.5px]">
                 No presenter is cast to a real avatar and voice yet — do that on the Presenters page.
               </small>
             )}
@@ -210,23 +210,26 @@ export default function SegmentsStage() {
         </p>
       ) : (
         <>
-          <div className={'gatebar' + (gate.ready ? ' open' : '')}>
+          <div className={'flex items-center gap-[8px] m-[14px_0_12px] p-[9px_12px] border border-solid rounded text-[13px] '
+            + (gate.ready ? 'open border-[#c5e3d5] bg-ok-soft text-ok' : 'border-warn-line bg-warn-soft text-warn')}>
             {gate.ready
-              ? <><Check size={15} /> <b>All {gate.total} segments approved.</b> This production can render.</>
-              : <><Lock size={15} /> <b>{gate.heard} of {gate.total} approved.</b> {gate.blocked.length} still blocked — nothing renders unheard.</>}
+              ? <><Check size={15} className="flex-none" /> <b>All {gate.total} segments approved.</b> This production can render.</>
+              : <><Lock size={15} className="flex-none" /> <b>{gate.heard} of {gate.total} approved.</b> {gate.blocked.length} still blocked — nothing renders unheard.</>}
           </div>
 
-          <div className="seglist">
+          <div className="flex flex-col gap-[1px] bg-line border border-solid border-line rounded overflow-hidden">
             {segments.map((s) => (
-              <div className={'segrow' + (s.heard ? ' heard' : '')} key={s.id}>
-                <span className="segnum">{String(s.position + 1).padStart(2, '0')}</span>
+              <div className={'grid grid-cols-[30px_minmax(0,1fr)_132px_220px] lte980:grid-cols-[24px_minmax(0,1fr)] gap-[12px] [align-items:start] p-[11px_12px] '
+                + (s.heard ? 'heard bg-surface-2' : 'bg-surface')} key={s.id}>
+                <span className="font-mono text-[11px] leading-[1.9] font-normal text-faint text-right">{String(s.position + 1).padStart(2, '0')}</span>
 
-                <div className="segmain">
-                  <div className="segspeaker">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-[5px] text-[11.5px] font-[550] text-ink-2 uppercase tracking-[.04em] mb-[4px]">
                     <User size={12} /> {s.speaker}
-                    {s.presenter && <em>as {s.presenter.name}</em>}
+                    {s.presenter && <em className="not-italic normal-case tracking-[0] text-muted font-[400]">as {s.presenter.name}</em>}
                   </div>
                   <textarea
+                    className="w-full resize-y text-[13.5px] leading-[1.5] p-[6px_8px] border border-solid border-transparent rounded-sm bg-transparent text-ink [font-family:inherit] hover:border-line focus:border-accent-line focus:bg-surface"
                     defaultValue={s.text}
                     rows={2}
                     onBlur={(e) => {
@@ -236,14 +239,14 @@ export default function SegmentsStage() {
                     }}
                   />
                   {s.take && (!s.textMatchesTake || s.take.stale) && (
-                    <small className="segwarn">
+                    <small className="flex items-center gap-[4px] mt-[3px] text-warn text-[11.5px]">
                       <AlertCircle size={11} />{' '}
                       {s.take.staleReason ?? 'The line changed after the last take'} — audition again.
                     </small>
                   )}
                 </div>
 
-                <div className="segcontrols">
+                <div className="flex flex-col gap-[5px] lte980:col-[2] lte980:items-stretch lte980:flex-row">
                   <PresenterPick
                     items={castable}
                     value={s.presenter?.id ?? null}
@@ -254,6 +257,7 @@ export default function SegmentsStage() {
                   />
 
                   <select
+                    className="w-full text-[12px] p-[4px_6px]"
                     value={s.quality}
                     onChange={(e) =>
                       run(`q${s.id}`, () => api.updateSegment(production.id, s.id, { quality: e.target.value }), { tracksSave: true })}
@@ -263,20 +267,20 @@ export default function SegmentsStage() {
                   </select>
                 </div>
 
-                <div className="segstate">
+                <div className="flex flex-col items-end gap-[6px] lte980:col-[2] lte980:items-start">
                   {s.heard ? (
-                    <span className="okv"><Check size={12} /> approved</span>
+                    <span className="okv inline-flex items-center gap-[4px] text-[11.5px]"><Check size={12} /> approved</span>
                   ) : (
-                    <span className="unknownv" title={BLOCK_LABEL[s.blockedBy]}>
+                    <span className="unknownv inline-flex items-center gap-[4px] text-[11.5px]" title={BLOCK_LABEL[s.blockedBy]}>
                       <Lock size={12} /> {BLOCK_LABEL[s.blockedBy] ?? 'blocked'}
                     </span>
                   )}
 
                   {s.take?.audioUrl && (
-                    <audio controls preload="none" src={s.take.audioUrl} className="segaudio" />
+                    <audio controls preload="none" src={s.take.audioUrl} className="w-full h-[30px]" />
                   )}
 
-                  <div className="segactions">
+                  <div className="flex gap-[5px] flex-wrap justify-end [&_button]:text-[12px] [&_button]:p-[4px_8px]">
                     {confirm?.kind === 'audition' && confirm.id === s.id ? (
                       <>
                         <button onClick={() => setConfirm(null)}>Cancel</button>

@@ -22,6 +22,15 @@ const HEAT = {
   low: { label: 'Someday', tone: 'low' },
 };
 
+// Colour, border and fill per heat. The hover border is a compound variant so it
+// out-specifies the generic `button:hover:not(:disabled)`, as the old rule did.
+const HEAT_BTN = 'border border-solid p-[5px] rounded-sm [&:hover:not(:disabled)]:border-line-2';
+const HEAT_TONE = {
+  hot: 'text-danger border-[#f2ccc9] bg-danger-soft',
+  low: 'text-faint border-line bg-surface',
+  '': 'text-line-2 border-line bg-surface',
+};
+
 export default function Ideas({ go }) {
   const { collections, mutate, production } = useStudio();
   const [data, setData] = useState(null);
@@ -67,13 +76,14 @@ export default function Ideas({ go }) {
 
       {/* One line, always in the same place. A capture box you have to go and
           find is a capture box nobody uses. */}
-      <form className="parkform" onSubmit={park}>
+      <form className="flex gap-[8px] m-[4px_0_18px]" onSubmit={park}>
         <input
+          className="flex-1 text-[13.5px] p-[9px_11px]"
           placeholder="Park an idea — a sentence is enough"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
-        <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
+        <select className="text-[12.5px] p-[8px]" value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
           <option value="">No company</option>
           {collections.campaigns.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
@@ -94,11 +104,15 @@ export default function Ideas({ go }) {
             Nothing parked. This is where a thought goes when it is not yet a production.
           </Empty>
         ) : (
-          <div className="parklist">
+          <div className="flex flex-col">
             {ideas.map((i) => (
-              <div className={'parkrow' + (i.archivedAt ? ' archived' : '')} key={i.id}>
+              <div
+                className={'flex items-center gap-[10px] p-[10px_14px] [border-top:1px_solid_var(--line)] first:[border-top:0]'
+                  + (i.archivedAt ? ' opacity-[.55]' : '')}
+                key={i.id}
+              >
                 <button
-                  className={'heatbtn ' + (HEAT[i.heat]?.tone ?? '')}
+                  className={HEAT_BTN + ' ' + HEAT_TONE[HEAT[i.heat]?.tone ?? '']}
                   title={`${HEAT[i.heat]?.label} — click to change`}
                   disabled={!!i.archivedAt}
                   onClick={() => run(() => api.updateIdea(i.id, {
@@ -108,9 +122,9 @@ export default function Ideas({ go }) {
                   <Flame size={13} />
                 </button>
 
-                <span className="parkmain">
-                  <b>{i.text}</b>
-                  <i>
+                <span className="flex-1 min-w-0 flex flex-col gap-[1px]">
+                  <b className="text-[13.5px] font-[550]">{i.text}</b>
+                  <i className="not-italic text-[11px] text-faint">
                     {i.campaign ?? 'No company'} · parked {i.ageDays === 0 ? 'today' : `${i.ageDays}d ago`}
                     {i.promotedTitle && ` · became "${i.promotedTitle}"`}
                   </i>

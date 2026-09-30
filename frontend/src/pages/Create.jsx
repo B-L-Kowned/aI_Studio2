@@ -42,10 +42,14 @@ export default function Create({ go }) {
       {/* ONE row: which production, where in it, and whether it saved. These
           were three stacked bands — a title block, a stage bar and a save chip —
           costing about 120px before any of the work appeared. */}
-      <div className="prodhead">
+      {/* At ≤1000px the title and six stages cannot honestly share one line:
+          the production takes the full first row, the stages the second. */}
+      <div className="flex items-center gap-[16px] mb-[16px] pb-[14px] border-b border-b-line [border-bottom-style:solid] lte1000:grid lte1000:grid-cols-[minmax(0,1fr)_auto] lte1000:gap-[10px_16px] lte1000:[align-items:end]">
         <Breadcrumb go={go} />
 
-        <div className="stagebar inline">
+        {/* The stage bar sits IN the title row rather than under it; stacked, the
+            two cost about 120px before any of the work appeared. */}
+        <div className="stagebar flex-[1_1_auto] min-w-0 m-0 [&_button]:p-[6px_4px] [&_button]:text-[12.5px] lte1000:col-span-full lte1000:[grid-row:2] lte1000:w-full">
         {STAGES.map((s) => {
           const key = { Script: 'script', Render: 'render', Edit: 'export', Publish: 'publication' }[s];
           const isStale = key && staleStages[key];
@@ -90,6 +94,8 @@ export default function Create({ go }) {
  * the campaign lands on that list, so switching has a home and this row can be
  * what it looks like — a path, not a control.
  */
+const CRUMBUP = 'inline-flex items-center gap-[3px] border-0 border-none border-current bg-transparent p-0 text-[11px] tracking-[.01em] max-w-full overflow-hidden text-ellipsis whitespace-nowrap';
+
 function Breadcrumb({ go }) {
   const { production, setPendingView, setPendingCampaign } = useStudio();
 
@@ -100,10 +106,12 @@ function Breadcrumb({ go }) {
   };
 
   return (
-    <div className="crumbstack">
+    // max-w-[42%]: the title takes only what it needs so a long one cannot push
+    // the stage bar off its row. Load-bearing.
+    <div className="flex flex-col items-start gap-px min-w-0 flex-[0_1_auto] max-w-[42%] lte1000:max-w-none lte1000:[grid-column:1] lte1000:[grid-row:1]">
       {production.campaignId ? (
         <button
-          className="crumbup"
+          className={CRUMBUP + ' text-muted cursor-pointer hover:text-ink hover:underline [&_svg]:shrink-0 [&_svg]:text-faint [&:hover_svg]:text-ink'}
           onClick={upToCampaign}
           title={`Back to ${production.campaign}`}
         >
@@ -113,17 +121,20 @@ function Breadcrumb({ go }) {
       ) : (
         // A one-off has no campaign to go up to. Saying so flatly beats a dead
         // control that looks like the others.
-        <span className="crumbup none">No campaign</span>
+        <span className={CRUMBUP + ' none text-faint cursor-default'}>No campaign</span>
       )}
-      <h1 className="crumbtitle" title={production.title}>{production.title}</h1>
+      <h1 className="m-0 min-w-0 max-w-full text-[19px] whitespace-nowrap overflow-hidden text-ellipsis" title={production.title}>{production.title}</h1>
     </div>
   );
 }
 
+// Rendered only in the production header, so its row placement lives here.
+const SAVECHIP = 'inline-flex items-center gap-[4px] text-[11.5px] whitespace-nowrap ml-auto flex-none lte1000:[grid-column:2] lte1000:[grid-row:1]';
+
 /** Autosave feedback: silent when idle, transient on success, sticky on failure. */
 function SaveState({ state }) {
   if (state === 'idle') return null;
-  if (state === 'saving') return <span className="savechip saving">Saving…</span>;
-  if (state === 'failed') return <span className="savechip failed"><AlertCircle size={13} /> Not saved</span>;
-  return <span className="savechip saved"><Check size={13} /> Saved</span>;
+  if (state === 'saving') return <span className={SAVECHIP + ' saving text-muted'}>Saving…</span>;
+  if (state === 'failed') return <span className={SAVECHIP + ' failed text-danger bg-danger-soft border border-solid border-[#f2ccc9] rounded-sm p-[3px_8px]'}><AlertCircle size={13} /> Not saved</span>;
+  return <span className={SAVECHIP + ' saved text-ok'}><Check size={13} /> Saved</span>;
 }

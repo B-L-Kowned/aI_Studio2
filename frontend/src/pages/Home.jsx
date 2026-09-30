@@ -33,6 +33,17 @@ const dueWords = (d) => {
 // How many rows before this stops being a dashboard and becomes a list.
 const TOP = 5;
 
+const STAT_TONE = { bad: 'text-danger', warn: 'text-warn', good: 'text-ok', '': 'text-ink' };
+
+const ROW = 'grid grid-cols-[minmax(0,1.4fr)_minmax(0,1.6fr)_auto_auto] gap-[14px] items-center p-[11px_14px] '
+  + '[border-top:1px_solid_var(--line)] first:[border-top:0] '
+  + 'lte900:grid-cols-[minmax(0,1fr)_auto] lte900:gap-y-[8px]';
+const WHO = 'flex flex-col gap-[1px] min-w-0';
+const WHO_B = 'text-[13.5px] font-[550] truncate';
+const WHO_I = 'not-italic text-[11px] text-faint truncate';
+const WHAT = 'flex items-center gap-[6px] min-w-0 text-[12.5px] text-ink-2 [&>svg]:flex-none [&>svg]:text-warn '
+  + 'lte900:col-[1/-1]';
+
 export default function Home({ go }) {
   const {
     openProduction, setPendingStage, setPendingView, setPendingDate, mutate, notify,
@@ -76,16 +87,16 @@ export default function Home({ go }) {
           four lines and a rule, which is a lot of vertical space to say what
           fits across the top of the page. A zero is not news, so it is dimmed
           rather than given the same weight as a number that needs you. */}
-      <div className="schedhead">
+      <div className="flex items-end justify-between gap-[24px] flex-wrap mb-[20px] pb-[14px] [border-bottom:1px_solid_var(--line)]">
         <div>
-          <h1>Production schedule</h1>
-          <small>
+          <h1 className="m-[0_0_2px]">Production schedule</h1>
+          <small className="text-faint text-[12px]">
             {counts.productions} production{counts.productions === 1 ? '' : 's'} ·{' '}
             {counts.campaigns} campaign{counts.campaigns === 1 ? '' : 's'}
           </small>
         </div>
 
-        <div className="schedstats">
+        <div className="flex gap-[18px] flex-wrap text-[12px] text-muted">
           {[
             ['blocked on you', counts.needsYou, 'bad'],
             ['rendering', counts.inFlight, ''],
@@ -93,8 +104,10 @@ export default function Home({ go }) {
             ['gone quiet', counts.idle, 'warn'],
             ['overdue', overdue, 'bad'],
           ].map(([label, n, tone]) => (
-            <span key={label} className={n ? tone : 'zero'}>
-              <b>{n}</b> {label}
+            // A zero is not news, so it is dimmed.
+            <span key={label} className={n ? (tone === 'bad' ? '' : tone) : 'text-faint font-[500]'}>
+              <b className={'text-[17px] mr-[5px] '
+                + (n ? 'font-semibold ' + STAT_TONE[tone] : 'text-faint font-[500]')}>{n}</b> {label}
             </span>
           ))}
         </div>
@@ -104,9 +117,13 @@ export default function Home({ go }) {
           arrives while you are looking at the schedule should land without
           leaving the page — otherwise it becomes a half-started production, or
           nothing at all. */}
-      <form className="parkline" onSubmit={park}>
+      <form
+        className="flex items-center gap-[9px] mb-[18px] p-[8px_12px] border border-solid border-line rounded bg-surface-2 [&>svg]:text-faint [&>svg]:flex-none"
+        onSubmit={park}
+      >
         <Lightbulb size={15} />
         <input
+          className="flex-1 [border:0] [background:none] text-[13.5px] p-[3px_0] focus:[outline:none]"
           placeholder="Park an idea for later…"
           value={idea}
           onChange={(e) => setIdea(e.target.value)}
@@ -145,11 +162,15 @@ export default function Home({ go }) {
           </>
         }
       >
-        <div className="weekstrip">
+        <div className="grid grid-cols-[repeat(7,1fr)] gap-[5px]">
           {calendar.map((d) => (
             <button
-              className={'weekday' + (d.isToday ? ' today' : '') + (d.isWeekend ? ' weekend' : '')
-                + (d.count ? ' has' : '')}
+              className={'flex flex-col items-center gap-0 p-[8px_4px_9px] rounded border border-solid relative '
+                + 'disabled:cursor-default'
+                + (d.isToday ? ' today' : '') + (d.count ? ' has' : '')
+                + (d.count ? ' border-accent-line [&:hover:not(:disabled)]:border-accent'
+                  : d.isToday ? ' border-ink' : ' border-line')
+                + (d.count ? ' bg-accent-soft cursor-pointer' : d.isWeekend ? ' bg-surface-2' : ' bg-surface')}
               key={d.date}
               // An empty day used to be `disabled`, so six or seven of the
               // seven buttons in this strip were dead — it looked like a
@@ -165,10 +186,15 @@ export default function Home({ go }) {
               // of the month.
               onClick={() => { setPendingView('Calendar'); setPendingDate(d.date); go('Plan'); }}
             >
-              <i>{d.weekday}</i>
-              <b>{d.dayOfMonth}</b>
-              <u>{d.monthLabel}</u>
-              {d.count > 0 && <em>{d.count}</em>}
+              <i className="not-italic text-[10px] uppercase tracking-[.04em] text-faint">{d.weekday}</i>
+              <b className={'text-[18px] font-[550] leading-[1.25]'
+                + (d.isToday ? ' text-ink' : d.isWeekend ? ' text-faint' : '')}>{d.dayOfMonth}</b>
+              <u className="[text-decoration:none] text-[9.5px] uppercase text-faint">{d.monthLabel}</u>
+              {d.count > 0 && (
+                <em className="not-italic text-[10px] font-semibold text-surface bg-accent rounded-[8px] p-[0_6px] mt-[4px]">
+                  {d.count}
+                </em>
+              )}
             </button>
           ))}
         </div>
@@ -190,30 +216,36 @@ export default function Home({ go }) {
         title="By campaign"
         meta={`${byCampaign.length} · a campaign is one company, series or theme`}
       >
-        <div className="campgrid">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-[10px]">
           {byCampaign.map((c) => {
             const total = c.productions || 1;
             const seg = (n) => `${(n / total) * 100}%`;
             return (
-              <button className="campcard" key={c.id ?? 'none'} onClick={() => go('Plan')}>
-                <span className="camphead">
-                  <b>{c.name}</b>
-                  {c.blocked > 0 && <em className="bad">{c.blocked} stuck</em>}
+              <button
+                className="flex flex-col gap-[8px] items-stretch text-left p-[12px_13px] border border-solid border-line rounded-lg bg-surface cursor-pointer [&:hover:not(:disabled)]:border-line-2 [&:hover:not(:disabled)]:bg-surface-2"
+                key={c.id ?? 'none'}
+                onClick={() => go('Plan')}
+              >
+                <span className="flex items-center justify-between gap-[8px]">
+                  <b className="text-[13px] font-[550] truncate">{c.name}</b>
+                  {c.blocked > 0 && (
+                    <em className="not-italic text-[10.5px] whitespace-nowrap text-danger">{c.blocked} stuck</em>
+                  )}
                 </span>
 
-                <span className="campbar" title={`planning ${c.stages.planning} · scripted ${c.stages.scripted} · rendering ${c.stages.rendering} · done ${c.stages.done}`}>
-                  <i className="s-plan" style={{ width: seg(c.stages.planning) }} />
-                  <i className="s-script" style={{ width: seg(c.stages.scripted) }} />
-                  <i className="s-rend" style={{ width: seg(c.stages.rendering) }} />
-                  <i className="s-done" style={{ width: seg(c.stages.done) }} />
+                <span className="flex h-[6px] rounded-[3px] overflow-hidden bg-line" title={`planning ${c.stages.planning} · scripted ${c.stages.scripted} · rendering ${c.stages.rendering} · done ${c.stages.done}`}>
+                  <i className="block h-full bg-line-2" style={{ width: seg(c.stages.planning) }} />
+                  <i className="block h-full bg-warn" style={{ width: seg(c.stages.scripted) }} />
+                  <i className="block h-full bg-accent" style={{ width: seg(c.stages.rendering) }} />
+                  <i className="block h-full bg-ok" style={{ width: seg(c.stages.done) }} />
                 </span>
 
-                <span className="campfoot">
+                <span className="text-[11px] text-faint">
                   {/* A campaign you have set up but not filled is the one that
                       most needs saying out loud. "0 videos" reads as a broken
                       count; naming the next move reads as a campaign waiting. */}
                   {c.productions === 0
-                    ? <em className="campempty">No videos yet — start one</em>
+                    ? <em className="campempty not-italic text-accent">No videos yet — start one</em>
                     : <>
                         {c.productions} video{c.productions === 1 ? '' : 's'}
                         {c.stages.done > 0 && ` · ${c.stages.done} done`}
@@ -237,23 +269,28 @@ export default function Home({ go }) {
           )}
           flush
         >
-          <div className="schedlist">
+          <div className="flex flex-col">
             {needsYou.slice(0, TOP).map((p) => (
-              <div className="schedrow" key={p.id}>
-                <span className="schedwho">
-                  <b>{p.title}</b>
-                  <i>{p.campaign ?? 'No campaign'}</i>
+              <div className={ROW} key={p.id}>
+                <span className={WHO}>
+                  <b className={WHO_B}>{p.title}</b>
+                  <i className={WHO_I}>{p.campaign ?? 'No campaign'}</i>
                 </span>
-                <span className="schedwhat">
+                <span className={WHAT}>
                   <AlertCircle size={13} /> {p.top.what}
                   {p.blockers.length > 1 && (
-                    <em title={p.blockers.map((b) => b.what).join('\n')}>
+                    <em
+                      className="not-italic text-[11px] text-faint border border-solid border-line rounded-[9px] p-[0_6px] flex-none"
+                      title={p.blockers.map((b) => b.what).join('\n')}>
                       +{p.blockers.length - 1}
                     </em>
                   )}
                 </span>
                 {p.dueInDays != null && (
-                  <span className={'scheddue' + (p.dueInDays < 0 ? ' over' : '')}>
+                  <span
+                    className={'inline-flex items-center gap-[5px] text-[11.5px] whitespace-nowrap'
+                      + (p.dueInDays < 0 ? ' over text-danger font-[550]' : ' text-muted')}
+                  >
                     {dueWords(p.dueInDays)}
                   </span>
                 )}
@@ -268,15 +305,17 @@ export default function Home({ go }) {
 
       {inFlight.length > 0 && (
         <Section title="Rendering now" meta="at the provider" flush>
-          <div className="schedlist">
+          <div className="flex flex-col">
             {inFlight.map((p) => (
-              <div className="schedrow" key={p.id}>
-                <span className="schedwho">
-                  <b>{p.title}</b>
-                  <i>{p.campaign ?? 'No campaign'}</i>
+              <div className={ROW} key={p.id}>
+                <span className={WHO}>
+                  <b className={WHO_B}>{p.title}</b>
+                  <i className={WHO_I}>{p.campaign ?? 'No campaign'}</i>
                 </span>
-                <span className="schedwhat"><Loader size={13} /> v{p.version} · {p.status}</span>
-                <span className="schedprog"><i style={{ width: `${p.progress ?? 0}%` }} /></span>
+                <span className={WHAT}><Loader size={13} /> v{p.version} · {p.status}</span>
+                <span className="w-[90px] h-[5px] rounded-[3px] bg-line overflow-hidden">
+                  <i className="block h-full bg-accent" style={{ width: `${p.progress ?? 0}%` }} />
+                </span>
                 <button onClick={() => open(p.id, 'Render')}>Watch</button>
               </div>
             ))}
@@ -290,14 +329,14 @@ export default function Home({ go }) {
           meta={`untouched for ${data.thresholds.idleDays}+ days`}
           flush
         >
-          <div className="schedlist">
+          <div className="flex flex-col">
             {idle.slice(0, TOP).map((p) => (
-              <div className="schedrow" key={p.id}>
-                <span className="schedwho">
-                  <b>{p.title}</b>
-                  <i>{p.campaign ?? 'No campaign'}</i>
+              <div className={ROW} key={p.id}>
+                <span className={WHO}>
+                  <b className={WHO_B}>{p.title}</b>
+                  <i className={WHO_I}>{p.campaign ?? 'No campaign'}</i>
                 </span>
-                <span className="schedwhat"><Moon size={13} /> {p.idleDays} days</span>
+                <span className={WHAT}><Moon size={13} /> {p.idleDays} days</span>
                 <button onClick={() => open(p.id)}>Pick it back up</button>
               </div>
             ))}

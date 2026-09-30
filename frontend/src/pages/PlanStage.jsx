@@ -57,35 +57,38 @@ export default function PlanStage({ goToStage }) {
   );
 }
 
+const PP_LABEL = 'block text-[10px] tracking-[.07em] text-faint font-semibold mb-[7px]';
+const PP_LINE = 'flex gap-[6px] items-start text-[12px] m-[0_0_6px] leading-[1.45]';
+
 function ProducerPanel({ result, onClose, onAction }) {
   return (
-    <div className="producerpanel">
-      <div className="pphead">
-        <b><Sparkles size={16} /> Producer assessment</b>
-        <button onClick={onClose}><X size={15} /></button>
+    <div className="border border-solid border-line bg-surface-2 rounded-lg p-[15px] mb-[18px]">
+      <div className="flex justify-between items-center mb-[11px]">
+        <b className="flex items-center gap-[7px] text-[12.5px]"><Sparkles size={16} /> Producer assessment</b>
+        <button className="border-0 border-none border-current bg-transparent p-[3px] text-muted" onClick={onClose}><X size={15} /></button>
       </div>
-      <div className="ppgrid">
+      <div className="grid grid-cols-[repeat(3,1fr)] gap-[15px] lte800:grid-cols-[1fr] [&_svg]:shrink-0 [&_svg]:mt-[2px] [&_svg]:w-[12px] [&_svg]:h-[12px] [&_svg]:text-muted">
         <div>
-          <small>KNOWN</small>
-          {result.known.map((k) => <p key={k}><Check size={13} /> {k}</p>)}
+          <small className={PP_LABEL}>KNOWN</small>
+          {result.known.map((k) => <p className={PP_LINE} key={k}><Check size={13} /> {k}</p>)}
         </div>
         <div>
-          <small>INFERRED</small>
+          <small className={PP_LABEL}>INFERRED</small>
           {result.inferred.length
-            ? result.inferred.map((k) => <p key={k}><Sparkles size={13} /> {k}</p>)
-            : <p className="muted">Nothing inferred.</p>}
+            ? result.inferred.map((k) => <p className={PP_LINE} key={k}><Sparkles size={13} /> {k}</p>)
+            : <p className={'muted ' + PP_LINE}>Nothing inferred.</p>}
         </div>
         <div>
-          <small>NEEDS YOU</small>
+          <small className={PP_LABEL}>NEEDS YOU</small>
           {result.decisionsNeeded.length
-            ? result.decisionsNeeded.map((k) => <p key={k}><AlertCircle size={13} /> {k}</p>)
-            : <p className="muted">Nothing blocking.</p>}
+            ? result.decisionsNeeded.map((k) => <p className={PP_LINE} key={k}><AlertCircle size={13} /> {k}</p>)
+            : <p className={'muted ' + PP_LINE}>Nothing blocking.</p>}
         </div>
       </div>
       {result.proposals.length > 0 && (
-        <div className="ppproposals">
+        <div className="mt-[13px] flex gap-[7px] flex-wrap border-t border-t-line [border-top-style:solid] pt-[12px]">
           {result.proposals.map((p) => (
-            <button key={p.action} onClick={() => onAction(p.action)} title={p.detail}>{p.label}</button>
+            <button className="text-[12px]" key={p.action} onClick={() => onAction(p.action)} title={p.detail}>{p.label}</button>
           ))}
         </div>
       )}
@@ -153,6 +156,16 @@ function Brief({ goToStage }) {
   );
 }
 
+// Outline rows and scene rows share one grid shape: a trailing delete button
+// and meta spans that drop out at narrow widths. The button rules sit on the
+// row (not the button) so they keep out-ranking the generic button:hover.
+const ROW = 'grid items-center lte800:grid-cols-[26px_1fr]'
+  + ' [&>button:last-child]:border-0 [&>button:last-child]:border-none [&>button:last-child]:border-current'
+  + ' [&>button:last-child]:bg-transparent [&>button:last-child]:text-faint [&>button:last-child]:p-[5px]'
+  + ' [&>button:last-child:hover]:text-danger [&>button:last-child:hover]:bg-danger-soft';
+const OUTLINE_ROW = 'group/row grid-cols-[24px_minmax(0,1fr)_auto_auto_28px] gap-[10px] border border-solid border-line rounded m-[4px_0] bg-surface hover:border-line-2';
+const ROW_META = 'flex items-center gap-[5px] text-[12px] text-muted lte800:hidden [&_svg]:w-[13px] [&_svg]:h-[13px]';
+
 function Outline({ goToStage }) {
   const { production, applyProduction, mutate } = useStudio();
   const planned = production.outline.reduce((n, s) => n + toSeconds(s.runtime), 0);
@@ -180,11 +193,11 @@ function Outline({ goToStage }) {
       </div>
 
       {production.outline.map((s, i) => (
-        <div className={'outline' + (s.purpose ? ' haspurpose' : '')} key={s.id}>
-          <b>{String(i + 1).padStart(2, '0')}</b>
-          <div className="outlinemain">
+        <div className={ROW + ' ' + OUTLINE_ROW + (s.purpose ? ' p-[9px_10px]' : ' p-[6px_10px]')} key={s.id}>
+          <b className="font-mono text-[11px] text-faint font-medium">{String(i + 1).padStart(2, '0')}</b>
+          <div className="min-w-0">
             <input
-              className="ghost"
+              className="w-full [font-variant-numeric:tabular-nums] text-left border-transparent bg-transparent font-[560] text-[13.5px] p-[3px_5px] m-[-3px_0_0_-5px] hover:border-line focus:border-accent focus:bg-surface"
               defaultValue={s.title}
               onBlur={(e) => {
                 if (e.target.value !== s.title) {
@@ -194,11 +207,12 @@ function Outline({ goToStage }) {
             />
             {/* Only a real purpose earns a second line. The placeholder sentence
                 said the same nothing on every row and made each one 67px tall. */}
-            {s.purpose && <small>{s.purpose}</small>}
+            {s.purpose && <small className="block text-muted text-[12px] mt-[2px]">{s.purpose}</small>}
           </div>
-          {s.participants && <span className="outlinewho"><Users /> {s.participants}</span>}
+          {s.participants && <span className={ROW_META + ' whitespace-nowrap'}><Users /> {s.participants}</span>}
+          {/* The row's width:100% always beat the old 62px here, so 100% it is. */}
           <input
-            className="outlinetime"
+            className="w-full [font-variant-numeric:tabular-nums] text-center p-[5px_6px] lte800:hidden"
             defaultValue={s.runtime}
             aria-label="Runtime"
             onBlur={(e) => {
@@ -208,7 +222,7 @@ function Outline({ goToStage }) {
             }}
           />
           <button
-            className="outlinedel"
+            className="opacity-0 [transition:opacity_.12s] group-hover/row:opacity-100 focus-visible:opacity-100"
             title="Remove section"
             onClick={() => mutate(() => api.deleteSection(production.id, s.id), applyProduction)}
           >
@@ -255,14 +269,14 @@ function Scenes({ goToStage }) {
       )}
 
       {production.scenes.map((s) => (
-        <div className="scene" key={s.id}>
-          <div className="sceneicon"><Video /></div>
+        <div className={ROW + ' grid-cols-[30px_minmax(0,1fr)_auto_auto_30px] gap-[12px] border-b border-b-line [border-bottom-style:solid] p-[13px_0]'} key={s.id}>
+          <div className="w-[32px] h-[32px] bg-canvas border border-solid border-line rounded grid place-items-center text-muted [&_svg]:w-[15px] [&_svg]:h-[15px]"><Video /></div>
           <div>
-            <b>Scene {s.ref} — {s.title}</b>
-            {s.purpose && <p>{s.purpose}</p>}
+            <b className="text-[13.5px] font-[560]">Scene {s.ref} — {s.title}</b>
+            {s.purpose && <p className="text-muted m-[3px_0_0] text-[12px]">{s.purpose}</p>}
           </div>
-          {s.participants && <span><Users /> {s.participants}</span>}
-          <span><Clock /> {s.runtime}</span>
+          {s.participants && <span className={ROW_META}><Users /> {s.participants}</span>}
+          <span className={ROW_META}><Clock /> {s.runtime}</span>
           <button onClick={() => mutate(() => api.deleteScene(production.id, s.id), applyProduction)}>
             <Trash2 size={14} />
           </button>
@@ -287,6 +301,14 @@ function Scenes({ goToStage }) {
     </>
   );
 }
+
+const ANALYSER_INPUT = 'flex-1 font-mono text-[12.5px] font-normal not-italic leading-[normal] p-[7px_9px]';
+
+// Finding rows keep their level class; the level only picks a colour.
+const findingClass = (level) => level
+  + ' flex items-start gap-[7px] text-[13px] [&>svg]:flex-none [&>svg]:mt-[2px]'
+  + (level === 'warn' ? ' text-warn' : ' text-ink-2')
+  + (level === 'info' ? ' [&>svg]:text-ok' : '');
 
 function Sources() {
   const { production, applyProduction, mutate, workspace } = useStudio();
@@ -356,10 +378,11 @@ function Sources() {
       <h2>Sources</h2>
       <p>Everything the Producer may use to plan this production, with the website claims preserved for review.</p>
 
-      <div className="webresearch">
-        <label>Research a website</label>
-        <div className="analyserrow">
+      <div className="border border-solid border-line rounded-lg p-[14px] m-[14px_0] bg-surface-2">
+        <label className="block text-[12px] font-semibold mb-[7px]">Research a website</label>
+        <div className="flex gap-[8px]">
           <input
+            className={ANALYSER_INPUT}
             type="text"
             inputMode="url"
             placeholder="https://example.com"
@@ -371,31 +394,31 @@ function Sources() {
             <Link size={13} /> {busy ? 'Researching…' : 'Research website'}
           </button>
         </div>
-        <small>The app reads the public page, stores the evidence it used, and proposes brief fields. You approve it before it can unlock production.</small>
+        <small className="block text-faint text-[11.5px] mt-[7px] leading-[1.5]">The app reads the public page, stores the evidence it used, and proposes brief fields. You approve it before it can unlock production.</small>
       </div>
 
       {workflow?.research.map((item) => (
-        <div className={'researchcard ' + item.status} key={item.id}>
-          <div className="researchhead">
-            <div>
-              <b>{item.title || item.url}</b>
-              <a href={item.url} target="_blank" rel="noreferrer">{item.url}</a>
+        <div className={'border border-solid rounded-lg p-[14px] m-[12px_0] bg-surface ' + item.status + (item.status === 'failed' ? ' border-line border-l-[3px] border-l-danger' : ' border-line')} key={item.id}>
+          <div className="flex justify-between gap-[16px] items-start">
+            <div className="min-w-0 flex flex-col gap-[3px]">
+              <b className="text-[13.5px]">{item.title || item.url}</b>
+              <a className="font-mono text-[11px] font-normal not-italic leading-[normal] text-muted overflow-hidden text-ellipsis" href={item.url} target="_blank" rel="noreferrer">{item.url}</a>
             </div>
             <span className={'rstatus ' + (item.reviewed ? 'complete' : item.status)}>
               {item.reviewed ? 'approved' : item.status}
             </span>
           </div>
-          {item.error && <p className="dangerv"><AlertCircle size={13} /> {item.error}</p>}
-          {item.evidence?.summary && <p>{item.evidence.summary}</p>}
+          {item.error && <p className="dangerv text-[12.5px] leading-[1.55] flex items-start gap-[6px] text-danger"><AlertCircle size={13} /> {item.error}</p>}
+          {item.evidence?.summary && <p className="text-[12.5px] leading-[1.55] text-ink-2">{item.evidence.summary}</p>}
           {item.evidence?.headings?.length > 0 && (
-            <div className="evidencechips">
-              {item.evidence.headings.slice(0, 8).map((heading, i) => <span key={`${heading}-${i}`}>{heading}</span>)}
+            <div className="flex flex-wrap gap-[5px] m-[9px_0]">
+              {item.evidence.headings.slice(0, 8).map((heading, i) => <span className="p-[3px_7px] border border-solid border-line rounded-[20px] text-muted text-[10.5px]" key={`${heading}-${i}`}>{heading}</span>)}
             </div>
           )}
           {Object.keys(item.suggestedBrief ?? {}).length > 0 && (
-            <dl className="researchbrief">
+            <dl className="grid grid-cols-[auto_1fr] gap-[5px_10px] p-[10px_0] m-0">
               {Object.entries(item.suggestedBrief).map(([label, value]) => (
-                <React.Fragment key={label}><dt>{label}</dt><dd>{value}</dd></React.Fragment>
+                <React.Fragment key={label}><dt className="text-faint text-[10px] uppercase tracking-[.04em]">{label}</dt><dd className="m-0 text-[12px] text-ink-2">{value}</dd></React.Fragment>
               ))}
             </dl>
           )}
@@ -422,9 +445,9 @@ function Sources() {
 
       {/* Measuring a video you already have. Every number below comes from
           ffmpeg on this machine — nothing is uploaded and no key is used. */}
-      <div className="analyser">
-        <label>Analyse a video you already have</label>
-        <div className="analyserrow">
+      <div className="m-[16px_0] p-[14px] border border-solid border-line rounded bg-surface-2">
+        <label className="block text-[11px] font-semibold tracking-[.04em] uppercase text-muted mb-[8px]">Analyse a video you already have</label>
+        <div className="flex gap-[8px]">
           {/* In the desktop build the user picks the file in a native dialog.
               In a browser there is no such thing: a file input reports a name,
               never a location, so the path has to be typed. */}
@@ -434,6 +457,7 @@ function Sources() {
             </button>
           ) : (
             <input
+              className={ANALYSER_INPUT}
               placeholder="/Users/you/Movies/interview.mp4"
               value={path}
               onChange={(e) => setPath(e.target.value)}
@@ -448,8 +472,8 @@ function Sources() {
               : <><Lock size={13} /> Not licensed</>}
           </button>
         </div>
-        {desktop && path && <code className="chosenpath">{path}</code>}
-        <small>
+        {desktop && path && <code className="block mt-[7px] font-mono text-[11px] font-normal not-italic leading-[normal] text-muted overflow-hidden text-ellipsis whitespace-nowrap">{path}</code>}
+        <small className="block mt-[7px] text-faint text-[11.5px]">
           {desktop ? 'Read in place — the file is not copied.' : 'A full path.'}
           {' '}Measured locally with ffmpeg — nothing leaves this machine.
           {state && !state.transcriber && ' No local transcriber is installed, so there will be no transcript.'}
@@ -458,7 +482,7 @@ function Sources() {
 
       {a && (
         <div className="analysis">
-          <div className="anfacts">
+          <div className="flex flex-wrap gap-[14px] p-[10px_14px] bg-surface-2 border-b border-b-line [border-bottom-style:solid] text-[12.5px] text-ink-2">
             <span><b>{a.facts.name}</b></span>
             {a.facts.video && <span>{a.facts.video.width}×{a.facts.video.height} · {a.facts.video.fps}fps</span>}
             <span>{a.facts.duration ? `${Math.round(a.facts.duration)}s` : 'unknown length'}</span>
@@ -466,28 +490,28 @@ function Sources() {
             {a.facts.bytes && <span>{(a.facts.bytes / 1024 / 1024).toFixed(1)} MB</span>}
           </div>
 
-          <ul className="anfindings">
+          <ul className="list-none m-0 p-[10px_14px] flex flex-col gap-[6px]">
             {a.findings.map((f, i) => (
-              <li key={i} className={f.level}>
+              <li key={i} className={findingClass(f.level)}>
                 {f.level === 'warn' ? <AlertCircle size={13} /> : <Check size={13} />} {f.text}
               </li>
             ))}
-            <li className={a.transcript ? 'info' : 'warn'}>
+            <li className={findingClass(a.transcript ? 'info' : 'warn')}>
               <AlertCircle size={13} /> {a.transcriptNote}
             </li>
           </ul>
 
           {a.outline.length > 0 && (
-            <div className="anoutline">
-              <b>{a.outline.length} section{a.outline.length === 1 ? '' : 's'} measured from the shot changes</b>
+            <div className="flex flex-col gap-[5px] items-start p-[12px_14px] border-t border-t-line [border-top-style:solid]">
+              <b className="text-[12.5px]">{a.outline.length} section{a.outline.length === 1 ? '' : 's'} measured from the shot changes</b>
               {a.outline.map((o) => (
-                <span key={o.position}>{o.title} · {o.startsAt} · {o.runtime}</span>
+                <span className="font-mono text-[11.5px] font-normal not-italic leading-[normal] text-muted" key={o.position}>{o.title} · {o.startsAt} · {o.runtime}</span>
               ))}
-              <button onClick={() => mutate(() => api.adoptAnalysisOutline(production.id), null)
+              <button className="mt-[6px]" onClick={() => mutate(() => api.adoptAnalysisOutline(production.id), null)
                 .then(() => window.location.reload())}>
                 Replace the outline with this
               </button>
-              <small>This overwrites the outline you have now.</small>
+              <small className="text-faint text-[11px]">This overwrites the outline you have now.</small>
             </div>
           )}
         </div>
@@ -497,7 +521,7 @@ function Sources() {
         {[[Upload, 'Upload file / video', 'file'],
           [FileText, 'Paste text', 'text'], [FolderKanban, 'Choose from Library', 'library']]
           .map(([I, t, kind]) => (
-            <div className="card clickable" key={t} onClick={() => add(t, kind)}>
+            <div className="card cursor-pointer hover:border-ink" key={t} onClick={() => add(t, kind)}>
               <I /><b>{t}</b>
             </div>
           ))}
@@ -515,6 +539,11 @@ function Sources() {
     </>
   );
 }
+
+const FORM_LABEL = 'flex flex-col gap-[4px] text-muted text-[11px] font-semibold';
+const PROOF_SMALL = 'text-muted text-[11px]';
+// A proof keeps its status class; the status only recolours or fades the card.
+const PROOF_STATUS = { approved: ' border-[#c5e3d5]', rejected: ' border-line opacity-[.65]' };
 
 function Appearance() {
   const { production, mutate } = useStudio();
@@ -565,33 +594,33 @@ function Appearance() {
       <p>Approve the exact look before video generation: performer, outfit, background and framing.</p>
 
       {presenters.length ? (
-        <div className="appearanceform">
-          <label>Performer
+        <div className="border border-solid border-line rounded-lg p-[14px] m-[14px_0] bg-surface-2 grid grid-cols-[1fr_1fr] gap-[10px]">
+          <label className={FORM_LABEL}>Performer
             <select value={form.presenterId} onChange={(e) => setForm({ ...form, presenterId: e.target.value })}>
               {presenters.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.kind}</option>)}
             </select>
           </label>
-          <label>Proof image URL
+          <label className={FORM_LABEL}>Proof image URL
             <input value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
               placeholder="Provider preview or approved reference image" />
           </label>
-          <label>Outfit
+          <label className={FORM_LABEL}>Outfit
             <input value={form.outfit} onChange={(e) => setForm({ ...form, outfit: e.target.value })}
               placeholder="Black crew neck, no logos" />
           </label>
-          <label>Background
+          <label className={FORM_LABEL}>Background
             <input value={form.background} onChange={(e) => setForm({ ...form, background: e.target.value })}
               placeholder="Warm neutral studio" />
           </label>
-          <label>Framing
+          <label className={FORM_LABEL}>Framing
             <input value={form.framing} onChange={(e) => setForm({ ...form, framing: e.target.value })}
               placeholder="9:16, waist-up, centered" />
           </label>
-          <label>Notes
+          <label className={FORM_LABEL}>Notes
             <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
               placeholder="Expression, lighting, continuity notes" />
           </label>
-          <button className="primary" onClick={save}
+          <button className="primary justify-self-start self-end" onClick={save}
             disabled={!form.presenterId || !form.imageUrl.trim() || !form.outfit.trim() || !form.background.trim() || !form.framing.trim()}>
             <ImageIcon size={14} /> Save proof for approval
           </button>
@@ -600,21 +629,21 @@ function Appearance() {
         <div className="notice"><Check /> No personal or fictional performer is castable yet. Stock avatars use the selected provider appearance.</div>
       )}
 
-      <div className="proofgrid">
+      <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-[11px] mt-[14px]">
         {workflow.appearances.map((proof) => (
-          <article className={'proofcard ' + proof.status} key={proof.id}>
+          <article className={'grid grid-cols-[120px_1fr] border border-solid rounded-lg overflow-hidden bg-surface ' + proof.status + (PROOF_STATUS[proof.status] ?? ' border-line')} key={proof.id}>
             {/^https?:\/\//i.test(proof.imageUrl ?? '')
-              ? <img src={proof.imageUrl} alt={`${proof.presenterName} appearance proof`} />
-              : <div className="proofplaceholder"><ImageIcon /></div>}
-            <div>
+              ? <img className="w-[120px] h-[150px] object-cover bg-canvas" src={proof.imageUrl} alt={`${proof.presenterName} appearance proof`} />
+              : <div className="w-[120px] h-[150px] object-cover bg-canvas grid place-items-center text-line-2"><ImageIcon /></div>}
+            <div className="flex flex-col gap-[5px] p-[11px] min-w-0">
               <span className={'rstatus ' + proof.status}>{proof.status}</span>
-              <b>{proof.presenterName} · {proof.label}</b>
-              <small><strong>Outfit</strong> {proof.outfit || '—'}</small>
-              <small><strong>Background</strong> {proof.background || '—'}</small>
-              <small><strong>Framing</strong> {proof.framing || '—'}</small>
-              {proof.notes && <p>{proof.notes}</p>}
+              <b className="text-[12.5px]">{proof.presenterName} · {proof.label}</b>
+              <small className={PROOF_SMALL}><strong className="text-ink-2 font-semibold">Outfit</strong> {proof.outfit || '—'}</small>
+              <small className={PROOF_SMALL}><strong className="text-ink-2 font-semibold">Background</strong> {proof.background || '—'}</small>
+              <small className={PROOF_SMALL}><strong className="text-ink-2 font-semibold">Framing</strong> {proof.framing || '—'}</small>
+              {proof.notes && <p className="text-[11.5px] text-muted m-[2px_0]">{proof.notes}</p>}
               {proof.status === 'draft' && (
-                <div className="proofactions">
+                <div className="flex gap-[6px] mt-auto">
                   <button onClick={() => setStatus(proof, 'rejected')}>Reject</button>
                   <button className="primary" onClick={() => setStatus(proof, 'approved')}>
                     <Check size={13} /> Approve this look
