@@ -8,7 +8,7 @@ reinstalls or migrates a project (`docs/DISTRIBUTION_ONBOARDING.md`).
 ## Layout
 
 ```
-frontend/   React + Vite            → http://localhost:3333 (dev)
+frontend/   React + Vite + Tailwind → http://localhost:3333 (dev)
 backend/    Express + SQLite        → http://localhost:3433 (dev)
 desktop/    Electron shell — serves UI and API from one ephemeral local port
 docs/       architecture, handoff, product specs, test plan
@@ -53,6 +53,7 @@ work.
 | `cd backend && npm run verify` | all test suites on a throwaway database; read the summary block, every suite must print its total |
 | `cd desktop && npm start` | run the Electron shell |
 | `cd frontend && BUILD_DIR=.verify-build npm run build` | build check without touching `dist` |
+| paste `frontend/tools/ui-diff.js` into the app's console | before/after check of any visual change (instructions in the file) |
 
 ## Provider modes
 

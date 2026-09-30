@@ -240,11 +240,13 @@ that was not the answer**. Assume more exist.
 | **Dock name** | Says "Electron" in dev. Only a packaged build (`npm run dist`) fixes it. |
 | **API helpers with no screen** | Notably `updateCompany` (cannot rename a company) and `updateScene`. |
 
-**Not a gap, despite being called one twice:** *character artwork*. Each
+**Character artwork is missing, and that is by design so far.** Each
 character **borrows a realistic human HeyGen avatar by default** (its
-`backing`); dropping an image in makes it a mascot/creature instead (HeyGen
-talking-photo). `character_art/images/` is empty on purpose. The Cast cards show
-the synced preview of the assigned avatar.
+`backing`) — a *performer*, not its likeness. Dropping an image in makes it a
+mascot/creature instead (HeyGen talking-photo). No character has art yet, so
+Cast shows each character as a compact monogram row naming its performer; the
+picture tile appears only once real art exists. The casting itself is poor —
+see §7.
 
 ---
 
@@ -272,18 +274,38 @@ reference program; no file in that program was changed.
 
 ## 7. What to do next
 
-1. **Exercise the API-key render path.** It decides whether Test renders are
+In rough priority order. Items 1–3 are about not spending money by accident.
+
+1. **Decide the real database's provider mode.** The shared database in
+   `~/Library/Application Support/AIVideoStudio/` is stored in **Live**; the
+   desktop app uses it and will bill. Development uses its own copy — see §8.
+2. **Click through the paid confirmations in a paying mode** (Test mode with an
+   API key stored): single audition, audition-all (charges at most the confirmed
+   count), render line, Start render. Only the server refusal is verified so far.
+3. **Exercise the API-key render path.** It decides whether Test renders are
    free; it is written but has never run against HeyGen.
-2. **Build the invite landing page** at `/invite/<token>`, after establishing
+4. **Recast the characters.** The imported casting pairs characters with
+   arbitrary stock avatars (Marv the Consultant → "Ailsa Kitchen 1"). Recast by
+   hand, or auto-match avatar and voice on gender/character note.
+5. **Character artwork** — generate or commission `<id>.png` per character; the
+   roster import fills `artwork_url` and the cards switch to pictures.
+6. **Add a test for a rejected render push** (it must end `failed`, never
+   `complete`) and for segment-render polling.
+7. **Confirm the desktop package** with a real `npm run dist`: the resource
+   filter may be dropping the backend's `node_modules`.
+8. **Build the invite landing page** at `/invite/<token>`, after establishing
    whether HeyGen's API can mint an avatar-creation link at all.
-3. Move **HeyGen video import** out of Settings into Library, where anyone
+9. Move **HeyGen video import** out of Settings into Library, where anyone
    would look for it.
-4. Give the API helpers that have no screen one (notably `updateCompany`).
-5. Decide on **overlays** (lower-thirds, burn-in captions, branding).
-6. Wire Planning and Clarification through the same LLM runtime, then add a
-   controlled conversational producer over the durable research, script,
-   voice, appearance and lock states.
-7. Move secrets to the OS keychain per `desktop/KEYCHAIN.md`.
+10. Give the API helpers that have no screen one (notably `updateCompany`).
+11. Decide on **overlays** (lower-thirds, burn-in captions, branding).
+12. Wire Planning and Clarification through the same LLM runtime, then add a
+    controlled conversational producer over the durable research, script,
+    voice, appearance and lock states.
+13. Move secrets to the OS keychain per `desktop/KEYCHAIN.md`.
+14. **TypeScript.** This frontend is still JavaScript; the owner's other
+    frontends are TypeScript. Convert with the standard scripts, measured
+    (files read *and* checked), typecheck gated only at zero errors.
 
 ---
 
@@ -302,3 +324,17 @@ reference program; no file in that program was changed.
 - **Check the provider mode before anything** (Settings, or
   `GET /api/workspace`). Use Fixtures for development.
 - Stage by explicit pathspec in this shared checkout. **Never `git add -A`.**
+- **Develop against your own database.** Copy the real one with SQLite's backup
+  API (it handles the WAL), point `STUDIO_DB_PATH` at the copy in the backend
+  env file, and set the copy to Fixtures. Put it in a folder of its own: the
+  credential key file is read from the database's folder, so a copy there cannot
+  decrypt the real credentials and cannot reach HeyGen at all — and an
+  undecryptable credential now reads as "not connected" rather than crashing.
+- **A visual change is checked with `frontend/tools/ui-diff.js`**, not by eye:
+  record before, compare after, at more than one width, including views that
+  only exist when opened. Prove the harness reports "identical" on no change
+  first, and prove the change is actually live (a Vite server started before a
+  config file existed serves stale CSS).
+- **Style with tokens and the shared header.** Use `PageHead` and `Tabs` for any
+  new page; theme names (`bg-surface`, `border-line`) for colours; `lte*:` for
+  breakpoints; `border-solid` with any border utility. See ARCHITECTURE §1.

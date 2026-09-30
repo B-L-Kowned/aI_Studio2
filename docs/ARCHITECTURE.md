@@ -14,7 +14,7 @@ their resolution are in `archive/SANDY_REPORT.md`.
 
 | Part | What it is | Where |
 |---|---|---|
-| Frontend | React 18 + Vite, plain CSS with design tokens | `frontend/` |
+| Frontend | React 18 + Vite, Tailwind 3.4 over CSS-variable design tokens | `frontend/` |
 | Backend | Node + Express (ESM) | `backend/` |
 | Database | SQLite via `better-sqlite3` | OS user-data dir, **not** the repo |
 | Desktop shell | Electron **44** (main + preload) | `desktop/` |
@@ -108,6 +108,43 @@ This architecture describes `aI_Studio2` in
 multi-provider LLM contract, constrained Ollama JSON pattern and safe parsing
 were ported selectively; its hosted tier, accounts, licensing and application
 shell were not.
+
+### Frontend styling and the page pattern
+
+**Tokens are CSS variables** in `frontend/src/style.css` (`:root`: `--ink`,
+`--surface`, `--line`, `--accent`, radii, shadows, mono font).
+`tailwind.config.js` maps each one into the theme **by name** (`bg-surface`,
+`text-muted`, `border-line`, `rounded-lg`), so utilities and plain CSS can never
+drift apart. There is no stock Tailwind palette in use.
+
+- **Utilities** style anything private to one component, with exact arbitrary
+  values (`text-[12.5px]`, `gap-[11px]`) where a value is not a token.
+- **Named classes** remain in `style.css` for the shared design system —
+  buttons, `primary`, modal and scrim, section headers, chips and status badges,
+  form inputs — plus base element rules and the tokens.
+- **Preflight is off**, deliberately (measurement in the config). `style.css`'s
+  element rules are the reset. Consequence: a border utility needs an explicit
+  style — `border border-solid border-line` — because nothing sets one.
+- **Breakpoints** are the layout's own, inclusive and width-ordered:
+  `lte1000:` … `lte620:` mean `max-width: N`. Do not use `max-[N]` (exclusive at
+  N) or arbitrary `[@media(...)]` variants (not sorted by width, so a wider rule
+  can beat a narrower one when both match).
+- **Class-name collisions:** a custom class that is also a Tailwind utility
+  (`block`, `inline`, `outline`…) gets Tailwind's styles too. Status values used
+  as classes arrive from data, so a markup scan cannot see them — prefix them
+  (`is-block`).
+
+**Every page uses `PageHead`** (`components/Section.jsx`): optional breadcrumb,
+title and one-line lead on the left, actions on the right, then `Tabs` — the one
+tab style, underlined, below the title. The title names what is being viewed
+(the view, or the production), never the app section, which the top nav already
+names. Views with tabs receive them as a prop and render the header even while
+loading, so tabs never disappear. Vertical rails are for sections *within* one
+view only (Settings, Create → Plan).
+
+**Checking a visual change:** `frontend/tools/ui-diff.js` records every
+element's computed style and geometry across fixed views and compares a later
+run against it. Instructions and caveats are at the top of the file.
 
 ---
 
@@ -389,6 +426,18 @@ one. `verify-gate.mjs` sat dead at 6 of 22 checks that way — the gate suite, t
 one that enforces the product's central rule — while the run was reported as
 162/162 (118 + 44, with the gate contributing nothing).
 
+The runner itself is built so a green run means something was checked:
+
+- The server binds **port 0**, and the runner waits for that child's own
+  `STUDIO_READY` line and confirms it opened the throwaway database — a stale
+  server on a fixed port once answered the probe instead.
+- A suite **killed by a signal** is a failure (its exit code is `null`, which
+  `if (code)` used to read as success).
+- Each suite must print `N passed, M failed`, fail nothing, and pass at least its
+  **floor** in `FLOOR` (`run-verify.mjs`). A skipped section drops the count below
+  the floor and fails loudly. Raise a floor when adding assertions; lower it only
+  when removing them on purpose.
+
 `verify.mjs` **refuses to run against the development server** unless
 `VERIFY_BASE` is set, because the suite asserts a
 factory-fresh install *and writes settings*: an earlier run against the dev
@@ -399,7 +448,7 @@ it trains you to read red as normal.
 | Suite | Covers |
 |---|---|
 | `verify.mjs` | licence, onboarding, planning, script revision, editing, stale propagation, provider sync, honest publish |
-| `verify-gate.mjs` | the hard gate — nothing renders unheard |
+| `verify-gate.mjs` | the hard gate — nothing renders unheard; Fixtures spends nothing and says so before the click |
 | `verify-build.mjs` | website evidence, appearance approval, Production Lock, series planning, local video analysis, roster import, the parking lot |
 | `verify-llm.mjs` | safe structured parsing, constrained Ollama JSON, local status, prompt context and script-shape validation |
 
@@ -412,7 +461,10 @@ it trains you to read red as normal.
 | Electron packaging | **Closed 2026-09-28.** See §1 “The Electron floor”. |
 | OS keychain | Specified in `desktop/KEYCHAIN.md`, not implemented — deliberately, see that file. |
 | Transcription | Detected if installed; no local transcriber here, and the analyser says so rather than returning an empty transcript. |
-| Character visuals | **Open — no artwork exists yet.** A character's avatar is its *performer*, never its likeness: the previous build's README says each character borrows a realistic human HeyGen avatar by default, and custom art replaces it (uploaded as a HeyGen talking photo, which then animates that image instead). So a character card shows the character's `artwork_url`, or its monogram until there is one, with the performing avatar named in a small "Performed by …" chip. Presenter and You cards show the avatar photo, because there the avatar IS the likeness. To add art: set it per character, or put `<id>.png` in the previous build's `desktop/character_art/images/` and re-run the roster import, which fills `artwork_url` where it is empty. |
+| Character visuals | **Open — no artwork exists yet.** A character's avatar is its *performer*, never its likeness: each character borrows a realistic human HeyGen avatar by default, and custom art replaces it (uploaded as a HeyGen talking photo, which then animates that image). A character card shows its `artwork_url` as a picture when there is one; otherwise a compact monogram row with the performer named in a "Performed by …" chip. Presenter and You cards show the avatar photo, because there the avatar IS the likeness. To add art: set it per character, or put `<id>.png` in the previous build's `desktop/character_art/images/` and re-run the roster import. |
+| Character casting | **Open.** The imported casting pairs characters with arbitrary stock avatars — Marv the Consultant is performed by "Ailsa Kitchen 1" and voiced by "Leon Stern". Needs recasting by hand or an auto-match on gender/voice. |
+| Paid confirmations, exercised | Server refusal is verified (402 `CONFIRMATION_REQUIRED` with a connection present, no network). The confirm dialogs themselves have not been clicked through in a paying mode, and a rejected-push render has no automated test. |
+| Desktop packaging | The `extraResources` filter now excludes secrets and databases at any depth, but it appears to drop the backend's `node_modules`. Needs a real `npm run dist` to confirm. |
 | `/v2/templates` | The one HeyGen endpoint still flagged unverified. |
 | API-key render path | Written, never exercised — no key stored. |
 | Source / URL import | **Closed in `codex/production-workflow-parity`.** One public page is researched, evidence is preserved and reviewed, and approved context reaches the script. This is intentionally not a crawler. |
