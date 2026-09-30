@@ -31,7 +31,7 @@ const HEAT_TONE = {
   '': 'text-line-2 border-line bg-surface',
 };
 
-export default function Ideas({ go }) {
+export default function Ideas({ go, tabs }) {
   const { collections, mutate, production } = useStudio();
   const [data, setData] = useState(null);
   const [text, setText] = useState('');
@@ -58,7 +58,7 @@ export default function Ideas({ go }) {
     await run(() => api.addIdea(body));
   };
 
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <><PageHead title="Parking lot" tabs={tabs} /><p className="muted">Loading…</p></>;
   const { ideas, counts } = data;
   const live = ideas.filter((i) => !i.archivedAt);
 
@@ -66,6 +66,7 @@ export default function Ideas({ go }) {
     <>
       <PageHead
         title="Parking lot"
+        tabs={tabs}
         lead="Things you might make. No pipeline, no deadline, no place in the schedule until you commit."
         actions={
           <button onClick={() => setShowArchived((v) => !v)}>

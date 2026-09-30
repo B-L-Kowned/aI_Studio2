@@ -41,16 +41,64 @@ export function Section({ title, meta, actions, flush, children }) {
   );
 }
 
-/** Page title row: name on the left, actions on the right. */
-export function PageHead({ title, lead, actions }) {
+/**
+ * The page header — the same shape on every page.
+ *
+ *   breadcrumb (optional)
+ *   Title                                    actions
+ *   one-line lead
+ *   tabs (optional) ─────────────────────────────────
+ *
+ * The title names what you are looking at: the view ("Campaigns",
+ * "Characters") or the production, never the section of the app you are in —
+ * the top nav already says that. Pages used to draw this three different ways:
+ * tabs above the title on Plan and Cast, a black pill bar beside the title on
+ * Create, a bare heading elsewhere.
+ */
+export function PageHead({ eyebrow, title, titleHint, lead, actions, tabs }) {
   return (
-    <>
-      <div className="title">
-        <h1>{title}</h1>
+    <div className="mb-[18px]">
+      {eyebrow && <div className="mb-[3px]">{eyebrow}</div>}
+      {/* Wraps on narrow screens: the actions drop below rather than squeezing
+          the title to nothing. */}
+      <div className="title flex-wrap gap-y-[10px] [&>.quickrow]:shrink [&>.quickrow]:min-w-0 [&>.quickrow]:max-w-full">
+        <div className="min-w-0 flex-[1_1_260px]">
+          <h1 className="whitespace-nowrap overflow-hidden text-ellipsis" title={titleHint}>{title}</h1>
+          {lead && <p className="text-muted text-[13px] m-[3px_0_0] max-w-[70ch]">{lead}</p>}
+        </div>
         {actions && <div className="quickrow">{actions}</div>}
       </div>
-      {lead && <p className="text-muted text-[13px] m-[2px_0_16px] max-w-[70ch]">{lead}</p>}
-    </>
+      {tabs && <div className="mt-[14px]">{tabs}</div>}
+    </div>
+  );
+}
+
+/**
+ * The one tab style: underlined, quiet, below the title. `stale` marks a view
+ * whose content is out of date with what feeds it.
+ */
+export function Tabs({ items, value, onChange }) {
+  return (
+    // One line that scrolls sideways on a phone, rather than wrapping tabs
+    // onto a second row that reads as a different set. The rule is an inset
+    // shadow, not a border, so the active underline sits inside the scroll box
+    // instead of being clipped by it.
+    <nav className="subnav mb-0 flex-nowrap overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [border-bottom:0] [box-shadow:inset_0_-1px_0_var(--line)] [&>button]:mb-0 [&>button]:shrink-0 [&>button]:whitespace-nowrap" role="tablist">
+      {items.map((t) => (
+        <button
+          key={t.id}
+          role="tab"
+          aria-selected={value === t.id}
+          className={value === t.id ? 'on' : t.stale ? '!text-warn' : ''}
+          title={t.title ?? ''}
+          onClick={() => onChange(t.id)}
+        >
+          {t.label}
+          {t.count != null && <span className="tabcount">{t.count}</span>}
+          {t.stale && <i className="staledot" />}
+        </button>
+      ))}
+    </nav>
   );
 }
 

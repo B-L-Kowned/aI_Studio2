@@ -6,7 +6,7 @@ import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { useResource } from '../hooks/use-resource.js';
 import LoadState from '../components/LoadState.jsx';
-import { Section } from '../components/Section.jsx';
+import { Section, PageHead } from '../components/Section.jsx';
 
 /**
  * The production schedule.
@@ -83,19 +83,13 @@ export default function Home({ go }) {
 
   return (
     <>
-      {/* One row. The title, the scale and the five counts were stacked over
-          four lines and a rule, which is a lot of vertical space to say what
-          fits across the top of the page. A zero is not news, so it is dimmed
-          rather than given the same weight as a number that needs you. */}
-      <div className="flex items-end justify-between gap-[24px] flex-wrap mb-[20px] pb-[14px] [border-bottom:1px_solid_var(--line)]">
-        <div>
-          <h1 className="m-[0_0_2px]">Production schedule</h1>
-          <small className="text-faint text-[12px]">
-            {counts.productions} production{counts.productions === 1 ? '' : 's'} ·{' '}
-            {counts.campaigns} campaign{counts.campaigns === 1 ? '' : 's'}
-          </small>
-        </div>
-
+      {/* The five counts sit where every other page keeps its actions. A zero is
+          not news, so it is dimmed rather than given the same weight as a number
+          that needs you. */}
+      <PageHead
+        title="Production schedule"
+        lead={`${counts.productions} production${counts.productions === 1 ? '' : 's'} · ${counts.campaigns} campaign${counts.campaigns === 1 ? '' : 's'}`}
+        actions={
         <div className="flex gap-[18px] flex-wrap text-[12px] text-muted">
           {[
             ['blocked on you', counts.needsYou, 'bad'],
@@ -111,7 +105,8 @@ export default function Home({ go }) {
             </span>
           ))}
         </div>
-      </div>
+        }
+      />
 
       {/* Capture has to be cheaper than the thing it captures. A thought that
           arrives while you are looking at the schedule should land without

@@ -85,8 +85,7 @@ button:disabled { opacity: .42; cursor: not-allowed; }
    selector, which would repaint a selected control's background while leaving
    its light text — white on near-white. Every selected state re-asserts its own
    hover here rather than relying on source order. */
-.stagebar .active:hover:not(:disabled),
-.workspace aside .sel:hover:not(:disabled) {
+.workspace aside .sel:hover:not(:disabled)  {
   background: var(--ink);
   border-color: transparent;
   color: #fff;
@@ -279,34 +278,11 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 
 .title > .quickrow { flex-shrink: 0; padding-bottom: 2px; }
 
-.stagebar {
-  display: flex;
-  gap: 2px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  padding: 3px;
-  border-radius: var(--r-lg);
-  margin: 0 0 14px;
-}
-.stagebar button {
-  flex: 1;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  border-radius: var(--r);
-  padding: 7px 6px;
-  position: relative;
-}
-.stagebar button:hover:not(.active) { background: var(--canvas); color: var(--ink); }
-.stagebar .active { background: var(--ink); color: #fff; font-weight: 540; }
-.stagebar button.hasstale { color: var(--warn); }
-.stagebar .active.hasstale { color: #fff; }
 .staledot {
   width: 5px; height: 5px; border-radius: 50%;
   background: var(--warn); display: inline-block; margin-left: 5px;
   vertical-align: middle;
 }
-.stagebar .active .staledot { background: #f0c06a; }
 
 /* ------------------------------------------------------------ workspace -- */
 .workspace {
@@ -315,7 +291,6 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  min-height: 620px;
   overflow: hidden;
 }
 .workspace aside {
@@ -536,7 +511,6 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   padding: 22px;
-  min-height: 560px;
 }
 .stagepane > p { color: var(--muted); font-size: 13px; margin-top: 4px; }
 .empty { text-align: center; padding: 64px 20px; color: var(--faint); }
@@ -770,7 +744,7 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 .settings {
   display: grid; grid-template-columns: 186px 1fr;
   background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--r-lg); overflow: hidden; min-height: 560px;
+  border-radius: var(--r-lg); overflow: hidden;
 }
 
 .okv { display: inline-flex; align-items: center; gap: 5px; color: var(--ok); font-size: 12.5px; }
@@ -796,7 +770,6 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
   font-size: 10px; margin-left: 6px; padding: 1px 6px; border-radius: 20px;
   background: var(--line); color: var(--muted); font-variant-numeric: tabular-nums;
 }
-.stagebar .active .tabcount { background: rgba(255,255,255,.22); color: #fff; }
 
 /* Everything below the description is the same on every card, so it aligns
    across the row instead of starting wherever the text above ran out. */

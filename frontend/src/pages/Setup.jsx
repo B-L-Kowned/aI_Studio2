@@ -6,6 +6,7 @@ import {
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import ConnectionsSection from './ConnectionsSection.jsx';
+import { PageHead } from '../components/Section.jsx';
 import HeyGen from './HeyGen.jsx';
 
 const SECTIONS = [
@@ -40,11 +41,12 @@ export default function Setup() {
 
   return (
     <>
-      <div className="title">
-        <h1>Settings</h1>
-      </div>
+      <PageHead
+        title="Settings"
+        lead="Licence, connections, models, generation and storage for this install."
+      />
 
-      <div className="grid grid-cols-[186px_1fr] bg-surface border border-solid border-line rounded-lg overflow-hidden min-h-[560px] lte860:grid-cols-[1fr]">
+      <div className="grid grid-cols-[186px_1fr] bg-surface border border-solid border-line rounded-lg overflow-hidden lte860:grid-cols-[1fr]">
         {/* The rail is a list, not a column to be stretched: without
             align-self:start a long section made it 80,000px tall with its links
             marooned at the top. */}

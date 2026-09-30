@@ -22,7 +22,7 @@ function relTime(iso) {
   return `${Math.round(hrs / 24)}d ago`;
 }
 
-export default function Campaigns({ go }) {
+export default function Campaigns({ go, tabs }) {
   const {
     collections, workspace, productions, production,
     openProduction, refreshProductions, reload, mutate,
@@ -95,6 +95,7 @@ export default function Campaigns({ go }) {
     <>
       <PageHead
         title="Campaigns"
+        tabs={tabs}
         lead="A campaign holds multiple productions — series and one-offs."
         // ONE button. There were three — Campaign, New series, New production —
         // which asked you to know the difference between a container, a batch

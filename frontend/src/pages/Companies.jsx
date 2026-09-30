@@ -49,7 +49,7 @@ const purposeTag = (purpose) =>
  * actually changes the script: the same company says different things to
  * investors and to buyers.
  */
-export default function Companies({ go }) {
+export default function Companies({ go, tabs }) {
   const { collections, mutate, setPendingView } = useStudio();
   const [data, setData] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -69,7 +69,7 @@ export default function Companies({ go }) {
     catch { /* mutate reports it */ }
   };
 
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <><PageHead title="Companies" tabs={tabs} /><p className="muted">Loading…</p></>;
   const { companies, purposes } = data;
 
   // Campaigns with no company yet — the thing to clean up.
@@ -80,6 +80,7 @@ export default function Companies({ go }) {
     <>
       <PageHead
         title="Companies"
+        tabs={tabs}
         lead="Who the work is for, and what each track is trying to do for them."
         actions={
           <>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Check, AlertCircle, Plus, X, Archive, RotateCcw, ChevronDown, Search } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
-import { Section } from '../components/Section.jsx';
+import { Section, PageHead } from '../components/Section.jsx';
 
 const ROSTER_PAGE_SIZE = 24;
 
@@ -51,7 +51,7 @@ function initials(name = '') {
  * a small thumbnail, so a cast roster never reads as a list of bare names.
  * Presenter and personal cards ARE people, so they keep the avatar photo.
  */
-export default function Presenters({ tab: externalTab, onTabs }) {
+export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode }) {
   const { mutate } = useStudio();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState(null);
@@ -82,7 +82,7 @@ export default function Presenters({ tab: externalTab, onTabs }) {
     setVisibleCount(ROSTER_PAGE_SIZE);
   }, [normalizedQuery, showRetired]);
 
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <><PageHead title="Cast" tabs={tabsNode} /><p className="muted">Loading…</p></>;
   const active = data.tabs.find((t) => t.id === chosen) ?? data.tabs[0];
   const matches = active?.presenters.filter((p) =>
     !normalizedQuery || searchablePresenter(p).includes(normalizedQuery)
@@ -97,54 +97,37 @@ export default function Presenters({ tab: externalTab, onTabs }) {
 
   return (
     <>
-      <div className="title">
-        {/* Under Cast the bar above names the roster, so repeating "Presenters"
-            here would label the page with one of its own tabs. */}
-        <h1>{externalTab === undefined ? 'Presenters' : 'Cast'}</h1>
-        <div className="quickrow">
-          <button onClick={() => setShowRetired((v) => !v)}>
-            {showRetired ? 'Hide retired' : 'Show retired'}
-          </button>
-          {active?.id !== 'personal' && (
-            <button className="primary" onClick={() => setAdding(true)}>
-              <Plus size={14} /> New {active?.id === 'characters' ? 'character' : 'presenter'}
+      {/* The title is the roster you are looking at; the tabs below it are
+          Cast's. The roster's name and description used to appear three times
+          — tab, page title "Cast", and a section header. */}
+      <PageHead
+        title={active?.label ?? 'Cast'}
+        lead={active?.detail}
+        actions={
+          <>
+            <button onClick={() => setShowRetired((v) => !v)}>
+              {showRetired ? 'Hide retired' : 'Show retired'}
             </button>
-          )}
-        </div>
-      </div>
-
-      {/* The "funny"/"content" badges that used to sit here restated the licence,
-          which the program bubbles in the header now say once, in words, and
-          act on. Under Cast the roster bar above already names what you are
-          looking at, so this whole strip was the third header in a row. */}
-      {externalTab === undefined && (
-        <div className="flex items-center gap-[7px] flex-nowrap mb-[9px] min-h-[22px]">
-          <span className="path text-[11.5px] text-muted whitespace-nowrap overflow-hidden text-ellipsis flex-[0_1_auto] min-w-[48px]">Who appears on screen.</span>
-        </div>
-      )}
-
-      {/* When Cast supplies the roster, it draws the bar too. */}
-      {externalTab === undefined && (
-        <div className="stagebar">
-          {data.tabs.map((t) => (
-            <button key={t.id} className={t.id === tab ? 'active' : ''} onClick={() => setTab(t.id)}>
-              {t.label}
-              <span className="tabcount">{t.presenters.length}</span>
-            </button>
-          ))}
-        </div>
-      )}
+            {active?.id !== 'personal' && (
+              <button className="primary" onClick={() => setAdding(true)}>
+                <Plus size={14} /> New {active?.id === 'characters' ? 'character' : 'presenter'}
+              </button>
+            )}
+          </>
+        }
+        tabs={tabsNode}
+      />
 
       {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
 
       {active && (
         <>
           {active.presenters.length === 0 ? (
-            <Section title={active.label} meta={active.detail}>
+            <Section>
               <p className="sectionempty">Nothing here yet.</p>
             </Section>
           ) : (
-            <Section title={active.label} meta={active.detail}>
+            <Section>
               <div className="flex items-center gap-[10px] mb-[12px] lte620:items-stretch lte620:flex-col">
                 <label className="w-[min(360px,100%)] flex items-center gap-[7px] border border-solid border-line-2 bg-surface rounded p-[0_9px] text-muted focus-within:border-accent focus-within:[box-shadow:0_0_0_3px_var(--accent-soft)]">
                   <Search size={14} aria-hidden="true" />
@@ -175,12 +158,7 @@ export default function Presenters({ tab: externalTab, onTabs }) {
                           + (p.isActive ? '' : ' retired opacity-50')}
                         key={p.id}
                       >
-                        <PresenterVisual presenter={p} tabId={active.id} />
-
-                        <div className="p-[13px_14px_5px]">
-                          <h3 className="text-[14px] leading-[1.3]">{p.name}</h3>
-                          <p className="min-h-[2.9em] m-[5px_0_0] text-muted text-[12px] leading-[1.45]">{p.tagline || p.description || 'No character note yet.'}</p>
-                        </div>
+                        <PresenterHead presenter={p} tabId={active.id} />
 
                   {/* A persona that only shows a name is decoration. These are
                       the lines that actually steer the script. */}
@@ -261,56 +239,64 @@ export default function Presenters({ tab: externalTab, onTabs }) {
   );
 }
 
-function PresenterVisual({ presenter, tabId }) {
+/**
+ * Picture when there is one, a compact identity row when there is not.
+ *
+ * Every card used to open with a 16:9 tile. With no artwork on any of 166
+ * characters that tile was two letters in a grey box — most of each card, and
+ * three characters to a screen. The tile now appears only for a real image.
+ * The kind badge ("CHARACTER") went too: the page title already says it.
+ */
+function PresenterHead({ presenter, tabId }) {
   const [imageFailed, setImageFailed] = useState(false);
   const isCharacter = tabId === 'characters';
   const imageUrl = isCharacter ? presenter.artworkUrl : (presenter.artworkUrl || presenter.avatar?.previewUrl);
-  const kind = isCharacter ? 'Character' : tabId === 'personal' ? 'You' : 'Presenter';
-  const imageLabel = isCharacter
-    ? (presenter.avatar ? `Performed by ${presenter.avatar.name}` : null)
-    : (presenter.artworkUrl ? 'Custom artwork' : presenter.avatar?.name);
+  const hasImage = !!imageUrl && !imageFailed;
+  // A character's avatar is its performer, never its likeness — so it is named,
+  // with a thumbnail, rather than shown as the character.
+  const performer = isCharacter && presenter.avatar;
+  const caption = isCharacter ? null : (presenter.artworkUrl ? 'Custom artwork' : presenter.avatar?.name);
 
   return (
-    <div
-      className={'relative aspect-[16/9] overflow-hidden bg-surface-2 [border-bottom:1px_solid_var(--line)]'
-        + (imageUrl && !imageFailed
-          ? " after:content-[''] after:absolute after:inset-[48%_0_0] after:bg-[linear-gradient(transparent,rgba(0,0,0,.58))] after:pointer-events-none"
-          : '')}
-    >
-      {imageUrl && !imageFailed ? (
-        <img
-          className="w-full h-full block object-cover object-[center_22%]"
-          src={imageUrl}
-          alt={`${presenter.name} — ${imageLabel}`}
-          loading="lazy"
-          onError={() => setImageFailed(true)}
-        />
-      ) : (
-        <div className="h-full grid place-content-center justify-items-center gap-[8px] text-faint [&_span]:text-[11px]">
+    <>
+      {hasImage && (
+        <div className="relative aspect-[16/9] overflow-hidden bg-surface-2 [border-bottom:1px_solid_var(--line)] after:content-[''] after:absolute after:inset-[48%_0_0] after:bg-[linear-gradient(transparent,rgba(0,0,0,.58))] after:pointer-events-none">
+          <img
+            className="w-full h-full block object-cover object-[center_22%]"
+            src={imageUrl}
+            alt={caption ? `${presenter.name} — ${caption}` : presenter.name}
+            loading="lazy"
+            onError={() => setImageFailed(true)}
+          />
+          {caption && (
+            <span className="absolute z-[1] max-w-[calc(100%-20px)] overflow-hidden text-ellipsis whitespace-nowrap left-[10px] bottom-[8px] text-white text-[10.5px] [text-shadow:0_1px_2px_rgba(0,0,0,.7)]">{caption}</span>
+          )}
+        </div>
+      )}
+
+      <div className="p-[13px_14px_5px] flex gap-[11px] items-start">
+        {!hasImage && (
           <b
-            className="w-[48px] h-[48px] grid place-items-center border border-solid border-line-2 rounded-[50%] bg-surface text-ink-2 font-[620] text-[13px] leading-[1] font-mono tracking-[.03em]"
+            className="flex-none w-[38px] h-[38px] grid place-items-center border border-solid border-line-2 rounded-[50%] bg-surface-2 text-ink-2 font-[620] text-[12px] leading-[1] font-mono tracking-[.03em]"
             aria-hidden="true"
           >
             {initials(presenter.name)}
           </b>
-          {isCharacter ? (
-            presenter.avatar ? (
-              <span className="inline-flex items-center gap-[6px] p-[2px_8px_2px_2px] border border-solid border-line rounded-[999px] bg-surface text-muted">
-                {/* display/object-position carry over from the card image rule it used to share. */}
-                {presenter.avatar.previewUrl && <img className="block object-[center_22%] w-[20px] h-[20px] rounded-[50%] object-cover" src={presenter.avatar.previewUrl} alt="" loading="lazy" />}
-                Performed by {presenter.avatar.name}
-              </span>
-            ) : <span>No avatar assigned</span>
-          ) : (
-            <span>{presenter.avatar ? 'Preview unavailable' : 'No avatar assigned'}</span>
+        )}
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[14px] leading-[1.3] m-0">{presenter.name}</h3>
+          <p className="m-[3px_0_0] text-muted text-[12px] leading-[1.45] line-clamp-2">
+            {presenter.tagline || presenter.description || 'No character note yet.'}
+          </p>
+          {performer && (
+            <span className="inline-flex items-center gap-[6px] mt-[7px] max-w-full p-[2px_8px_2px_2px] border border-solid border-line rounded-[999px] bg-surface text-muted text-[11px]">
+              {performer.previewUrl && <img className="block flex-none object-[center_22%] w-[18px] h-[18px] rounded-[50%] object-cover" src={performer.previewUrl} alt="" loading="lazy" />}
+              <span className="truncate">Performed by {performer.name}</span>
+            </span>
           )}
         </div>
-      )}
-      <span className="absolute z-[1] max-w-[calc(100%-20px)] overflow-hidden text-ellipsis whitespace-nowrap top-[10px] left-[10px] p-[3px_7px] bg-[rgba(255,255,255,.92)] border border-solid border-[rgba(255,255,255,.7)] rounded-sm text-ink-2 text-[9.5px] font-[650] tracking-[.08em] uppercase [box-shadow:0_1px_3px_rgba(0,0,0,.08)]">{kind}</span>
-      {imageUrl && !imageFailed && imageLabel && (
-        <span className="absolute z-[1] max-w-[calc(100%-20px)] overflow-hidden text-ellipsis whitespace-nowrap left-[10px] bottom-[8px] text-white text-[10.5px] [text-shadow:0_1px_2px_rgba(0,0,0,.7)]">{imageLabel}</span>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
 

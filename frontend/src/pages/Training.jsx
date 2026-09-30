@@ -23,7 +23,7 @@ const TONE_COLOR = {
 };
 const STATE_ICON = { ready: Check, stale: AlertCircle, failed: AlertCircle };
 
-export default function Training({ go, goView }) {
+export default function Training({ go, goView, tabs }) {
   const { notify, openProduction } = useStudio();
   const [courses, setCourses] = useState(null);
   const [ordering, setOrdering] = useState(null); // course id being reordered
@@ -32,7 +32,7 @@ export default function Training({ go, goView }) {
   const load = () => api.trainingCourses().then(setCourses);
   useEffect(() => { load(); }, []);
 
-  if (!courses) return <p className="muted">Loading…</p>;
+  if (!courses) return <><PageHead title="Training" tabs={tabs} /><p className="muted">Loading…</p></>;
 
   const startOrdering = (c) => { setOrdering(c.id); setDraft(c.lessons.map((l) => l.id)); };
   const move = (i, by) => {
@@ -59,6 +59,7 @@ export default function Training({ go, goView }) {
     <>
       <PageHead
         title="Training"
+        tabs={tabs}
         lead={
           courses.length
             ? `${courses.length} course${courses.length === 1 ? '' : 's'} · ${totals.ready} of ${totals.lessons} lessons ready`

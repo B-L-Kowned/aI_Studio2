@@ -49,7 +49,7 @@ const shiftMonth = (key, by) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
-export default function CalendarPage({ go }) {
+export default function CalendarPage({ go, tabs }) {
   const {
     openProduction, setPendingStage, mutate, pendingDate, setPendingDate, scopeMode,
   } = useStudio();
@@ -106,13 +106,14 @@ export default function CalendarPage({ go }) {
     catch { /* mutate reports it */ }
   };
 
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <><PageHead title="Production calendar" tabs={tabs} /><p className="muted">Loading…</p></>;
   const { days, label, counts, unscheduled } = data;
 
   return (
     <>
       <PageHead
         title="Production calendar"
+        tabs={tabs}
         lead="What lands when, and what it still needs before it can."
         actions={
           <>

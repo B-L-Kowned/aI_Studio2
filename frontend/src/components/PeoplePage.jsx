@@ -14,7 +14,7 @@ const SCOPES = [
   ['workspace', 'Workspace'],
 ];
 
-export default function PeoplePage({ compact }) {
+export default function PeoplePage({ compact, tabs }) {
   const { collections, refreshPeople, mutate } = useStudio();
   const [inviting, setInviting] = useState(false);
   const [name, setName] = useState('');
@@ -125,12 +125,13 @@ export default function PeoplePage({ compact }) {
   return (
     <>
       <PageHead
-        title="People &amp; Collaborators"
+        title="Collaborators"
         lead="Invite someone to approve their appearance and voice without giving them project access."
         actions={inviteBtn}
+        tabs={tabs}
       />
 
-      <Section title="Collaborators" meta={`${approved} of ${people.length} approved`}>
+      <Section title="Approvals" meta={`${approved} of ${people.length} approved`}>
         {body}
       </Section>
 

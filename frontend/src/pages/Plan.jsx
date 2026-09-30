@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useStudio } from '../context/studio-context.jsx';
+import { Tabs } from '../components/Section.jsx';
 import Campaigns from './Campaigns.jsx';
 import Ideas from './Ideas.jsx';
 import Companies from './Companies.jsx';
@@ -42,23 +43,17 @@ export default function Plan({ go, routes, programs }) {
     }
   }, [pendingView, setPendingView]);
   const current = allowed.some((v) => v.id === view) ? view : allowed[0]?.id;
+  const tabs = <Tabs items={allowed} value={current} onChange={setView} />;
 
   return (
     <>
-      <div className="subnav">
-        {allowed.map((v) => (
-          <button key={v.id} className={current === v.id ? 'on' : ''} onClick={() => setView(v.id)}>
-            {v.label}
-          </button>
-        ))}
-      </div>
-
-      {current === 'Ideas' && <Ideas go={go} />}
-      {current === 'Companies' && <Companies go={go} />}
-      {current === 'Campaigns' && <Campaigns go={go} />}
-      {current === 'Calendar' && <CalendarPage />}
+      {/* The view draws the header, so its title sits above these tabs. */}
+      {current === 'Ideas' && <Ideas go={go} tabs={tabs} />}
+      {current === 'Companies' && <Companies go={go} tabs={tabs} />}
+      {current === 'Campaigns' && <Campaigns go={go} tabs={tabs} />}
+      {current === 'Calendar' && <CalendarPage tabs={tabs} />}
       {/* Training's "new course" is a sibling view, not another page. */}
-      {current === 'Training' && <Training go={go} goView={setView} />}
+      {current === 'Training' && <Training go={go} goView={setView} tabs={tabs} />}
     </>
   );
 }
