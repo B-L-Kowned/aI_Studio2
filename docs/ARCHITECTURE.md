@@ -3,9 +3,10 @@
 AI Video Studio — a single-user **desktop** application for planning, generating
 and publishing avatar video across many companies.
 
-Everything here is derived from the code, not from the older contracts in
-`/docs`. Where the two disagree, the code is right and the contradiction is
-recorded in `SANDY_REPORT.md`.
+Everything here is derived from the code. The product specs beside this file
+(`PM_SPEC.md`, `DISTRIBUTION_ONBOARDING.md`, `PM_ACCEPTANCE.md`) record intent;
+where they and the code disagree, the code is right. Earlier contradictions and
+their resolution are in `archive/SANDY_REPORT.md`.
 
 ---
 
@@ -21,9 +22,16 @@ recorded in `SANDY_REPORT.md`.
 | Script AI | deterministic · local Ollama · connected cloud providers | `backend/lib/llm*.js` |
 | Media tooling | ffmpeg / ffprobe, invoked as subprocesses | system |
 
-**Database location** is `~/Library/Application Support/AIVideoStudio/studio.db`
-on macOS (`STUDIO_DB_PATH` overrides). It is deliberately outside the source
+**Database location** defaults to the OS user-data directory —
+`~/Library/Application Support/AIVideoStudio/studio.db` on macOS
+(`backend/db/index.js`, `defaultDbPath()`). It is deliberately outside the source
 tree so the app survives a reinstall and no database is ever committed.
+
+Development and the desktop app use **the same default file**. Electron's own
+`userData` directory (`ai-video-studio-desktop`) is not where the database lives.
+`STUDIO_DB_PATH` overrides the location; give a development checkout its own
+file with it. The provider mode is stored in the database, so a dev server
+sharing a database that is in Live mode spends real HeyGen credits.
 
 ### Runtime shapes
 
@@ -143,6 +151,17 @@ ordered course in the other without either knowing about the other.
 place in the schedule. That is what makes capture cheap. A parked thing with a
 deadline is a production; that is the line between them.
 
+### Working across productions
+
+A production starts from Campaigns → *New production*, the switcher in the
+Create breadcrumb, or a start card on Create → Idea (idea, template, existing
+video, script, URL — each sets the `sourceType`). A template seeds the brief,
+outline and target runtime (`backend/data/templates.js`). Creating from a
+template outside the licence returns **403 `NOT_LICENSED`**, so no one ends up
+holding a project they cannot open. The open production is remembered in
+`workspace.last_production_id`. Productions are isolated: editing one never
+marks another stale.
+
 ---
 
 ## 3. The pipeline and its gates
@@ -169,8 +188,10 @@ voice approves a sound the video never makes.
 **Upstream edits never overwrite downstream.** They mark it stale with a reason
 (`lib/stale.js`). Nothing is deleted; you regenerate when ready.
 
-**Paid renders need explicit confirmation** (`confirmPaid`), on the whole
-production *and* per segment.
+**Anything that would spend needs explicit confirmation.** `confirmPaid: true`
+is required on the whole-production render, per-segment renders on a non-free
+path, single auditions, `audition-all`, and `POST /heygen/speech` whenever they
+would spend. Without it they return **402 `CONFIRMATION_REQUIRED`**.
 
 **Website evidence is reviewed before it becomes script context.** URL research
 stores the page title, description, headings, summary, a bounded text snapshot
@@ -196,13 +217,19 @@ offline sandbox for testing export and publication code.
 
 ## 4. Provider modes — what may be spent
 
-`fixtures` · `live_read` (Test) · `live`, stored in the workspace.
+`fixtures` · `live_read` (Test) · `live` (`backend/lib/providers/mode.js`).
+
+The mode is stored in `workspace.provider_mode` and the stored value wins. The
+`PROVIDER_MODE` env var (or legacy `DRY_RUN=false`, meaning `live`) is used only
+while no mode has been stored — in practice, a fresh database. Switching to
+`live` requires `confirmBilling: true`; without it the request returns
+**402 `CONFIRM_BILLING`** and the previous mode stays in place.
 
 | Mode | Reads | Renders | Auditions |
 |---|---|---|---|
-| fixtures | stand-ins | simulated (real file, colour bars) | none |
-| live_read | real | free only — **refuses** if it cannot be free | **real, costs credits** |
-| live | real | real, billed | real |
+| fixtures | stand-ins — nothing leaves the machine | simulated (real file, colour bars) | none |
+| live_read | real | free only (HeyGen watermarked test render via API key) — **refuses** if it cannot be free | **real speech, costs credits** — needs `confirmPaid` |
+| live | real | real, billed — needs `confirmPaid` | real, billed — needs `confirmPaid` |
 
 **`create_video_from_studio` has no `test` parameter.** Its schema is
 `scenes, title, folderId, aspectRatio, resolution, brandGlossaryId,
@@ -239,7 +266,9 @@ sizes. Script versions preserve the provider and model for audit.
 **MCP (OAuth)** spends the web plan you already pay for. **API key** spends a
 separate pay-as-you-go balance. They are not interchangeable, and
 `chooseRenderPath()` decides between them from what the MCP server actually
-exposes (`tools/list`) plus the current mode — never from an assumption.
+exposes (`tools/list`) plus the current mode — never from an assumption. In
+Fixtures it answers before asking the server anything, and a stored key that
+cannot be decrypted does not count as a key.
 
 **Either connection works independently.** MCP alone covers normal Live
 production. The API key is optional; it adds HeyGen's watermarked free Test
@@ -254,13 +283,10 @@ render and can act as a separately billed Live fallback. With both stored:
 With no key, `live_read` returns `NO_FREE_PATH` and refuses, because a mode
 that promises not to spend must keep the promise or refuse the job.
 
-**Fixed 2026-09-29.** `lib/connections.js` reported a single `pocket`, with
-MCP winning — so a stored key went invisible the moment you signed in, and the
-UI hid the key field entirely when `pocket === 'mcp'` behind a button reading
-"Use an API key *instead*". The free test-render path was unreachable in
-practice. `/connections` now reports `pockets: { mcp, key }` independently and
-the key is always addable. The router always read them independently; only the
-report pretended otherwise.
+`/connections` reports `pockets: { mcp, key }` independently and the key is
+always addable. An earlier version reported a single `pocket` with MCP winning,
+which hid a stored key once you signed in and made the free Test path
+unreachable. Keep the report and the router reading the same two facts.
 
 ---
 
@@ -317,8 +343,27 @@ where it wanted a script and dies on `<` as a parse error. `/art/marv.png`
 returned 200 that way for artwork that never existed. Deep links carry no
 extension, so client routing is unaffected.
 
-| Mount | Owns |
-|---|---|
+Every router mounts under `/api` (`backend/server.js`). Most mount at `/api`
+itself and declare their own top-level paths; four mount at a deeper prefix.
+
+| Mount | Router | Paths it serves |
+|---|---|---|
+| `/api` | `workspace.js` | `/workspace/*` (licence, storage, AI keys, LLM routing, provider mode, onboarding), `/setup`, `/start-sources`, `/publish-targets`, `/editor-tools` |
+| `/api` | `collections.js` | `/campaigns`, `/people` (invite, consent, casting), `/casting/options`, `/library`, `/calendar` |
+| `/api` | `companies.js` | `/companies/*`, `/campaigns/:id/track` |
+| `/api` | `providers.js` | `/providers/*`, `/provider-jobs/:id` |
+| `/api` | `connections.js` | `/connections/*` |
+| `/api` | `heygen.js` | `/heygen/*` — account, catalogue, videos, speech |
+| `/api` | `presenters.js` | `/presenters` |
+| `/api` | `roster.js` | `/roster/*` |
+| `/api` | `schedule.js` | `/schedule`, `/productions/:id/due` |
+| `/api` | `ideas.js` | `/ideas` |
+| `/api` | `storage.js` | `/storage`, `/storage/check`, `/productions/:id/folder` |
+| `/api/productions` | `productions.js`, `pipeline.js`, `segments.js`, `analysis.js`, `workflow.js` | production CRUD and planning, script/render/edit/export/publish, segments and read-through, video analysis, website research, appearance proofs, Production Lock |
+| `/api/series` | `series.js` | bulk episode creation (gated on `plan.series`) |
+| `/api/training` | `training.js` | `/courses`, `/lessons` (content program, 402-gated) |
+
+---|---|
 | `/api/workspace` | licence, entitlement, storage, provider mode, LLM routing |
 | `/api/companies`, `/api/campaigns/:id/track` | company → track layer |
 | `/api/productions/*` | production CRUD, pipeline, segments, analysis, website research, appearance proofs and Production Lock |
@@ -334,15 +379,18 @@ extension, so client routing is unaffected.
 
 ## 8. Tests
 
-`npm run verify` — **218 assertions across four suites**, run against a
-throwaway database on its own port. It prints a per-suite verdict and a closing
+Run `npm run verify` in `backend/` and read the summary block: every suite
+must print its total. The count changes as tests are added, so none is recorded
+here. `run-verify.mjs` runs four suites against a throwaway seeded database on
+its own port, in Fixtures mode. It prints a per-suite verdict and a closing
 summary, because a suite that *throws* prints no total and exits non-zero: read
 only the "N passed" lines and an aborted suite is indistinguishable from a clean
 one. `verify-gate.mjs` sat dead at 6 of 22 checks that way — the gate suite, the
 one that enforces the product's central rule — while the run was reported as
 162/162 (118 + 44, with the gate contributing nothing).
 
-It **refuses to run against the development server**, because the suite asserts a
+`verify.mjs` **refuses to run against the development server** unless
+`VERIFY_BASE` is set, because the suite asserts a
 factory-fresh install *and writes settings*: an earlier run against the dev
 server silently left the app in Fixtures mode. Run against a used database it
 reported a dozen failures that were leftover state, which is worse than useless —
@@ -364,7 +412,7 @@ it trains you to read red as normal.
 | Electron packaging | **Closed 2026-09-28.** See §1 “The Electron floor”. |
 | OS keychain | Specified in `desktop/KEYCHAIN.md`, not implemented — deliberately, see that file. |
 | Transcription | Detected if installed; no local transcriber here, and the analyser says so rather than returning an empty transcript. |
-| Character visuals | **Closed 2026-09-29.** Custom artwork remains an opt-in override, but cards now show the synced preview of the exact HeyGen avatar assigned through `backing`. `images/` was empty because 158 of 166 characters borrow provider avatars; the remaining 8 show an explicit uncast state. |
+| Character visuals | **Open — no artwork exists yet.** A character's avatar is its *performer*, never its likeness: the previous build's README says each character borrows a realistic human HeyGen avatar by default, and custom art replaces it (uploaded as a HeyGen talking photo, which then animates that image instead). So a character card shows the character's `artwork_url`, or its monogram until there is one, with the performing avatar named in a small "Performed by …" chip. Presenter and You cards show the avatar photo, because there the avatar IS the likeness. To add art: set it per character, or put `<id>.png` in the previous build's `desktop/character_art/images/` and re-run the roster import, which fills `artwork_url` where it is empty. |
 | `/v2/templates` | The one HeyGen endpoint still flagged unverified. |
 | API-key render path | Written, never exercised — no key stored. |
 | Source / URL import | **Closed in `codex/production-workflow-parity`.** One public page is researched, evidence is preserved and reviewed, and approved context reaches the script. This is intentionally not a crawler. |
@@ -374,3 +422,28 @@ it trains you to read red as normal.
 | Provider-native reusable Look | Local appearance proof/approval is built; a verified HeyGen operation to create a reusable remote look/avatar from it is not. |
 | Script → Segments | **Closed 2026-09-29.** Accepting a proposed script, or importing one that is already accepted, builds the line-level production segments immediately. The UI then advances to Segments; rebuilding remains an explicit recovery/update action. |
 | Free audio review | **Closed 2026-09-29.** Auditions are HeyGen speech and spend the plan, which made the only way to hear a script a paid one. `lib/readthrough.js` reads it with local `say`: free, offline, with per-line and total duration against the target. It deliberately cannot satisfy the render gate — it answers "are these the right words", not "is this the right delivery". |
+
+---
+
+## 10. Action contract
+
+The UI asks for actions and capabilities, never provider endpoints; provider
+choice happens behind the API (`routeCapability()` in
+`backend/lib/providers/index.js`). This is the action list from the original
+frontend contract (`archive/FRONTEND_CONTRACT.md`) mapped to what exists in
+`frontend/src/services/api.js`.
+
+| Contract action | Client function(s) | State |
+|---|---|---|
+| createProduction(sourceType, templateId?) | `createProduction` | built; the template seeds brief, outline and runtime |
+| producerAssess | `producer` | built — known / inferred / decisions needed |
+| updateBrief · applyTemplate · saveTemplate | `updateBrief` | template applies at creation; saving a new template is not built |
+| outline sections · rebalanceRuntime · approveOutline | `addSection`, `updateSection`, `deleteSection`, `rebalance`, `approveOutline` | built |
+| developScenes · scene CRUD · approveScenes | `developScenes`, `addScene`, `updateScene`, `deleteScene`, `approveScenes` | built |
+| inviteCollaborator · grant/revokeConsent | `invitePerson`, `grantConsent`, `revokeConsent` | invite mints a link with no page behind it; consent built |
+| submitAvatarVoice · requestPublicationApproval | — | not built |
+| ingestSource · analyzeExistingVideo | `addSource`, `researchWebsite`, `reviewResearch`, `analyseVideo`, `adoptAnalysisOutline` | built (one page per URL; no transcription) |
+| generateScriptProposal · accept/reject/revise | `generateScript`, `acceptScript`, `rejectScript`, `updateScriptSegment` | built; only proposed versions are editable |
+| createJob · cancelJob · retryJob | `startRender`, `cancelRender`, `renderSegment`, `providerJob` | no retry action |
+| createRenderVersion · applyEditDecision · exportVersion | `startRender`, `applyEdit`, `createExport` | built; there is no EditProject — edit decisions attach to a render version |
+| prepare · schedule · publishPublication | `publish` | Prepare-only for social platforms; direct publish only to Artificial Funny |

@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { getDb } from '../db/index.js';
 import {
   segmentsFor, buildSegments, updateSegment, auditionSegment, markHeard, renderGate,
-  speakers, auditionPending,
+  speakers, auditionPending, auditionSpends,
 } from '../lib/segments.js';
+import { pollSegmentRenders } from '../lib/providers/index.js';
 import { renderViaStudio } from '../lib/providers/heygen-studio.js';
 import { renderViaKey } from '../lib/providers/heygen-key-render.js';
 import { chooseRenderPath } from '../lib/providers/heygen-route.js';
@@ -14,15 +15,25 @@ import { createReadStream, existsSync } from 'node:fs';
 const router = Router();
 
 /** Everything a segment view needs, assembled the same way for every route. */
-const view = (id) => ({ segments: segmentsFor(id), gate: renderGate(id), speakers: speakers(id) });
+// `auditionSpends` is said up front so the page can ask before the click, not
+// learn from a 402 after it.
+const view = (id) => {
+  const segments = segmentsFor(id);
+  return { segments, gate: renderGate(id, segments), speakers: speakers(id), auditionSpends: auditionSpends() };
+};
+// Known refusals by code; anything else from an audition is the provider failing.
+const STATUS = {
+  NOT_FOUND: 404, NO_SCRIPT: 409, CONFIRMATION_REQUIRED: 402,
+  EMPTY: 400, NO_PRESENTER: 409, NO_VOICE: 409, NO_AUDIO: 409, STALE: 409,
+};
 const bad = (res, err, fallback = 400) =>
-  fail(res, err.code === 'NOT_FOUND' ? 404 : err.code === 'NO_SCRIPT' ? 409 : fallback,
-       err.code ?? 'ERROR', err.message);
+  fail(res, STATUS[err.code] ?? fallback, err.code ?? 'ERROR', err.message);
 
 router.get(
   '/:id/segments',
   route(async (req, res) => {
     const id = Number(req.params.id);
+    await pollSegmentRenders(id);
     return ok(res, view(id));
   })
 );
@@ -58,12 +69,13 @@ router.post(
   route(async (req, res) => {
     const id = Number(req.params.id);
     try {
-      const result = await auditionSegment(Number(req.params.segmentId), req.body ?? {});
+      const { speed, ssml, confirmPaid } = req.body ?? {};
+      const result = await auditionSegment(Number(req.params.segmentId), { speed, ssml, confirmPaid });
       return ok(res, { ...result, ...view(id) },
         result.synthesised
           ? `Auditioned in ${result.voice.name}`
           : 'Take created, but nothing was synthesised in Fixtures mode — switch to Test to hear it');
-    } catch (err) { return bad(res, err); }
+    } catch (err) { return bad(res, err, 502); }
   })
 );
 
@@ -89,7 +101,14 @@ router.post(
   '/:id/segments/audition-all',
   route(async (req, res) => {
     const id = Number(req.params.id);
-    const { done, failedAt, error } = await auditionPending(id);
+    let result;
+    try {
+      result = await auditionPending(id, {
+        confirmPaid: req.body?.confirmPaid,
+        limit: req.body?.limit == null ? null : Number(req.body.limit),
+      });
+    } catch (err) { return bad(res, err); }
+    const { done, failedAt, error } = result;
     const made = done.filter((d) => d.synthesised).length;
 
     if (error) {

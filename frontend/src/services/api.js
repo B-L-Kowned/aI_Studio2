@@ -40,8 +40,6 @@ export const api = {
   saveStorage: (provider, path) => post('/workspace/storage', { provider, path }),
   testAiKey: (provider, key) => post('/workspace/ai/test', { provider, key }),
   saveAi: (provider, key) => post('/workspace/ai', { provider, key }),
-  deleteCredential: (provider) => del(`/workspace/credentials/${provider}`),
-  saveCredential: (provider, key) => post('/workspace/credentials', { provider, key }),
 
   // one connect path for every vendor — planning model, voice or video
   connections: () => get('/connections'),
@@ -53,7 +51,6 @@ export const api = {
   setProviderMode: (mode, confirmBilling) => post('/workspace/provider-mode', { mode, confirmBilling }),
   setConnection: (platform, status) => post('/workspace/connections', { platform, status }),
   completeOnboarding: () => post('/workspace/complete-onboarding'),
-  resetOnboarding: () => post('/workspace/reset-onboarding'),
   setMode: (mode) => post('/workspace/mode', { mode }),
 
   // collections
@@ -87,8 +84,6 @@ export const api = {
 
   // generation providers (HeyGen)
   providers: () => get('/providers'),
-  connectProvider: (id, key) => post(`/providers/${id}/connect`, { key }),
-  disconnectProvider: (id) => post(`/providers/${id}/disconnect`),
   syncProvider: (id) => post(`/providers/${id}/sync`),
   providerAssets: (id, { kind, q, limit } = {}) => {
     const p = new URLSearchParams();
@@ -103,7 +98,6 @@ export const api = {
   // training — the content program. Courses are campaigns, lessons are videos.
   trainingCourses: () => get('/training/courses'),
   reorderCourse: (id, productionIds) => post(`/training/courses/${id}/order`, { productionIds }),
-  setLessonCourse: (id, courseId) => post(`/training/lessons/${id}/course`, { courseId }),
 
   // analysing a video you already have — all measured locally with ffmpeg
   analysis: (id) => get(`/productions/${id}/analysis`),
@@ -120,7 +114,6 @@ export const api = {
   // companies and their tracks — who the work is for, and who it talks to
   companies: (includeRetired) => get(`/companies${includeRetired ? '?includeRetired=true' : ''}`),
   addCompany: (body) => post('/companies', body),
-  updateCompany: (id, body) => patch(`/companies/${id}`, body),
   retireCompany: (id, active) => post(`/companies/${id}/retire`, { active }),
   setTrack: (campaignId, body) => patch(`/campaigns/${campaignId}/track`, body),
 
@@ -150,7 +143,9 @@ export const api = {
   // Local, free, and not the shipping voice — see lib/readthrough.js.
   readThrough: (id) => post(`/productions/${id}/readthrough`, {}),
   updateSegment: (id, segmentId, body) => patch(`/productions/${id}/segments/${segmentId}`, body),
-  auditionAll: (id) => post(`/productions/${id}/segments/audition-all`),
+  // `limit` is the line count the user confirmed; the server charges no more than that.
+  auditionAll: (id, { confirmPaid = false, limit } = {}) =>
+    post(`/productions/${id}/segments/audition-all`, { confirmPaid, limit }),
   auditionSegment: (id, segmentId, body) => post(`/productions/${id}/segments/${segmentId}/audition`, body ?? {}),
   markHeard: (id, segmentId, takeId, heard) =>
     post(`/productions/${id}/segments/${segmentId}/heard`, { takeId, heard }),
@@ -162,10 +157,7 @@ export const api = {
   heygenConnect: () => post('/heygen/connect', {}),
   heygenDisconnect: () => del('/heygen'),
   heygenVideos: (limit) => get(`/heygen/videos${limit ? `?limit=${limit}` : ''}`),
-  heygenAccount: () => get('/heygen/account'),
-  heygenTools: () => get('/heygen/tools'),
   importHeygenVideo: (id) => post(`/heygen/videos/${id}/import`, {}),
-  providerJob: (jobId) => get(`/provider-jobs/${jobId}`),
 
   // production / planning
   currentProduction: () => get('/productions/current'),
@@ -183,7 +175,6 @@ export const api = {
   approveOutline: (id) => post(`/productions/${id}/outline/approve`),
   developScenes: (id) => post(`/productions/${id}/scenes/develop`),
   addScene: (id, body) => post(`/productions/${id}/scenes`, body),
-  updateScene: (id, sceneId, body) => patch(`/productions/${id}/scenes/${sceneId}`, body),
   deleteScene: (id, sceneId) => del(`/productions/${id}/scenes/${sceneId}`),
   approveScenes: (id) => post(`/productions/${id}/scenes/approve`),
   resolveDecision: (id, decisionId, resolution) =>

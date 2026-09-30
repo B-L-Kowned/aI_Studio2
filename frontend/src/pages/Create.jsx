@@ -25,6 +25,16 @@ export default function Create({ go }) {
     }
   }, [pendingStage, setPendingStage]);
 
+  // No open production (a fresh workspace, or the current one failed to load)
+  // used to throw here and blank the page.
+  if (!production) {
+    return (
+      <p className="sectionempty">
+        No production is open. <button onClick={() => go('Plan')}>Open or start one in Plan</button>
+      </p>
+    );
+  }
+
   const staleStages = production.stale ?? {};
 
   return (

@@ -1,8 +1,13 @@
 # AI Video Studio — Handoff
 
-**Written 2026-09-29.** Last updated the same day, after the desktop workflow-parity build. For someone (or another model) picking this up cold.
-Everything here was measured against the running app on the date above, not
-recalled. Where a claim could not be verified, it says so.
+For someone (or another model) picking this up cold. This file holds durable
+facts, traps and next steps only. Live state — credits, provider mode, which
+productions exist, commit SHAs — goes stale in days, so it is not recorded
+here: read it from the running app (Settings, `GET /api/workspace`) and `git log`.
+
+Companion documents: `ARCHITECTURE.md` (design, HTTP contract, full gap table),
+`TEST_PLAN.md`, and the product specs in this directory. Superseded material is
+in `archive/`.
 
 ---
 
@@ -36,51 +41,7 @@ changing the words is not approval of the new words.
 
 ---
 
-## 2. Where it is right now
-
-```
-git  552bb6d  Reconcile handoff with verified commit state
-     4846c7c  Expand production workflow and provider routing
-     6326e00  Scope the app by program, make days schedulable, fix breadcrumb and add history
-     03b055e  Fix Electron N-API floor, centre header nav, stop Cast claiming artwork, repair dead gate suite
-     07929e3  Initial commit
-```
-
-The workflow-parity work lives on `codex/production-workflow-parity`; its first
-two commits are `f60f079` and `a2a62be`; the current branch also contains the
-LLM salvage described below. Tests: **218 assertions across four suites, exit 0**.
-Frontend production build: clean. The Electron build was also walked against a
-temporary Fixtures database: Sources, Appearance, Production Lock and
-Prepare-only destinations all rendered in the desktop shell.
-
-| | |
-|---|---|
-| companies | 3 (Artificial Funny, Fixology, DomusLogic) |
-| campaigns | 4 — only Artificial Funny has a real track (promotion + audience) |
-| productions | 5 |
-| presenters | 174 · **158 characters castable** |
-| provider assets | 12,910 (9,967 avatars + 2,943 voices) |
-| parked ideas | 5 |
-| provider mode | **Live — billable** |
-| HeyGen credits | 149 |
-
-Productions:
-
-```
-36  AI Is Getting Too Complicated            AI Education                  content  0 segs
-43  Why your team keeps rebuilding…          AI for Operators — Season 1   content  7 segs
-44  The one meeting that replaces four       AI for Operators — Season 1   content  0 segs
-45  When to say no to automation             AI for Operators — Season 1   content  0 segs
-51  Why every AI demo works until…           Artificial Funny              comedy   7 segs
-```
-
-`51` is the end-to-end walkthrough production, built from a parked idea on
-2026-09-29. It is cast, read-through done, and **one paid audition away** from
-being renderable.
-
----
-
-## 3. The pipeline, and exactly where it stops for free
+## 2. The pipeline, and exactly where it stops for free
 
 ```
 Website evidence → Plan → editable Script → Segments / voice approval
@@ -107,7 +68,7 @@ desktop workflow, not a separate mobile product:
 9. Social destinations with no connector are Prepare-only. They no longer
    claim a seeded connection or offer fake scheduling/publishing.
 
-Walked end to end in Fixtures mode on production 51. **Free and working:**
+In Fixtures mode, these steps are **free and working:**
 
 1. Park an idea ✅
 2. Idea → production, template applied ✅
@@ -115,9 +76,9 @@ Walked end to end in Fixtures mode on production 51. **Free and working:**
 4. Generate script ✅ — built-in deterministic, Local Ollama, or the explicitly
    selected connected cloud provider
 5. Accept script ✅
-6. **Build segments** ✅ — see the trap in §5
+6. **Build segments** ✅ — accepting a script builds them and advances to Segments
 7. Cast all lines ✅ (one action, `applyToSpeaker: true`)
-8. **Read aloud** ✅ — free local audio review, added 2026-09-29
+8. **Read aloud** ✅ — free local audio review (§6)
 
 **Where it stops:**
 
@@ -125,17 +86,17 @@ Walked end to end in Fixtures mode on production 51. **Free and working:**
 - approve a take with no audio → **409** *"There is no audio to hear."*
 - render in **Test or Live** → **409** *"Nothing renders unheard."*
 
-The gate refuses **before any provider call** — a paid render with
-`confirmPaid: true` was fired in Live and credits did not move (149 → 149). You
+The gate refuses **before any provider call** — a paid render sent with
+`confirmPaid: true` against an unheard production does not reach HeyGen. You
 cannot accidentally spend by pressing render.
 
 **Minimum spend to prove the whole chain: the auditions.** They are real speech
 in every mode that makes sound. Whether the *render* can then be free depends
-on the API-key path (§6).
+on the API-key path (§3).
 
 ---
 
-## 4. Concepts you must not get wrong
+## 3. Concepts you must not get wrong
 
 **Company → Campaign(track) → Production.** There is **no `projects` and no
 `series` table**. A series IS a campaign whose productions carry
@@ -163,8 +124,19 @@ is `mode === scope || mode === 'both'`. Filtering on equality alone silently
 hides every `both` row from both programs — that is a third of the slate
 vanishing while the code looks correct.
 
-**Three provider modes:** `fixtures` (spend: none) · `live_read`/"Test" (spend:
-metered — renders free, **auditions cost**) · `live` (billable).
+**Three provider modes** (`backend/lib/providers/mode.js`):
+
+- `fixtures` — nothing leaves the machine.
+- `live_read`, labelled **Test** — real reads; renders use HeyGen's free
+  watermarked test mode through the API key. **Auditions are real speech and
+  cost credits.**
+- `live` — real, billable generation. Switching to it needs `confirmBilling: true`.
+
+The stored workspace setting wins over the `PROVIDER_MODE` env var, which only
+applies until a mode has been stored (a fresh database). Auditions,
+`audition-all`, `POST /heygen/speech` and paid renders all require
+`confirmPaid: true` when they would spend, and return
+**402 `CONFIRMATION_REQUIRED`** otherwise.
 
 **Three truthful script paths:**
 
@@ -174,9 +146,8 @@ metered — renders free, **auditions cost**) · `live` (billable).
 | Local Ollama | loopback only | Test or Live | $0 provider usage; real on-device model |
 | OpenAI / Claude / Groq / Grok | vendor API | Live only | may bill the connected account |
 
-`llama3.1:8b` is installed and a real constrained-JSON prompt passed on
-2026-09-29. Settings → Model routing probes `/api/tags`, shows the installed
-model honestly, and never sends a prompt. Script output is treated as untrusted:
+Settings → Model routing probes Ollama's `/api/tags`, shows whether the
+configured model is installed, and never sends a prompt to check. Script output is treated as untrusted:
 every scene, speaker and line is validated before it reaches SQLite. A failure
 does not silently fall back to another paid provider. Each script version
 records `generator_provider` and `generator_model`.
@@ -200,7 +171,7 @@ production remains available. Add a key in Settings → Connections → HeyGen �
 
 ---
 
-## 5. Traps that have already cost hours
+## 4. Traps that have already cost hours
 
 Every one of these was a thing that **ran, exited 0, and reported something
 that was not the answer**. Assume more exist.
@@ -217,7 +188,7 @@ that was not the answer**. Assume more exist.
   `verify-gate.mjs` threw at check 6 of 22, printed no total, and exited
   non-zero — and the totals were being read by summing the "N passed" lines.
   The runner now prints a per-suite verdict and a summary. **Read the exit
-  code.**
+  code and check every suite printed its total.**
 - **A test asserting `templates.length === 6`** broke the moment a template was
   added. Assert the invariant against the real catalogue, never a literal.
 - **`/productions/:id` and `/productions` disagreed** about which campaign a
@@ -236,9 +207,16 @@ that was not the answer**. Assume more exist.
 - **Deleting CSS with a regex orphans declarations.** Done twice here. Parse
   brace depth and assert the sheet still balances and the live classes survive.
 - **Switching to `live` requires `confirmBilling: true`.** Without it the POST
-  **silently fails** and leaves the previous mode in place. A loop that set the
-  mode and read the result printed the same answer twice and nearly got
-  reported as a routing bug. Assert the mode actually changed.
+  returns **402 `CONFIRM_BILLING`** and leaves the previous mode in place. A
+  loop that set the mode without checking the status, then read it back,
+  printed the same answer twice and nearly got reported as a routing bug.
+  Assert the mode actually changed.
+- **Dev and the desktop app share one database by default**
+  (`~/Library/Application Support/AIVideoStudio/studio.db` on macOS). The
+  provider mode lives in that database, so a dev server pointed at a database
+  left in Live spends real credits. Give a dev checkout its own file with
+  `STUDIO_DB_PATH`, and never run `npm run seed` against a database holding
+  real work — it deletes productions, campaigns and presenters.
 - **localStorage is the wrong store in this app.** The desktop build binds
   `PORT=0`, so **every launch is a different origin** and per-origin storage
   starts empty. A preference kept there survives a reload and is silently lost
@@ -246,153 +224,81 @@ that was not the answer**. Assume more exist.
 
 ---
 
-## 6. What is NOT built
+## 5. What is NOT built
 
 | | |
 |---|---|
 | **Post-render editing** | `Trim / Cut` and `Create Short Clip` are built end to end and collect a valid time range. The other listed editor tools are disabled roadmap labels. No lower-thirds, burn-in captions or branding. `caption` exists only as publish metadata. |
-| **Source / URL import** | **Built in the parity branch.** Public page evidence, human review, brief proposal, script context and SSRF protections are included. It reads one page; it is not a crawler. |
+| **Source / URL import** | **Built.** Public page evidence, human review, brief proposal, script context and SSRF protections are included. It reads one page; it is not a crawler. |
 | **Conversational producer** | The durable workflow states now exist, and proposed script lines can be revised directly. A free-form assistant that proposes controlled mutations across all stages is not built yet. |
 | **LLM execution** | **Scripting is built** for Local Ollama, OpenAI, Claude, Groq and Grok. Planning and Clarification routes are visibly reserved/disabled and still use deterministic code; they do not pretend to call the selected model. |
 | **Provider-native reusable Look creation** | Appearance proof and approval are built. Creating a new reusable HeyGen avatar/look from that proof still needs a verified provider operation; the app does not pretend the approval record created one remotely. |
 | **QR / invite destination** | `POST /people/invite` mints a token and returns `/invite/<token>`. **There is no page at that path** — it falls through to the dashboard. No QR. **Open question: whether HeyGen's API can mint an avatar-creation link at all.** Establish that before designing anything. |
-| **OS keychain** | Specified in `desktop/KEYCHAIN.md`. Blocked by this machine's credential guard, which refuses commands naming a credential source. |
+| **OS keychain** | Specified in `desktop/KEYCHAIN.md`, not implemented. |
 | **Transcription** | Needs whisper.cpp or faster-whisper installed. The analyser says so rather than returning an empty transcript. |
 | **API-key render path** | Written, never exercised. **This decides free-vs-billable renders in Test mode** — `create_video_from_studio` has no test parameter, so only the key path can render watermarked-free. |
 | **Dock name** | Says "Electron" in dev. Only a packaged build (`npm run dist`) fixes it. |
-| **12 API helpers with no screen** | Notably `updateCompany` (cannot rename a company) and `updateScene`. |
+| **API helpers with no screen** | Notably `updateCompany` (cannot rename a company) and `updateScene`. |
 
-**Not a gap, despite being called one twice:** *character artwork*. The
-previous build's README is explicit — each character **borrows a realistic
-human HeyGen avatar by default**; dropping an image in makes it a
-mascot/creature instead (HeyGen talking-photo). `character_art/images/` was
-always empty on purpose. The Cast cards now surface the synced preview for that
-exact assigned avatar; they no longer hide 158 real castings behind initials.
-
----
-
-## 7. Commit `4846c7c` (27 files)
-
-Modified: `backend/data/templates.js`, `lib/capabilities.js`,
-`lib/roster-import.js`, `lib/schedule.js`, `routes/collections.js`,
-`routes/roster.js`, `routes/segments.js`, `verify.mjs`,
-`frontend/docs/ARCHITECTURE.md`, `pages/{Campaigns,Create,Home,NewProduction,NewSeries,Presenters,SegmentsStage}.jsx`,
-`services/api.js`, `style.css`
-
-New: `backend/lib/readthrough.js`, `frontend/src/components/PresenterPick.jsx`,
-`frontend/src/components/TemplatePicker.jsx`, `frontend/docs/HANDOFF.md`
-(this file). Also modified: `backend/lib/connections.js`,
-`frontend/src/pages/ConnectionsSection.jsx` (the two-pocket fix), plus
-`README.md`, `docs/TEST_PLAN.md` and `docs/CLAUDE_HANDOFF.md` to reconcile the
-repository-level documentation with the running application.
-
-What it contains:
-
-1. **Casting from the old build.** `characters.json` in
-   `~/Desktop/thoughts/artificial_funny/desktop/app/data/` holds 159 characters
-   with a `backing` — the HeyGen avatar the previous app had already allocated
-   per character, gender-bucketed, no duplicates. **158 of 159 resolve.**
-   `castFromBackings()` imports it; voices are allocated distinct + English +
-   gender-matched. **Defaults to a dry run.** Owned avatars are excluded — the
-   first pass would have cast Conspiracy Carl as the operator's own face.
-   Castable characters went **2 → 158**.
-2. **Searchable pickers.** `AssetPicker` (server-side search over 9,967 avatars
-   / 2,943 voices — the old `<select>` offered 25 and 200) and `PresenterPick`
-   (local filter over the 158-strong cast, matching name, tagline, avatar and
-   voice).
-3. **Templates 6 → 17**, each tagged to a `purpose`. All six originals were
-   `promotion`, so every other track started from Blank.
-4. **Free read-through** (`lib/readthrough.js`) — see §8.
-5. **Empty-state fix.** `counts.campaigns` was derived from productions, so a
-   campaign you had just set up read as "0 campaigns" until it had a video.
-6. **Both HeyGen connection states visible.** `lib/connections.js` reported a single
-   `pocket` with MCP winning, so a stored API key was invisible once you signed
-   in — and the UI hid the key field behind a button saying "Use an API key
-   *instead*". The free test-render path was unreachable in practice. Now
-   `/connections` reports `pockets: { mcp, key }` independently and the key is
-   always addable. The render router always read them separately; only the
-   report pretended otherwise.
-
-This bundle was staged with an explicit pathspec. Keep that rule: **never
-`git add -A`** in this shared checkout.
+**Not a gap, despite being called one twice:** *character artwork*. Each
+character **borrows a realistic human HeyGen avatar by default** (its
+`backing`); dropping an image in makes it a mascot/creature instead (HeyGen
+talking-photo). `character_art/images/` is empty on purpose. The Cast cards show
+the synced preview of the assigned avatar.
 
 ---
 
-## 8. The most recent changes, and why they matter
+## 6. Free read-through
 
 The operator's process is: **plan → script → audio review → *then* spend on
-HeyGen.** Auditions were welded to HeyGen's own TTS, so the only way to hear a
-script was to pay for it. That is backwards.
+HeyGen.** Auditions use HeyGen's own TTS, so without a local option the only
+way to hear a script is to pay for it.
 
-`lib/readthrough.js` reads the script with macOS `say` — local, offline, free,
-177 voices. `POST /productions/:id/readthrough` returns per-line seconds, total
-spoken runtime against the target, and one stitched `.m4a`.
-
-```
-Read 7 lines — 0:21 spoken, nothing spent
-target 2:00 · spoken 0:21        ← flagged "short"
-credits 149 → 149
-```
+`lib/readthrough.js` reads the script with macOS `say` — local, offline, free.
+`POST /api/productions/:id/readthrough` returns per-line seconds, total spoken
+runtime against the target, and one stitched audio file.
 
 It is **deliberately not the shipping voice and deliberately cannot open the
 render gate.** Two questions, two tools: *"are these the right words"* is free;
 *"is this the right delivery"* is the paid audition.
 
-The second change salvages the old program's proven multi-provider execution
-contract into this app. `backend/lib/llm-runtime.js` now owns provider calls,
-constrained JSON, safe parse errors and the loopback-only Ollama boundary.
-`backend/lib/script-generator.js` owns the prompt and converts validated model
-JSON into the existing script-segment shape. No reference-repo file was changed.
+Script generation runs through `backend/lib/llm-runtime.js` (provider calls,
+constrained JSON, safe parse errors, loopback-only Ollama) and
+`backend/lib/script-generator.js` (prompt, and conversion of validated model
+JSON into script segments). Both were salvaged selectively from the older
+reference program; no file in that program was changed.
 
 ---
 
-## 9. What to do next
+## 7. What to do next
 
-1. **Choose the Scripting route.** Local Ollama is already ready with
-   `llama3.1:8b`; Built-in deterministic remains the reproducible Fixtures
-   path. The stored OpenAI key is currently **unchecked**, so do not route paid
-   work to it until Connections re-checks it successfully.
-2. **Choose whether free watermarked Test renders matter.** MCP sign-in already
-   covers normal Live production. Verified 2026-09-29:
-   `pockets.key.connected` is **false**, so Test returns `NO_FREE_PATH`. Add an
-   optional API key only if that free rehearsal path is useful.
-3. **Cast the remaining 8 characters** — Dr. Prakash Nope, Tina from
-   Procurement, Conspiracy Carl, Hada Glimmer, Queen Violante, Vivianna
-   Sterling, Yola Vibra, Babcia Zosia. The searchable picker makes this seconds
-   each.
-4. **Finish production 51 end to end.** It needs 7 paid auditions, then the
-   gate opens.
-5. Move **HeyGen video import** out of Settings into Library, where anyone
+1. **Exercise the API-key render path.** It decides whether Test renders are
+   free; it is written but has never run against HeyGen.
+2. **Build the invite landing page** at `/invite/<token>`, after establishing
+   whether HeyGen's API can mint an avatar-creation link at all.
+3. Move **HeyGen video import** out of Settings into Library, where anyone
    would look for it.
-6. **Delete the seeded fixture campaigns** (`Product Launches`, `AI Education`)
-   — demo data polluting a real workspace.
-7. Decide on **overlays** and the **QR/invite** flow.
-8. Wire Planning and Clarification through the same LLM runtime, then add a
-   controlled conversational producer over the new durable research,
-   script, voice, appearance and lock states.
-
-The Script → Segments join is no longer on this list: accepting a proposed
-script now builds its production lines and advances the UI to Segments.
-Imported, already-accepted scripts do the same. Rebuild remains available for
-recovery, but it is no longer required to discover the next stage.
+4. Give the API helpers that have no screen one (notably `updateCompany`).
+5. Decide on **overlays** (lower-thirds, burn-in captions, branding).
+6. Wire Planning and Clarification through the same LLM runtime, then add a
+   controlled conversational producer over the durable research, script,
+   voice, appearance and lock states.
+7. Move secrets to the OS keychain per `desktop/KEYCHAIN.md`.
 
 ---
 
-## 10. How to work on this without repeating the mistakes
+## 8. How to work on this without repeating the mistakes
 
-- **Walk the flow before saying it works.** Every defect found on 2026-09-28/29
-  was something asserted instead of run, and every one was caught by using the
-  app. Build → walk → report. Not report → wait to be corrected.
-- **Never trust an exit code or a summary line.** Count what was actually read
-  and checked.
+- **Walk the flow before saying it works.** Most defects found so far were
+  asserted instead of run, and each was caught by using the app. Build → walk →
+  report.
+- **Never trust an exit code or a summary line alone.** Count what was actually
+  read and checked.
 - **Every check needs a control assertion** proving it looked at something.
-- **The app binds an ephemeral port**, so it is a new origin on every launch.
-  Find the port with `grep -oE '"port":[0-9]+' <the launch log>`.
-- Run `npm run verify` in `backend/`. Read the **exit code** and the summary
-  block, not the "N passed" lines.
-- Check provider mode before anything. It is currently **Live — billable**.
-
----
-
-*Companion documents: `ARCHITECTURE.md` (design and the full gap table),
-`SANDY_REPORT.md` (audit history and corrections).*
+- **The desktop app binds an ephemeral port**, so it is a new origin on every
+  launch. Find the port with `grep -oE '"port":[0-9]+' <the launch log>`.
+- Run `npm run verify` in `backend/` and read the summary block; every suite
+  must print its total. Do not compare against a remembered count.
+- **Check the provider mode before anything** (Settings, or
+  `GET /api/workspace`). Use Fixtures for development.
+- Stage by explicit pathspec in this shared checkout. **Never `git add -A`.**

@@ -33,9 +33,12 @@ function initials(name = '') {
 /**
  * Who appears on screen — and the actual comedy/content gate.
  *
- * A card shows the actual provider avatar assigned to that presenter. Custom
- * artwork remains character-only, but hiding the assigned avatar made a cast
- * of 158 ready characters look like a database of names instead of performers.
+ * A character card shows the CHARACTER: its own artwork, or its monogram until
+ * artwork exists. The avatar that performs it is a stock human face borrowed
+ * for the voice and lip-sync, so putting that photo on the card made Marv the
+ * Consultant look like a woman called Ailsa. The performer is still named, with
+ * a small thumbnail, so a cast roster never reads as a list of bare names.
+ * Presenter and personal cards ARE people, so they keep the avatar photo.
  */
 export default function Presenters({ tab: externalTab, onTabs }) {
   const { mutate } = useStudio();
@@ -243,9 +246,12 @@ export default function Presenters({ tab: externalTab, onTabs }) {
 
 function PresenterVisual({ presenter, tabId }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const imageUrl = presenter.artworkUrl || presenter.avatar?.previewUrl;
-  const kind = tabId === 'characters' ? 'Character' : tabId === 'personal' ? 'You' : 'Presenter';
-  const imageLabel = presenter.artworkUrl ? 'Custom artwork' : presenter.avatar?.name;
+  const isCharacter = tabId === 'characters';
+  const imageUrl = isCharacter ? presenter.artworkUrl : (presenter.artworkUrl || presenter.avatar?.previewUrl);
+  const kind = isCharacter ? 'Character' : tabId === 'personal' ? 'You' : 'Presenter';
+  const imageLabel = isCharacter
+    ? (presenter.avatar ? `Performed by ${presenter.avatar.name}` : null)
+    : (presenter.artworkUrl ? 'Custom artwork' : presenter.avatar?.name);
 
   return (
     <div className={'presvisual' + (imageUrl && !imageFailed ? ' hasimage' : '')}>
@@ -259,7 +265,16 @@ function PresenterVisual({ presenter, tabId }) {
       ) : (
         <div className="presfallback">
           <b aria-hidden="true">{initials(presenter.name)}</b>
-          <span>{presenter.avatar ? 'Preview unavailable' : 'No avatar assigned'}</span>
+          {isCharacter ? (
+            presenter.avatar ? (
+              <span className="presperformer">
+                {presenter.avatar.previewUrl && <img src={presenter.avatar.previewUrl} alt="" loading="lazy" />}
+                Performed by {presenter.avatar.name}
+              </span>
+            ) : <span>No avatar assigned</span>
+          ) : (
+            <span>{presenter.avatar ? 'Preview unavailable' : 'No avatar assigned'}</span>
+          )}
         </div>
       )}
       <span className="preskind">{kind}</span>

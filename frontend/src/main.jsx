@@ -9,6 +9,7 @@ import Plan from './pages/Plan.jsx';
 import Cast from './pages/Cast.jsx';
 import Library from './pages/Library.jsx';
 import Setup from './pages/Setup.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { api } from './services/api.js';
 import './style.css';
 
@@ -50,7 +51,7 @@ function App() {
   // this, every URL rendered Home — the server answered /plan with the app
   // (correctly, it IS the app) and the app then ignored the path entirely.
   const [page, setPageState] = useState(() => fromPath(window.location.pathname));
-  const { status, error, reload, workspace, toast } = useStudio();
+  const { status, error, loadErrors, reload, workspace, toast } = useStudio();
 
   /**
    * Navigating pushes a history entry, which is the whole point: there was no
@@ -135,7 +136,7 @@ function App() {
 
   return (
     <>
-      <header>
+      <header className="appbar">
         {/* The bar spans the window, but its contents share the same centred
             column as <main> so the logo lines up with the page content. */}
         <div className="headerinner">
@@ -149,12 +150,24 @@ function App() {
         </div>
       </header>
       <main>
-        {current === 'Home' && <Home go={setPage} />}
-        {current === 'Plan' && <Plan go={setPage} />}
-        {current === 'Create' && <Create go={setPage} />}
-        {current === 'Cast' && <Cast />}
-        {current === 'Library' && <Library />}
-        {current === 'Settings' && <Setup />}
+        {loadErrors.length > 0 && (
+          <div className="decisiongroup warning">
+            <b>Part of the studio did not load</b>
+            <div>
+              <AlertCircle size={15} />{' '}
+              {loadErrors.map((e) => `${e.name}: ${e.message}`).join(' · ')}
+            </div>
+            <div><button onClick={reload}>Retry</button></div>
+          </div>
+        )}
+        <ErrorBoundary key={current}>
+          {current === 'Home' && <Home go={setPage} />}
+          {current === 'Plan' && <Plan go={setPage} />}
+          {current === 'Create' && <Create go={setPage} />}
+          {current === 'Cast' && <Cast />}
+          {current === 'Library' && <Library />}
+          {current === 'Settings' && <Setup />}
+        </ErrorBoundary>
       </main>
       <Toast toast={toast} />
     </>

@@ -1,22 +1,22 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Play, Scissors, Lock, AlertCircle, Check } from 'lucide-react';
-import { useStudio, toSeconds } from '../context/studio-context.jsx';
+import { useStudio } from '../context/studio-context.jsx';
+import { toSeconds, toClock } from '../utils/format.js';
 import { api } from '../services/api.js';
+import { useResource } from '../hooks/use-resource.js';
+import LoadState from '../components/LoadState.jsx';
 
-const clock = (sec) =>
-  `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
 const SUPPORTED = new Set(['Trim / Cut', 'Create Short Clip']);
 
 export default function EditStage() {
   const { production, meta, mutate } = useStudio();
-  const [state, setState] = useState(null);
   const [editingTool, setEditingTool] = useState(null);
   const [range, setRange] = useState({ from: '', to: '', note: '' });
 
-  const load = useCallback(async () => setState(await api.render(production.id)), [production.id]);
-  useEffect(() => { load(); }, [load]);
+  const { data: state, error, reload: load, setData: setState } =
+    useResource(() => api.render(production.id), [production.id]);
 
-  if (!state) return <p className="muted">Loading…</p>;
+  if (!state) return <LoadState error={error} retry={load} />;
   const latest = state.latest;
   const apply = (res) => setState(res.data);
   const ready = latest?.status === 'complete';
@@ -126,7 +126,7 @@ export default function EditStage() {
                 <>
                   <span className="exmeta">
                     {(e.bytes / 1024 / 1024).toFixed(1)} MB
-                    {e.durationSeconds ? ` · ${clock(e.durationSeconds)}` : ''}
+                    {e.durationSeconds ? ` · ${toClock(e.durationSeconds)}` : ''}
                     {e.editsApplied ? ` · ${e.editsApplied} edit${e.editsApplied === 1 ? '' : 's'} applied` : ''}
                   </span>
                   <code className="expath" title={e.filePath}>{e.filePath}</code>

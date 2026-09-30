@@ -1,17 +1,18 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Share2, Lock, Check, AlertCircle, ExternalLink } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import { useResource } from '../hooks/use-resource.js';
+import LoadState from '../components/LoadState.jsx';
 
 export default function PublishStage() {
   const { production, mutate } = useStudio();
-  const [state, setState] = useState(null);
   const [modes, setModes] = useState({});
 
-  const load = useCallback(async () => setState(await api.publications(production.id)), [production.id]);
-  useEffect(() => { load(); }, [load]);
+  const { data: state, error, reload: load, setData: setState } =
+    useResource(() => api.publications(production.id), [production.id]);
 
-  if (!state) return <p className="muted">Loading…</p>;
+  if (!state) return <LoadState error={error} retry={load} />;
 
   const run = async (platform) => {
     // Same fallback the select uses. They disagreed, so a card showing "Publish

@@ -9,7 +9,7 @@ Workspace > Company > Campaign/Track > Production > Scene > Segment/Line > Asset
 > this build: a **series is a campaign** whose productions carry
 > `collection_position`, and a **Company** sits above campaigns. Keeping the old
 > wording would have meant building two hierarchy engines to satisfy a sentence.
-> Canonical source: `frontend/docs/ARCHITECTURE.md`.
+> Canonical source: `ARCHITECTURE.md`.
 
 A campaign may contain multiple projects. A project may contain series and/or one-off productions.
 

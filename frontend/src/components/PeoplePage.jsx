@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { UserPlus, Check, Clock, Lock, Copy, X, AlertCircle } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
-import { Section, PageHead, Empty } from '../components/Section.jsx';
+import { Section, PageHead, Empty } from './Section.jsx';
 
 const SCOPES = [
   ['production', 'This production'],

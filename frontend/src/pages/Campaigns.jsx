@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, AlertCircle, Check, Lock, X, Trash2, Pencil, CalendarDays } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
-import NewProductionFlow from './NewProductionFlow.jsx';
+import NewProductionFlow from '../components/NewProductionFlow.jsx';
 import { Section, PageHead } from '../components/Section.jsx';
 
 const STEP_LABEL = { plan: 'Plan', script: 'Script', render: 'Render', export: 'Export', publish: 'Publish' };

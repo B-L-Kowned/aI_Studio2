@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import LoadState from '../components/LoadState.jsx';
 import { Section } from '../components/Section.jsx';
 
 /**
@@ -27,6 +28,7 @@ export default function HeyGen({ embedded }) {
   const [assets, setAssets] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [assetQuery, setAssetQuery] = useState('');
   const [assetKind, setAssetKind] = useState('all');
   const [assetLimit, setAssetLimit] = useState(ASSET_PAGE);
@@ -42,8 +44,8 @@ export default function HeyGen({ embedded }) {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-  if (!status) return <p className="muted">Loading…</p>;
+  useEffect(() => { load().then(() => setLoadError(null), setLoadError); }, [load]);
+  if (!status) return <LoadState error={loadError} retry={() => load().then(() => setLoadError(null), setLoadError)} />;
 
   const connect = async () => {
     setBusy(true); setErr(null);

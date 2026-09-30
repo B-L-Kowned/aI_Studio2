@@ -21,7 +21,7 @@ router.post(
       const n = reorderCourse(Number(req.params.id), ids);
       return ok(res, courses(), `${n} lesson${n === 1 ? '' : 's'} reordered`);
     } catch (err) {
-      return fail(res, err.code === 'NOT_IN_COURSE' ? 400 : 500, err.code ?? 'ERROR', err.message);
+      return fail(res, { NOT_IN_COURSE: 400, NOT_FOUND: 404 }[err.code] ?? 500, err.code ?? 'ERROR', err.message);
     }
   })
 );

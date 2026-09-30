@@ -25,7 +25,7 @@ router.post(
         + (counts.artwork ? `, ${counts.artwork} with artwork` : '')
         + (notes.length ? ` — ${notes[0]}` : ''));
     } catch (err) {
-      return fail(res, 500, err.code ?? 'IMPORT_FAILED', err.message);
+      return fail(res, err.code === 'NOT_FOUND' ? 404 : 500, err.code ?? 'IMPORT_FAILED', err.message);
     }
   })
 );

@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Check, AlertCircle, Play, Volume2, RefreshCw, Lock, Film, User, Users, Headphones, X } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import LoadState from '../components/LoadState.jsx';
+import PaidConfirm from '../components/PaidConfirm.jsx';
+import { toSeconds, toClock } from '../utils/format.js';
 import PresenterPick from '../components/PresenterPick.jsx';
 
 /**
@@ -25,18 +28,36 @@ export default function SegmentsStage() {
   const [castable, setCastable] = useState([]);
   const [busy, setBusy] = useState(null);
   const [read, setRead] = useState(null);
-  const [confirmRender, setConfirmRender] = useState(null); // segment awaiting a paid yes
+  // One paid confirmation open at a time: { kind: 'audition' | 'render', id } or { kind: 'all' }.
+  const [confirm, setConfirm] = useState(null);
   const [path, setPath] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  // Anything that can charge the plan holds this lock. `busy` holds one key, so
+  // a second action re-enabled the first one's button mid-request and a quick
+  // double-click sent the same paid call twice. The ref blocks synchronously;
+  // `paying` is its visible twin that disables every paid button.
+  const payLock = useRef(false);
+  const [paying, setPaying] = useState(null);
 
   const load = useCallback(async () => {
     const [d, c] = await Promise.all([api.segments(production.id), api.castablePresenters()]);
     setData(d);
     setCastable(c);
+    setLoadError(null);
   }, [production.id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load().catch(setLoadError); }, [load]);
   useEffect(() => { api.heygenStatus().then((h) => setPath(h.renderPath)).catch(() => {}); }, []);
-  if (!data) return <p className="muted">Loading…</p>;
+
+  // A line render finishes at the provider; reloading is what polls it.
+  const rendering = data?.segments.some((x) => ['queued', 'pending', 'processing'].includes(x.render?.status));
+  useEffect(() => {
+    if (!rendering) return;
+    const t = setTimeout(() => { load().catch(() => {}); }, 4000);
+    return () => clearTimeout(t);
+  }, [rendering, data, load]);
+
+  if (!data) return <LoadState error={loadError} retry={() => load().catch(setLoadError)} />;
 
   const { segments, gate, speakers } = data;
   // Cast, and needing a take — a stale take counts, because the only way past
@@ -58,6 +79,19 @@ export default function SegmentsStage() {
     finally { setBusy(null); }
   };
 
+  const runPaid = async (key, fn) => {
+    if (payLock.current) return null;
+    payLock.current = true;
+    setPaying(key);
+    setConfirm(null);
+    try { return await run(key, fn); }
+    finally { payLock.current = false; setPaying(null); }
+  };
+  const spends = data.auditionSpends;
+  const auditionLine = (segId) => runPaid(`a${segId}`, () =>
+    api.auditionSegment(production.id, segId, { confirmPaid: spends }));
+  const renderLine = (segId) => runPaid(`r${segId}`, () => api.renderSegment(production.id, segId, true));
+
   return (
     <div className="stagepane">
       <div className="sectiontitle">
@@ -69,11 +103,13 @@ export default function SegmentsStage() {
           {pendingAudition > 0 && (
             <button
               className="primary"
-              disabled={busy === 'all'}
-              title="Real speech on your HeyGen plan — this uses credits"
-              onClick={() => run('all', () => api.auditionAll(production.id))}
+              disabled={!!paying}
+              title={spends ? 'Real speech on your HeyGen plan — this uses credits' : 'Nothing is synthesised in Fixtures mode'}
+              onClick={() => (spends
+                ? setConfirm({ kind: 'all' })
+                : runPaid('all', () => api.auditionAll(production.id)))}
             >
-              <Volume2 size={14} /> Audition {pendingAudition} line{pendingAudition === 1 ? '' : 's'}
+              <Volume2 size={14} /> {paying === 'all' ? 'Auditioning…' : `Audition ${pendingAudition} line${pendingAudition === 1 ? '' : 's'}`}
             </button>
           )}
           {segments.length > 0 && (
@@ -95,6 +131,18 @@ export default function SegmentsStage() {
         </div>
       </div>
 
+      {confirm?.kind === 'all' && (
+        <PaidConfirm
+          title={`Audition ${pendingAudition} line${pendingAudition === 1 ? '' : 's'} on your HeyGen plan?`}
+          detail="Each line is real speech in the voice that will ship, and each one uses credits."
+          confirmLabel="Yes — audition and charge my plan"
+          busy={!!paying}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => runPaid('all', () =>
+            api.auditionAll(production.id, { confirmPaid: true, limit: pendingAudition }))}
+        />
+      )}
+
       {read && (
         /* The free pass: what the words sound like and how long they actually
            run. Deliberately not the shipping voice, and deliberately unable to
@@ -109,13 +157,12 @@ export default function SegmentsStage() {
           {(() => {
             // The target is "m:ss"; compare in seconds so "0:21 vs 2:00" is a
             // fact on screen rather than arithmetic you do in your head.
-            const [tm, ts] = String(read.targetRuntime ?? '').split(':').map(Number);
-            const target = Number.isFinite(tm) ? tm * 60 + (ts || 0) : null;
+            const target = read.targetRuntime ? toSeconds(read.targetRuntime) : null;
             const off = target ? read.spokenSeconds / target : null;
             const tone = off == null ? '' : off < 0.6 ? ' short' : off > 1.15 ? ' over' : ' ok';
             return (
               <span className={'readlen' + tone}>
-                {Math.floor(read.spokenSeconds / 60)}:{String(read.spokenSeconds % 60).padStart(2, '0')} spoken
+                {toClock(read.spokenSeconds)} spoken
                 {read.targetRuntime ? ` · target ${read.targetRuntime}` : ''}
               </span>
             );
@@ -230,13 +277,24 @@ export default function SegmentsStage() {
                   )}
 
                   <div className="segactions">
-                    <button
-                      title="Synthesise this line in the voice that will ship"
-                      disabled={busy === `a${s.id}` || !s.presenter}
-                      onClick={() => run(`a${s.id}`, () => api.auditionSegment(production.id, s.id))}
-                    >
-                      <Volume2 size={13} /> Audition
-                    </button>
+                    {confirm?.kind === 'audition' && confirm.id === s.id ? (
+                      <>
+                        <button onClick={() => setConfirm(null)}>Cancel</button>
+                        <button className="primary" disabled={!!paying} onClick={() => auditionLine(s.id)}>
+                          Charge my plan
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        title={spends
+                          ? 'Synthesise this line in the voice that will ship — uses credits'
+                          : 'Nothing is synthesised in Fixtures mode'}
+                        disabled={!!paying || !s.presenter}
+                        onClick={() => (spends ? setConfirm({ kind: 'audition', id: s.id }) : auditionLine(s.id))}
+                      >
+                        <Volume2 size={13} /> {paying === `a${s.id}` ? 'Auditioning…' : 'Audition'}
+                      </button>
+                    )}
 
                     {s.take && !s.heard && s.textMatchesTake && !s.take.stale && (
                       <button
@@ -249,28 +307,20 @@ export default function SegmentsStage() {
                       </button>
                     )}
 
-                    {s.heard && (confirmRender === s.id ? (
+                    {s.heard && (confirm?.kind === 'render' && confirm.id === s.id ? (
                       <>
-                        <button onClick={() => setConfirmRender(null)}>Cancel</button>
-                        <button
-                          className="primary"
-                          onClick={() => {
-                            setConfirmRender(null);
-                            run(`r${s.id}`, () => api.renderSegment(production.id, s.id, true));
-                          }}
-                        >
+                        <button onClick={() => setConfirm(null)}>Cancel</button>
+                        <button className="primary" disabled={!!paying} onClick={() => renderLine(s.id)}>
                           Charge my plan
                         </button>
                       </>
                     ) : (
                       <button
-                        disabled={busy === `r${s.id}`}
+                        disabled={!!paying}
                         title={path && !path.free ? 'Charged to your HeyGen plan' : path?.reason ?? ''}
-                        onClick={() => (path && !path.free
-                          ? setConfirmRender(s.id)
-                          : run(`r${s.id}`, () => api.renderSegment(production.id, s.id, true)))}
+                        onClick={() => (path && !path.free ? setConfirm({ kind: 'render', id: s.id }) : renderLine(s.id))}
                       >
-                        <Play size={13} /> Render line
+                        <Play size={13} /> {paying === `r${s.id}` ? 'Rendering…' : 'Render line'}
                       </button>
                     ))}
                   </div>

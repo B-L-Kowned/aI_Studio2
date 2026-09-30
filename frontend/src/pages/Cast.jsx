@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Presenters from './Presenters.jsx';
-import PeoplePage from './PeoplePage.jsx';
+import PeoplePage from '../components/PeoplePage.jsx';
 import { useStudio } from '../context/studio-context.jsx';
 
 /**

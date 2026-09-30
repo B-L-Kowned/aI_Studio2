@@ -3,6 +3,7 @@ import * as mcp from '../lib/providers/heygen-mcp.js';
 import { rememberVideo, syncVideos, playableUrl, attachToProduction } from '../lib/video-library.js';
 import { listConnections } from '../lib/connections.js';
 import { chooseRenderPath, mcpCapabilities, invalidateCapabilityCache } from '../lib/providers/heygen-route.js';
+import { canReadLive } from '../lib/providers/mode.js';
 import { getDb } from '../db/index.js';
 import { ok, fail, route } from '../utils/respond.js';
 
@@ -10,6 +11,11 @@ import { ok, fail, route } from '../utils/respond.js';
 // Storage moved to lib/video-library.js, which actually keeps the video.
 
 const router = Router();
+
+// Fixtures promises that nothing leaves this machine — reads included. Sign-in
+// is exempt: connecting is something you ask for, not a call made for you.
+const offline = (res) => fail(res, 409, 'FIXTURES_MODE',
+  'Fixtures mode makes no HeyGen calls. Switch to Test or Live to read your account.');
 
 /**
  * Which pocket is in use, and why it matters.
@@ -30,7 +36,8 @@ router.get(
 
     let account = null;
     let credits = null;
-    if (m.connected) {
+    // Fixtures promises nothing leaves this machine — that includes reads.
+    if (m.connected && canReadLive()) {
       try {
         account = await mcp.account();
         credits = mcp.creditsRemaining(account);
@@ -83,7 +90,14 @@ router.get(
   '/heygen/callback',
   route(async (req, res) => {
     const { code, state, error, error_description: desc } = req.query;
-    const page = (title, body) => res
+    // The query string is whatever the link said, not what HeyGen said, and
+    // err.message can echo it back — so everything is escaped, not just desc.
+    const escapeHtml = (v) => String(v).replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const page = (rawTitle, rawBody) => {
+      const title = escapeHtml(rawTitle);
+      const body = escapeHtml(rawBody);
+      return res
       .status(error ? 400 : 200)
       .type('html')
       .send(`<!doctype html><meta charset="utf-8"><title>${title}</title>
@@ -93,6 +107,7 @@ router.get(
             <h1 style="font-size:17px;margin:0 0 .5rem">${title}</h1>
             <p style="color:#3f4145;line-height:1.55;margin:0">${body}</p>
           </div></body>`);
+    };
 
     if (error) return page('HeyGen sign-in failed', desc || String(error));
     if (!code || !state) return page('HeyGen sign-in failed', 'The callback was missing its code.');
@@ -109,6 +124,7 @@ router.get(
 router.get(
   '/heygen/tools',
   route(async (_req, res) => {
+    if (!canReadLive()) return offline(res);
     try {
       return ok(res, await mcp.listTools());
     } catch (err) {
@@ -131,6 +147,7 @@ router.delete(
 router.get(
   '/heygen/account',
   route(async (_req, res) => {
+    if (!canReadLive()) return offline(res);
     try {
       const acct = await mcp.account();
       return ok(res, { account: acct, credits: mcp.creditsRemaining(acct) });
@@ -143,6 +160,7 @@ router.get(
 router.get(
   '/heygen/videos',
   route(async (req, res) => {
+    if (!canReadLive()) return offline(res);
     try {
       return ok(res, await mcp.listVideos(Number(req.query.limit ?? 20)));
     } catch (err) {
@@ -154,6 +172,7 @@ router.get(
 router.post(
   '/heygen/videos/:id/import',
   route(async (req, res) => {
+    if (!canReadLive()) return offline(res);
     try {
       const detail = await mcp.getVideo(req.params.id);
       const url = detail?.video_url;
@@ -181,6 +200,7 @@ router.post(
 router.post(
   '/heygen/videos/sync',
   route(async (req, res) => {
+    if (!canReadLive()) return offline(res);
     try {
       const r = await syncVideos({ limit: Number(req.body?.limit ?? 100) });
       return ok(res, r,
@@ -227,6 +247,7 @@ router.post(
 router.get(
   '/heygen/voices',
   route(async (req, res) => {
+    if (!canReadLive()) return offline(res);
     try {
       // engine=starfish is enforced in the client: create_speech accepts nothing
       // else, so an unfiltered list offers voices that fail after being chosen.
@@ -245,14 +266,21 @@ router.get(
 router.post(
   '/heygen/speech',
   route(async (req, res) => {
-    const { text, voiceId, ssml, speed, locale } = req.body ?? {};
+    const { text, voiceId, ssml, speed, locale, confirmPaid } = req.body ?? {};
+    // The voice gate: an audition in the voice that will actually ship. COSTS
+    // CREDITS from the connected plan, in Test as well as Live. This route used
+    // to synthesise in any mode, Fixtures included, with nobody asked.
+    if (!canReadLive()) {
+      return fail(res, 409, 'FIXTURES_MODE', 'Fixtures mode makes no provider calls. Switch to Test or Live to synthesise speech.');
+    }
+    if (confirmPaid !== true) {
+      return fail(res, 402, 'CONFIRMATION_REQUIRED', 'Speech synthesis is charged to your HeyGen plan. Confirm to continue.');
+    }
     try {
-      // The voice gate: an audition in the voice that will actually ship.
-      // COSTS CREDITS from the connected plan.
       return ok(res, await mcp.synthesize(text, voiceId, { ssml, speed, locale }),
         'Audition generated in the voice that will render');
     } catch (err) {
-      return fail(res, err instanceof mcp.NotConnected ? 409 : 400, 'MCP_ERROR', err.message);
+      return fail(res, err instanceof mcp.NotConnected ? 409 : 502, 'MCP_ERROR', err.message);
     }
   })
 );
@@ -260,6 +288,7 @@ router.post(
 router.post(
   '/heygen/refresh-capabilities',
   route(async (_req, res) => {
+    if (!canReadLive()) return offline(res);
     invalidateCapabilityCache();
     return ok(res, await mcpCapabilities({ force: true }), 'Re-read what the server exposes');
   })

@@ -1,4 +1,4 @@
-// The state rule from FRONTEND_CONTRACT.md: an upstream edit never silently
+// The state rule from docs/ARCHITECTURE.md §3: an upstream edit never silently
 // overwrites downstream work. It marks the dependents stale and leaves the user
 // to regenerate or reconcile. Nothing here deletes a row.
 

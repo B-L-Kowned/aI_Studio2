@@ -1,5 +1,5 @@
 import * as mcp from './heygen-mcp.js';
-import { getDb } from '../../db/index.js';
+import { listCredentials } from '../credentials.js';
 import { providerMode } from './mode.js';
 
 // Which pocket a render should come out of, decided from what the MCP server
@@ -25,11 +25,9 @@ export function invalidateCapabilityCache() {
   cache = null;
 }
 
-/** Is an API key stored for HeyGen? The value is never read here. */
+/** Is a USABLE API key stored for HeyGen? An unreadable row is not a render path. */
 function hasStoredKey() {
-  return !!getDb()
-    .prepare('SELECT 1 FROM credentials WHERE provider = ?')
-    .get('heygen');
+  return listCredentials().some((c) => c.provider === 'heygen' && !c.unreadable);
 }
 
 /**
@@ -37,6 +35,9 @@ function hasStoredKey() {
  * render path does not pay a round trip per job.
  */
 export async function mcpCapabilities({ force = false } = {}) {
+  if (providerMode() === 'fixtures') {
+    return { connected: mcp.isConnected(), tools: [], canGenerateVideo: false, generateTool: null, skipped: 'fixtures' };
+  }
   if (!mcp.isConnected()) {
     return { connected: false, tools: [], canGenerateVideo: false, generateTool: null };
   }
@@ -83,15 +84,17 @@ export async function mcpCapabilities({ force = false } = {}) {
  * job — quietly billing instead is the one thing it must not do.
  */
 export async function chooseRenderPath({ mode = providerMode() } = {}) {
-  const caps = await mcpCapabilities();
-  const keyStored = hasStoredKey();
-
+  // Decided before asking the MCP server anything: `tools/list` is a network
+  // call, and Fixtures promises that nothing leaves this machine.
   if (mode === 'fixtures') {
     return {
       path: 'fixtures', tool: null, testMode: true, free: true,
       reason: 'Fixtures mode — nothing leaves this machine, so the render is simulated.',
     };
   }
+
+  const caps = await mcpCapabilities();
+  const keyStored = hasStoredKey();
 
   const mcpCanRender = caps.connected && caps.canGenerateVideo;
 

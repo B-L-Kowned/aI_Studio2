@@ -3,12 +3,11 @@ import { getDb } from '../db/index.js';
 import { capabilitiesFor, allowedModes, templatesFor } from '../lib/capabilities.js';
 import { validateLicense } from '../lib/license.js';
 import {
-  saveCredential, listCredentials, deleteCredential, testCredential, isProvider,
+  saveCredential, listCredentials, testCredential,
 } from '../lib/credentials.js';
 import { publishTargets, publishChannels, setupCards, editorTools, startSources } from '../data/fixtures.js';
 import { llmState, setRouting, isLlmProvider } from '../lib/llm.js';
 import { ollamaStatus } from '../lib/llm-runtime.js';
-import { listConnections, ROLE_LABEL } from '../lib/connections.js';
 import { programState } from '../lib/programs.js';
 import { modeSummary, setProviderMode } from '../lib/providers/mode.js';
 import { ok, fail, route } from '../utils/respond.js';
@@ -36,7 +35,6 @@ export function workspaceState() {
     // presenter tabs, what a creation is called, where to land.
     program: programState(w.entitlement, !!w.onboarded_at),
     llm: llmState(),
-    vendorConnections: { roles: ROLE_LABEL, items: listConnections() },
     providerMode: modeSummary(),
     connections: connections.map((c) => ({ platform: c.platform, status: c.status })),
   };
@@ -99,7 +97,8 @@ router.post(
       if (!test.ok) return fail(res, 400, 'BAD_KEY', test.message);
       // verdict 'unknown' still stores the key — the service was unreachable,
       // which says nothing about whether the key is good.
-      saveCredential(provider, key, test.verdict === 'ok');
+      try { saveCredential(provider, key, test.verdict === 'ok'); }
+      catch (err) { return fail(res, 400, 'BAD_KEY', err.message); }
     }
 
     getDb().prepare('UPDATE workspace SET llm_provider = ? WHERE id = 1').run(provider);
@@ -116,32 +115,8 @@ router.post(
   })
 );
 
-router.delete(
-  '/workspace/credentials/:provider',
-  route(async (req, res) => {
-    if (!isProvider(req.params.provider)) return fail(res, 404, 'NOT_FOUND', 'Unknown provider');
-    deleteCredential(req.params.provider);
-    return ok(res, workspaceState(), 'Credential removed');
-  })
-);
 
 
-// --- Credentials, manageable outside the onboarding wizard -----------------
-// Setup previously reset onboarding to change a key, which threw the whole
-// wizard back at you for a one-field edit.
-router.post(
-  '/workspace/credentials',
-  route(async (req, res) => {
-    const { provider, key } = req.body ?? {};
-    if (!isProvider(provider)) return fail(res, 400, 'BAD_PROVIDER', `Unknown provider: ${provider}`);
-
-    const test = await testCredential(provider, key);
-    if (!test.ok) return fail(res, 400, 'BAD_KEY', test.message);
-
-    saveCredential(provider, key, test.verdict === 'ok');
-    return ok(res, workspaceState(), test.message);
-  })
-);
 
 // --- Which model fulfils which planning capability -------------------------
 router.post(
@@ -163,8 +138,10 @@ router.post(
   '/workspace/provider-mode',
   route(async (req, res) => {
     const { mode, confirmBilling } = req.body ?? {};
-    // fixtures and live_read cannot spend anything, so they switch freely.
-    // Arming real generation is a money decision and needs saying out loud.
+    // Switching into fixtures or live_read needs no confirmation: renders in
+    // live_read are HeyGen's free test renders. Auditions DO spend in live_read,
+    // but each one asks for confirmation itself (lib/segments.js). Arming real
+    // generation is a money decision and needs saying out loud.
     if (mode === 'live' && confirmBilling !== true) {
       return fail(res, 402, 'CONFIRM_BILLING',
         'Live mode permits real, billable generation. Confirm to enable it.');

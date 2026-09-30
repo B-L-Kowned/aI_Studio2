@@ -29,10 +29,17 @@
         "to": "app/backend",
         "filter": [
           "**/*",
-          "!node_modules/.cache",
-          "!*.db",
+          "!**/.env",
+          "!**/.env.*",
+          "!**/credentials.key",
+          "!**/*.db",
+          "!**/*.db-wal",
+          "!**/*.db-shm",
+          "!**/*.db-journal",
           "!verify*.mjs",
-          "!run-verify.mjs"
+          "!run-verify.mjs",
+          "!scripts/**/*.py",
+          "!**/node_modules/.cache{,/**}"
         ]
       },
       {

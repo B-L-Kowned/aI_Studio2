@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Layers, X, Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
-import TemplatePicker from '../components/TemplatePicker.jsx';
+import TemplatePicker from './TemplatePicker.jsx';
 
 /**
  * Plan a whole series at once.
@@ -23,7 +23,8 @@ export default function NewSeries({ onClose, onDone, onBack }) {
   const [titles, setTitles] = useState([]);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { api.seriesMeta().then(setMeta); }, []);
+  // Without the catch a failure was an unhandled rejection; the form still works on defaults.
+  useEffect(() => { api.seriesMeta().then(setMeta).catch(() => setMeta(null)); }, []);
 
   const propose = async () => {
     // `post` returns the whole envelope while `get` unwraps to data — reading

@@ -26,7 +26,7 @@ export function isLlmProvider(id) {
 
 /** Providers that can be selected: built-in/local, plus cloud providers with a stored key. */
 export function availableProviders() {
-  const withKeys = new Set(listCredentials().map((c) => c.provider));
+  const withKeys = new Set(listCredentials().filter((c) => !c.unreadable).map((c) => c.provider));
   return LLM_PROVIDERS
     .filter((p) => !p.needsKey || withKeys.has(p.id))
     .map((p) => ({ ...p, hasKey: withKeys.has(p.id) }));

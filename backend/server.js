@@ -106,7 +106,10 @@ app.use((err, _req, res, _next) => {
 
 const MODE = modeSummary();
 if (MODE.generatesLive) {
-  console.warn('[warn] PROVIDER_MODE=live — generation calls are real and billable.');
+  // The effective mode comes from the workspace, not the env; naming the env
+  // var here sent readers to .env when the stored setting was the cause.
+  console.warn(`[warn] provider mode "${MODE.mode}" — generation calls are real and billable. `
+    + `(env default: ${MODE.envDefault}; the stored workspace setting wins.)`);
 }
 
 // Bound to the loopback interface: this is a single-user desktop app, and a

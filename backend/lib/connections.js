@@ -48,7 +48,11 @@ export function connectionById(id) {
 
 /** Every connection with its stored state. Never includes a secret. */
 export function listConnections() {
-  const stored = Object.fromEntries(listCredentials().map((c) => [c.provider, c]));
+  // An unreadable key is not a connection; it is reported so the page can say
+  // "reconnect" instead of showing a connection that fails on first use.
+  const all = listCredentials();
+  const unreadable = new Set(all.filter((c) => c.unreadable).map((c) => c.provider));
+  const stored = Object.fromEntries(all.filter((c) => !c.unreadable).map((c) => [c.provider, c]));
   const db = getDb();
 
   // HeyGen has two ways in. Reading only `credentials` meant an OAuth sign-in
@@ -67,6 +71,7 @@ export function listConnections() {
     return {
       ...c,
       connected: !!cred || viaMcp,
+      unreadable: unreadable.has(c.id),
       verified: !!cred?.verified || viaMcp,
       hint: viaMcp ? 'signed in' : cred?.hint ?? null,
       // `pocket` reported ONE of the two, MCP winning, so a stored API key was
@@ -108,7 +113,11 @@ export async function connect(id, key) {
   const test = await testCredential(id, key);
   if (!test.ok) throw Object.assign(new Error(test.message), { code: 'BAD_KEY' });
 
-  saveCredential(id, key, test.verdict === 'ok');
+  try {
+    saveCredential(id, key, test.verdict === 'ok');
+  } catch (err) {
+    throw Object.assign(err, { code: 'BAD_KEY' });
+  }
   return { verdict: test.verdict, message: test.message };
 }
 

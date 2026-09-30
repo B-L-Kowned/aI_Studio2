@@ -3,7 +3,7 @@ import { Plus, Flame, Archive, Trash2, ArrowUpRight, Check, Lightbulb } from 'lu
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { Section, PageHead, Empty } from '../components/Section.jsx';
-import NewProductionFlow from './NewProductionFlow.jsx';
+import NewProductionFlow from '../components/NewProductionFlow.jsx';
 
 /**
  * The parking lot.

@@ -149,5 +149,21 @@ r = await call('POST', `/productions/${pid}/segments/build`);
 check('rebuild is idempotent', r.status === 200 && r.body.data.segments.length === segs.length,
   `${r.body.data.segments.length} vs ${segs.length}`);
 
+S('Fixtures spends nothing, and says so before the click');
+const mode = (await call('GET', '/health')).body.data.mode;
+check('the suite is really in fixtures', mode === 'fixtures', String(mode));
+check('the segment view says an audition would not spend', r.body.data.auditionSpends === false,
+  String(r.body.data.auditionSpends));
+r = await call('POST', `/productions/${pid}/segments/audition-all`);
+check('audition-all needs no confirmation when nothing is charged', r.status === 200,
+  `${r.status} ${r.body.message}`);
+r = await call('POST', '/heygen/speech', { text: 'hello', voiceId: 'v', confirmPaid: true });
+check('direct speech synthesis is refused in fixtures', r.status === 409 && r.body.error === 'FIXTURES_MODE',
+  `${r.status} ${r.body.error}`);
+r = await call('GET', '/heygen/status');
+check('the render path is decided without asking HeyGen',
+  r.body.data.renderPath.path === 'fixtures' && r.body.data.capabilities.skipped === 'fixtures',
+  JSON.stringify({ path: r.body.data.renderPath.path, skipped: r.body.data.capabilities.skipped }));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

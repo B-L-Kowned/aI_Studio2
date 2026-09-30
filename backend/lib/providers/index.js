@@ -93,7 +93,9 @@ export async function syncProvider(id) {
       : [
           ['avatar', await provider.listAvatars()],
           ['voice', await provider.listVoices()],
-          ['template', await provider.listTemplates()],
+          // Unverified endpoint (see heygen.js). Its failure used to abort the
+          // whole sync, so avatars and voices were never stored either.
+          ['template', await provider.listTemplates().catch(() => [])],
         ];
 
     db.transaction(() => {
@@ -271,19 +273,57 @@ export async function pollJob(jobId) {
   const elapsed = (Date.now() - Date.parse(job.created_at + 'Z')) / 1000;
 
   try {
-    // A job pushed over MCP is polled over MCP; the key client cannot see it.
-    const s = job.provider === 'heygen_mcp'
-      ? await (await import('./heygen-studio.js')).studioStatus(job.remote_id)
-      : await PROVIDERS[job.provider].videoStatus(job.remote_id, elapsed);
+    const s = await remoteStatus(job.provider, job.remote_id, elapsed);
     db.prepare(
       `UPDATE provider_jobs SET status = ?, progress = ?, video_url = ?, thumbnail_url = ?,
-       duration = ?, credits_used = ?, last_polled_at = datetime('now') WHERE id = ?`
+       duration = ?, credits_used = ?, error = NULL, last_polled_at = datetime('now') WHERE id = ?`
     ).run(s.status, s.progress, s.video_url, s.thumbnail_url, s.duration, s.credits_used, jobId);
   } catch (err) {
-    db.prepare("UPDATE provider_jobs SET status = 'failed', error = ? WHERE id = ?").run(err.message, jobId);
+    // A failed POLL is not a failed RENDER. Marking the job failed here made a
+    // network blip or a token refresh permanently abandon a video that was
+    // paid for and still rendering — terminal jobs are never polled again.
+    // Only the provider saying "failed" ends a job.
+    db.prepare("UPDATE provider_jobs SET error = ?, last_polled_at = datetime('now') WHERE id = ?")
+      .run(err.message, jobId);
   }
 
   return serializeJob(db.prepare('SELECT * FROM provider_jobs WHERE id = ?').get(jobId));
+}
+
+/** The provider's view of one video. A job pushed over MCP is polled over MCP; the key client cannot see it. */
+async function remoteStatus(provider, remoteId, elapsedSeconds) {
+  if (provider === 'heygen_mcp') {
+    return (await import('./heygen-studio.js')).studioStatus(remoteId);
+  }
+  return PROVIDERS[provider].videoStatus(remoteId, elapsedSeconds);
+}
+
+/**
+ * PULL for single-line renders. They were inserted as `queued` and never looked
+ * at again, so a paid line render never got its video. Same rule as pollJob:
+ * only the provider ends a render; a failed poll is recorded and retried.
+ */
+export async function pollSegmentRenders(productionId) {
+  const db = getDb();
+  const moving = db
+    .prepare(
+      `SELECT sr.* FROM segment_renders sr JOIN segments s ON s.id = sr.segment_id
+        WHERE s.production_id = ? AND sr.remote_id IS NOT NULL
+          AND sr.status IN ('queued','pending','processing')`
+    )
+    .all(productionId);
+
+  for (const r of moving) {
+    const elapsed = (Date.now() - Date.parse(r.created_at + 'Z')) / 1000;
+    try {
+      const s = await remoteStatus(r.provider, r.remote_id, elapsed);
+      db.prepare(
+        'UPDATE segment_renders SET status = ?, progress = ?, video_url = COALESCE(?, video_url), error = NULL WHERE id = ?'
+      ).run(s.status, s.progress ?? 0, s.video_url ?? null, r.id);
+    } catch (err) {
+      db.prepare('UPDATE segment_renders SET error = ? WHERE id = ?').run(err.message, r.id);
+    }
+  }
 }
 
 export function serializeJob(j) {

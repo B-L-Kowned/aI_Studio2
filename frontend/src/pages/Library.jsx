@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Search, FileText, User, Mic, Image, Film, Video, Package, Trash2, Check, X } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import { toClock } from '../utils/format.js';
 import { Section, PageHead, Empty } from '../components/Section.jsx';
 
 // A library row should say what the thing IS. The old tiles were a 100px empty
@@ -17,8 +18,6 @@ const KIND = {
   heygen_video: { label: 'HeyGen',     icon: Video },
 };
 
-const clock = (sec) =>
-  `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
 
 export default function Library() {
   const { collections, refreshLibrary, mutate, notify } = useStudio();
@@ -104,7 +103,7 @@ export default function Library() {
                     <b>{a.name}</b>
                   )}
                   <em className="libkind">{k.label}</em>
-                  {a.duration ? <em className="libmeta">{clock(a.duration)}</em> : null}
+                  {a.duration ? <em className="libmeta">{toClock(a.duration)}</em> : null}
                   {a.kind === 'heygen_video' && !a.playable && (
                     <em className="libmeta warn" title="Imported before the Library stored the video itself">
                       re-sync required

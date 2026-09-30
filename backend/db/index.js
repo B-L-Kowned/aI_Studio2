@@ -8,7 +8,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 // Desktop installs keep the database in the OS user-data directory, not next to
 // the application bundle — an installed app's own directory is often read-only.
-// Under Electron this is replaced by app.getPath('userData').
+// The desktop shell passes this same path explicitly as STUDIO_DB_PATH, so dev
+// and desktop share one database unless STUDIO_DB_PATH points a checkout elsewhere.
 export function defaultDbPath() {
   if (process.env.STUDIO_DB_PATH) return resolve(process.env.STUDIO_DB_PATH);
 

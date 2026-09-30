@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Sparkles, Check, X, Lock, AlertCircle, FileText } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import LoadState from '../components/LoadState.jsx';
 
 const GENERATOR_LABELS = {
   included: 'Built-in deterministic',
@@ -21,6 +22,7 @@ export default function ScriptStage({ goToStage }) {
   const { production, mutate } = useStudio();
   const [state, setState] = useState(null);
   const [workflow, setWorkflow] = useState(null);
+  const [loadError, setLoadError] = useState(null);
 
   const load = useCallback(async () => {
     const [script, flow] = await Promise.all([
@@ -29,14 +31,15 @@ export default function ScriptStage({ goToStage }) {
     ]);
     setState(script);
     setWorkflow(flow);
+    setLoadError(null);
   }, [production.id]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load().catch(setLoadError); }, [load]);
 
   const researchGate = workflow?.lock?.gates.find((gate) => gate.key === 'research');
   const ready = production.outlineApproved && production.scenesApproved && researchGate?.status !== 'block';
   const apply = (res) => setState(res.data);
 
-  if (!state || !workflow) return <p className="muted">Loading script…</p>;
+  if (!state || !workflow) return <LoadState error={loadError} retry={() => load().catch(setLoadError)} label="Loading script…" />;
   const latest = state.latest;
 
   return (

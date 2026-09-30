@@ -2,14 +2,20 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Play, AlertCircle, Check, X, Wallet } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import LoadState from '../components/LoadState.jsx';
+import PaidConfirm from '../components/PaidConfirm.jsx';
 
 export default function RenderStage() {
   const { production, mutate } = useStudio();
   const [state, setState] = useState(null);
   const [lock, setLock] = useState(null);
   const [path, setPath] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [confirming, setConfirming] = useState(false);
-  const timer = useRef(null);
+  // A render is charged once per request, so the request must go once. The ref
+  // blocks a double-click synchronously; `starting` disables the buttons.
+  const startLock = useRef(false);
+  const [starting, setStarting] = useState(false);
 
   const load = useCallback(async () => {
     const [render, productionLock] = await Promise.all([
@@ -18,8 +24,9 @@ export default function RenderStage() {
     ]);
     setState(render);
     setLock(productionLock);
+    setLoadError(null);
   }, [production.id]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load().catch(setLoadError); }, [load]);
 
   // Which pocket pays, said BEFORE the button is pressed. The router already
   // knows; leaving it to the error message meant the only way to find out that
@@ -28,17 +35,28 @@ export default function RenderStage() {
     api.heygenStatus().then((h) => setPath(h.renderPath)).catch(() => setPath(null));
   }, []);
 
-  // Poll only while a render is actually moving.
+  // Poll only while a render is actually moving, and only one request at a
+  // time: the next poll is scheduled after the last one lands, so a slow
+  // response can never overwrite a newer one.
   const live = state?.latest && ['queued', 'processing'].includes(state.latest.status);
   useEffect(() => {
     if (!live) return;
-    timer.current = setInterval(load, 900);
-    return () => clearInterval(timer.current);
-  }, [live, load]);
+    const t = setTimeout(() => { load().catch(() => {}); }, 900);
+    return () => clearTimeout(t);
+  }, [live, state, load]);
 
-  if (!state) return <p className="muted">Loading…</p>;
+  if (!state) return <LoadState error={loadError} retry={() => load().catch(setLoadError)} />;
   const latest = state.latest;
   const apply = (res) => setState(res.data);
+  const start = async () => {
+    if (startLock.current) return;
+    startLock.current = true;
+    setStarting(true);
+    setConfirming(false);
+    try { await mutate(() => api.startRender(production.id, true), apply); }
+    catch { /* mutate has already said what went wrong */ }
+    finally { startLock.current = false; setStarting(false); }
+  };
 
   return (
     <div className="stagepane">
@@ -49,41 +67,28 @@ export default function RenderStage() {
         </div>
         <button
           className="primary"
-          disabled={!lock?.ready || path?.path === 'none'}
+          disabled={starting || !lock?.ready || path?.path === 'none'}
           title={!lock?.ready
             ? `${lock?.blockers?.length ?? 0} production approval${lock?.blockers?.length === 1 ? '' : 's'} still block rendering`
             : path?.path === 'none' ? path.reason : path?.reason ?? ''}
           // A paid render needs explicit confirmation. The button used to send
           // the request without it and get a 402 every time, so in Live mode it
           // could never succeed — the safety gate had no door.
-          onClick={() => (path && !path.free
-            ? setConfirming(true)
-            : mutate(() => api.startRender(production.id, true), apply))}
+          onClick={() => (path && !path.free ? setConfirming(true) : start())}
         >
-          Start render
+          {starting ? 'Starting…' : 'Start render'}
         </button>
       </div>
 
       {confirming && (
-        <div className="confirmpaid">
-          <AlertCircle size={16} />
-          <div>
-            <b>This render is charged to your HeyGen plan.</b>
-            <small>{path.reason}</small>
-          </div>
-          <div className="confirmactions">
-            <button onClick={() => setConfirming(false)}>Cancel</button>
-            <button
-              className="primary"
-              onClick={async () => {
-                setConfirming(false);
-                await mutate(() => api.startRender(production.id, true), apply);
-              }}
-            >
-              Yes — render and charge my plan
-            </button>
-          </div>
-        </div>
+        <PaidConfirm
+          title="This render is charged to your HeyGen plan."
+          detail={path.reason}
+          confirmLabel="Yes — render and charge my plan"
+          busy={starting}
+          onCancel={() => setConfirming(false)}
+          onConfirm={start}
+        />
       )}
 
       {path && (

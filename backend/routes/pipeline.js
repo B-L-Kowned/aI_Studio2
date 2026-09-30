@@ -262,6 +262,7 @@ function clock(seconds) {
 
 const QUEUE_SECONDS = 2;
 const RENDER_SECONDS = 6;
+const PUSH_GRACE_SECONDS = 120;
 
 /**
  * Move live renders forward.
@@ -302,9 +303,21 @@ async function advanceRenders(productionId) {
       .prepare('SELECT * FROM provider_jobs WHERE render_version_id = ? ORDER BY id DESC LIMIT 1')
       .get(r.id);
     const real = job && !String(job.remote_id ?? '').startsWith('fx_');
+    const simulated = job ? !real : !!r.dry_run;
 
     let status;
     let progress;
+
+    if (!real && !simulated) {
+      // A paid render with no provider job never reached the provider. It is
+      // not "processing", and the clock below must never declare it complete.
+      // The grace period covers a poll that lands while the push is in flight.
+      const age = (Date.now() - Date.parse(r.started_at)) / 1000;
+      if (age < PUSH_GRACE_SECONDS) continue;
+      db.prepare("UPDATE render_versions SET status = 'failed', error = COALESCE(error, ?) WHERE id = ?")
+        .run('No provider job was recorded for this render.', r.id);
+      continue;
+    }
 
     if (real) {
       const polled = await pollJob(job.id).catch(() => null);
@@ -475,8 +488,12 @@ router.post(
         title: db.prepare('SELECT title FROM productions WHERE id = ?').get(id).title,
       });
     } catch (err) {
+      // Failed, not queued: a queued row with no provider job is what the
+      // simulated clock below advances, so a rejected render used to be marked
+      // complete eight seconds later, with an export for a video nobody made.
       pushError = err.message;
-      db.prepare('UPDATE render_versions SET error = ? WHERE id = ?').run(err.message, renderVersionId);
+      db.prepare("UPDATE render_versions SET status = 'failed', error = ? WHERE id = ?")
+        .run(err.message, renderVersionId);
     }
 
     return ok(

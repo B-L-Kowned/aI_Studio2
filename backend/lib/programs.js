@@ -80,7 +80,7 @@ export const PRESENTER_TAB_INFO = {
     id: 'characters',
     label: 'Characters',
     program: 'funny',
-    detail: 'Invented performers you write and cast yourself. Each card shows the avatar that will perform them.',
+    detail: 'Invented performers you write and cast yourself. Each card shows the character; the avatar that performs it is named underneath.',
   },
   avatars: {
     id: 'avatars',

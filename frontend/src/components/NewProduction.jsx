@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Lock, AlertCircle, Upload, ArrowLeft } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
-import TemplatePicker from '../components/TemplatePicker.jsx';
+import TemplatePicker from './TemplatePicker.jsx';
 
 // The dialog asks for whatever the starting point actually needs, at the moment
 // it is named. "New production from an existing video" used to ask for a title,

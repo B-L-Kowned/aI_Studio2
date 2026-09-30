@@ -3,9 +3,10 @@ import {
   Sparkles, Users, Clock, Video, Upload, FileText, Link, FolderKanban,
   Lock, Check, AlertCircle, UserPlus, Trash2, X, RefreshCw, Image as ImageIcon,
 } from 'lucide-react';
-import { useStudio, toSeconds, toClock } from '../context/studio-context.jsx';
+import { useStudio } from '../context/studio-context.jsx';
+import { toSeconds, toClock } from '../utils/format.js';
 import { api } from '../services/api.js';
-import PeoplePage from './PeoplePage.jsx';
+import PeoplePage from '../components/PeoplePage.jsx';
 
 const VIEWS = ['Brief', 'Outline', 'Scenes', 'People', 'Sources', 'Appearance', 'Decisions'];
 

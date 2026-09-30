@@ -4,7 +4,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 //
 // Deliberately tiny and deliberately one-way: each call opens a NATIVE dialog
 // that the user answers, so the page can never name a file by itself. There is
-// no general "read this path" here, and there should not be.
+// no general "read this path" here, and there should not be. `reveal` is the
+// one call that takes a path from the page; main.js confines it to the app's
+// own data and export folders.
 contextBridge.exposeInMainWorld('studio', {
   desktop: true,
   pickVideo: () => ipcRenderer.invoke('studio:pick-video'),

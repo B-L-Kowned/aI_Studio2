@@ -140,7 +140,7 @@ router.get(
   })
 );
 
-// Create a production. FRONTEND_CONTRACT: createProduction(sourceType, templateId?)
+// Create a production. docs/ARCHITECTURE.md §10: createProduction(sourceType, templateId?)
 router.post(
   '/',
   route(async (req, res) => {

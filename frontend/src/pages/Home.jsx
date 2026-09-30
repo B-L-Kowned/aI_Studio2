@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   AlertCircle, Loader, Moon, ArrowRight, Lightbulb, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import { useResource } from '../hooks/use-resource.js';
+import LoadState from '../components/LoadState.jsx';
 import { Section } from '../components/Section.jsx';
 
 /**
@@ -36,17 +38,14 @@ export default function Home({ go }) {
     openProduction, setPendingStage, setPendingView, setPendingDate, mutate, notify,
     scopeMode,
   } = useStudio();
-  const [data, setData] = useState(null);
-
   const [idea, setIdea] = useState('');
   const [weekStart, setWeekStart] = useState(null);
 
   // Refetches when the program bubble changes, so the counts in the title
-  // and the work queue below always describe the same slate.
-  const load = useCallback(
-    () => api.schedule(weekStart, scopeMode).then(setData),
-    [weekStart, scopeMode],
-  );
+  // and the work queue below always describe the same slate. Paging weeks
+  // quickly cannot land an older week over a newer one.
+  const { data, error, reload: load } =
+    useResource(() => api.schedule(weekStart, scopeMode), [weekStart, scopeMode]);
 
   const park = async (e) => {
     e.preventDefault();
@@ -59,7 +58,6 @@ export default function Home({ go }) {
       await load();
     } catch { /* mutate reports it */ }
   };
-  useEffect(() => { load(); }, [load]);
 
   // Land on the stage where the work is actually stuck, not on Plan every time.
   const open = async (id, stage) => {
@@ -68,7 +66,7 @@ export default function Home({ go }) {
     go('Create');
   };
 
-  if (!data) return <p className="muted">Reading the schedule…</p>;
+  if (!data) return <LoadState error={error} retry={load} label="Reading the schedule…" />;
   const { counts, needsYou, inFlight, idle, byCampaign, calendar, overdue, week } = data;
   const dueCount = calendar.reduce((n, d) => n + d.count, 0);
 

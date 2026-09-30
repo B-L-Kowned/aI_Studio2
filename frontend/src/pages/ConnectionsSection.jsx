@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Check, AlertCircle, RefreshCw, X, HelpCircle, ExternalLink } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import { useResource } from '../hooks/use-resource.js';
+import LoadState from '../components/LoadState.jsx';
 
 // Every vendor connects the same way: paste a key, it is verified against that
 // vendor's own free read endpoint, stored encrypted, and reported as one of
@@ -14,16 +16,14 @@ const STATUS = {
 
 export default function ConnectionsSection() {
   const { mutate, workspace } = useStudio();
-  const [data, setData] = useState(null);
   const [editing, setEditing] = useState(null);
   const [key, setKey] = useState('');
   const [err, setErr] = useState(null);
   const [note, setNote] = useState(null);
 
-  const load = useCallback(async () => setData(await api.connections()), []);
-  useEffect(() => { load(); }, [load]);
+  const { data, error, reload: load, setData } = useResource(() => api.connections(), []);
 
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <LoadState error={error} retry={load} />;
 
   const fixtures = workspace.providerMode?.mode === 'fixtures';
 
