@@ -46,6 +46,13 @@ itself generated. Then cast it on a presenter in Cast.
 
 Outputs carry Resemble's imperceptible Perth watermark.
 
+## Transcription
+
+`transcribe.py <video-or-audio>` recovers the words actually spoken in a
+finished video (Whisper `medium.en` via faster-whisper, MIT; on this machine,
+~40 s for a one-minute video). Setup: `.venv/bin/pip install faster-whisper`;
+the model downloads on first use.
+
 ## Not built yet
 
 Rendering a HeyGen avatar video **from** approved local audio. Until it is, a
