@@ -101,6 +101,10 @@ export function visualsFor(productionId) {
       id: r.id, ref: r.ref, title: r.title, runtime: r.runtime, seconds: secs(r.runtime),
       participants: r.participants, shotType: r.shot_type || 'camera', detail: r.purpose,
       onscreenText: r.onscreen_text ?? '', captured: !!r.captured,
+      recording: r.recording_asset_id
+        ? (() => { const a = db.prepare('SELECT id, name, duration FROM assets WHERE id = ?').get(r.recording_asset_id);
+          return a && { id: a.id, name: a.name, duration: a.duration, fileUrl: `/api/library/${a.id}/file` }; })()
+        : null,
       lines: (lines.get(r.id) ?? []).map((l) => ({ id: l.id, text: l.text, words: l.words })),
     })),
   };

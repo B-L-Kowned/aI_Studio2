@@ -371,7 +371,7 @@ router.get(
 );
 
 // --- Brief -----------------------------------------------------------------
-const RECORD_KEEPING = /^(script (status|source|length|review notes|pack id|pack only)|checks pending|completed (asset|confirmed)|final file|status:|register (id|duration)|priority|owner \/ next action|existing asset|(script|audio|final) link|pre-voiceover notes|visual plan)/i;
+const RECORD_KEEPING = /^(script (status|source|length|review notes|pack id|pack only)|checks pending|completed (asset|confirmed)|final file|transcript|status:|register (id|duration)|priority|owner \/ next action|existing asset|(script|audio|final) link|pre-voiceover notes|visual plan)/i;
 // Set a brief field by label, adding it when the template did not carry one —
 // how an import supplies "Source summary" and "CTA", which the script reads.
 router.post(

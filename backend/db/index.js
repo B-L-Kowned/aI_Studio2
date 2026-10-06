@@ -121,6 +121,7 @@ const ADDED_COLUMNS = [
   ['scenes', 'shot_type', 'TEXT'],
   ['scenes', 'onscreen_text', "TEXT NOT NULL DEFAULT ''"],
   ['scenes', 'captured', 'INTEGER NOT NULL DEFAULT 0'],
+  ['scenes', 'recording_asset_id', 'INTEGER'],
   ['campaigns', 'purpose', 'TEXT'],
   ['campaigns', 'audience', 'TEXT'],
   // A library video attached to a production, and where it was saved.

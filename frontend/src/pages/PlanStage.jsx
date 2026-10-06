@@ -6,6 +6,7 @@ import {
 import { useStudio } from '../context/studio-context.jsx';
 import { toSeconds, toClock } from '../utils/format.js';
 import { api } from '../services/api.js';
+import UploadDrop from '../components/UploadDrop.jsx';
 
 // People and Appearance were two steps for one decision; they are one now.
 const VIEWS = ['Brief', 'Outline', 'Visuals', 'People & look', 'Sources', 'Decisions'];
@@ -133,7 +134,7 @@ const BRIEF_GROUPS = [
   { key: 'video', title: 'The video', labels: ['Audience', 'Goal', 'CTA', 'Format', 'Target runtime'] },
   { key: 'facts', title: 'What we know', labels: ['Company', 'Website', 'Tagline', 'Source summary', 'Proposed demonstration', 'Competitive advantage', 'Core offer', 'Problems solved', 'Who we are reaching', 'Objections to expect'] },
 ];
-const RECORD = /^(Register ID|Register duration|Priority|Status: .*|Existing asset|Script link|Audio link|Final link|Owner \/ next action|Completed asset|Completed confirmed|Final file|Script status|Script source|Script review notes|Script length|Script pack ID|Script pack only|Checks pending|Visual plan|Pre-voiceover notes)$/;
+const RECORD = /^(Register ID|Register duration|Priority|Status: .*|Existing asset|Script link|Audio link|Final link|Owner \/ next action|Completed asset|Completed confirmed|Final file|Transcript|Script status|Script source|Script review notes|Script length|Script pack ID|Script pack only|Checks pending|Visual plan|Pre-voiceover notes)$/;
 const PLUMBING = /^(Template|Type|Primary output|Clip extraction)$/;
 const LONG = 90;
 const STATUS_TONE = (v) => (/complete|approved|verified|published|done/i.test(v) && !/not /i.test(v) ? 'text-ok' : /needs|pending|not /i.test(v) ? 'text-warn' : 'text-ink-2');
@@ -154,14 +155,80 @@ function BriefField({ f, onSave }) {
   );
 }
 
+/**
+ * The finished video, if there is one: upload it, watch it, and recover the
+ * words spoken in it (transcribed on this Mac) as the script of record.
+ */
+function FinishedVideo({ production, completedAsset }) {
+  const { reload } = useStudio();
+  const [file, setFile] = useState(undefined); // undefined = loading, null = none
+  const [tx, setTx] = useState(null);
+  const load = useCallback(async () => {
+    const [items, t] = await Promise.all([api.library(), api.transcription(production.id)]);
+    setFile(items.filter((a) => a.productionId === production.id && a.fileUrl && !/^Recording — /.test(a.name)).pop() ?? null);
+    setTx(t);
+  }, [production.id]);
+  useEffect(() => { load().catch(() => setFile(null)); }, [load]);
+  // While the words are being recovered, check every few seconds.
+  useEffect(() => {
+    if (tx?.state !== 'running') return undefined;
+    const t = setInterval(async () => {
+      const next = await api.transcription(production.id).catch(() => null);
+      if (next) setTx(next);
+      if (next && next.state !== 'running') { clearInterval(t); reload?.(); }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [tx?.state, production.id, reload]);
+
+  if (file === undefined) return null;
+  const clock = (d) => `${Math.floor(d / 60)}:${String(Math.round(d % 60)).padStart(2, '0')}`;
+  const drop = (label, hint) => (
+    <UploadDrop label={label} hint={hint} upload={(f, onProgress) => api.uploadFinishedVideo(production.id, f, onProgress)}
+      onDone={async () => { await load(); }} />
+  );
+
+  if (!file) {
+    return (
+      <section className="mt-[14px]">
+        {completedAsset && (
+          <p className="text-[12.5px] text-ink-2 m-[0_0_8px]"><Check size={13} className="inline -mt-[2px] text-ok" /> <b>Already made:</b> {completedAsset}. Add the file to keep it with this video and recover its words.</p>
+        )}
+        {drop(completedAsset ? 'Upload the finished video' : 'Finished video? Upload it',
+          'Drop the file here or click to choose it. It is filed under Company / Track / Video, this video is marked done, and the words spoken in it are transcribed on this Mac as its script.')}
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-[14px] border border-solid border-[#c5e3d5] bg-ok-soft rounded-lg p-[12px_14px] flex flex-wrap gap-[16px] items-start">
+      <video className="w-[170px] rounded-md bg-ink" src={file.fileUrl} controls preload="metadata" />
+      <div className="flex-1 min-w-[220px] flex flex-col gap-[6px] text-[12.5px]">
+        <b className="text-[13.5px] text-ok flex items-center gap-[6px]"><Check size={15} /> Finished video</b>
+        <span className="text-ink-2">{completedAsset ?? file.name}{file.duration ? ` · ${clock(file.duration)}` : ''}</span>
+        <span className="text-muted text-[11.5px] break-all">{file.localPath}</span>
+        <span className={tx?.state === 'failed' ? 'text-danger' : tx?.state === 'running' ? 'text-warn' : 'text-ink-2'}>
+          {tx?.state === 'running' && <><RefreshCw size={12} className="inline animate-spin -mt-[2px]" /> Recovering the words spoken in it… (about 40 seconds a minute of video)</>}
+          {tx?.state === 'done' && <>Script recovered from the video — {tx.detail.replace(/^Done — /, '')}. It is the accepted script.</>}
+          {tx?.state === 'failed' && <>{tx.detail}</>}
+          {!tx?.state && <>The words in it have not been recovered yet.</>}
+        </span>
+        <span className="flex flex-wrap gap-[8px] mt-[4px]">
+          {tx?.state !== 'running' && (
+            <button className="text-[12px] p-[4px_10px]" onClick={async () => { await api.retranscribe(production.id); setTx({ state: 'running' }); }}>
+              {tx?.state === 'done' ? 'Transcribe again' : 'Recover the words'}
+            </button>
+          )}
+          <UploadDrop compact label="Replace the file" upload={(f, onProgress) => api.uploadFinishedVideo(production.id, f, onProgress)}
+            onDone={async () => { await load(); }} />
+        </span>
+      </div>
+    </section>
+  );
+}
+
 function Brief({ goToStage }) {
   const { production, applyProduction, mutate } = useStudio();
   const [showPlumbing, setShowPlumbing] = useState(false);
-  // A finished video stored for this production, so it can be watched here.
-  const [finished, setFinished] = useState(null);
-  useEffect(() => {
-    api.library().then((items) => setFinished(items.find((a) => a.productionId === production.id && a.fileUrl) ?? null)).catch(() => {});
-  }, [production.id]);
   const save = (f, value) => mutate(() => api.updateBrief(production.id, f.id, value), applyProduction).catch(() => {});
   const byLabel = Object.fromEntries(production.brief.map((f) => [f.label, f]));
   const grouped = new Set(BRIEF_GROUPS.flatMap((g) => g.labels));
@@ -196,23 +263,7 @@ function Brief({ goToStage }) {
         </div>
       )}
 
-      {(rec('Completed asset') || finished) && (
-        <div className="notice items-start">
-          <Check />
-          <span className="flex-1 min-w-0">
-            <b>Already made:</b> {rec('Completed asset') ?? finished?.name}{rec('Completed confirmed') ? ` — ${rec('Completed confirmed').toLowerCase()}` : ''}
-            {finished && (
-              <span className="flex flex-wrap items-start gap-[14px] mt-[10px]">
-                <video className="w-[180px] rounded-md bg-ink" src={finished.fileUrl} controls preload="metadata" />
-                <span className="text-[12px] text-muted break-all max-w-[480px]">
-                  {finished.duration ? `${Math.floor(finished.duration / 60)}:${String(Math.round(finished.duration % 60)).padStart(2, '0')} · ` : ''}
-                  saved at {finished.localPath}
-                </span>
-              </span>
-            )}
-          </span>
-        </div>
-      )}
+      <FinishedVideo production={production} completedAsset={rec('Completed asset')} />
 
       {BRIEF_GROUPS.map((g) => {
         const fields = g.labels.map((l) => byLabel[l]).filter(Boolean);
@@ -486,10 +537,25 @@ function Visuals({ goToStage }) {
             <input className="text-[12px]" defaultValue={r.onscreenText} placeholder="On-screen text or caption (optional)"
               aria-label="On-screen text" onBlur={(e) => e.target.value !== r.onscreenText && save(r, { onscreenText: e.target.value })} />
             {r.shotType === 'screen' && (
-              <label className="flex items-center gap-[7px] text-[12px] text-ink-2 cursor-pointer">
-                <input type="checkbox" checked={r.captured} onChange={(e) => save(r, { captured: e.target.checked })} />
-                Recorded — the screen capture for this section exists
-              </label>
+              <div className="flex flex-wrap items-center gap-[10px]">
+                {r.recording ? (
+                  <>
+                    <video className="w-[150px] rounded bg-ink" src={r.recording.fileUrl} controls preload="metadata" />
+                    <span className="text-[12px] text-ok flex items-center gap-[5px]"><Check size={13} /> Recorded</span>
+                    <UploadDrop compact label="Replace" upload={(f, p) => api.uploadRecording(production.id, r.id, f, p)}
+                      onDone={(res) => setV(res.data.visuals)} />
+                  </>
+                ) : (
+                  <>
+                    <UploadDrop compact label="Upload screen recording" upload={(f, p) => api.uploadRecording(production.id, r.id, f, p)}
+                      onDone={(res) => setV(res.data.visuals)} />
+                    <label className="flex items-center gap-[6px] text-[12px] text-muted cursor-pointer">
+                      <input type="checkbox" checked={r.captured} onChange={(e) => save(r, { captured: e.target.checked })} />
+                      recorded elsewhere
+                    </label>
+                  </>
+                )}
+              </div>
             )}
           </div>
         </section>

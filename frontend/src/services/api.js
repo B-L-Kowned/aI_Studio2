@@ -31,6 +31,30 @@ const post = (p, body) => request(p, { method: 'POST', body: JSON.stringify(body
 const patch = (p, body) => request(p, { method: 'PATCH', body: JSON.stringify(body ?? {}) });
 const del = (p) => request(p, { method: 'DELETE' });
 
+/**
+ * Send a file as the raw request body, reporting progress (fetch cannot).
+ * Resolves to the same { data, message } shape as every other call.
+ */
+function uploadFile(path, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${BASE}${path}`);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
+    xhr.onload = () => {
+      let body;
+      try { body = JSON.parse(xhr.responseText); } catch { return reject(new Error(`${xhr.status} — response was not JSON`)); }
+      if (xhr.status >= 400 || body.error) {
+        const err = new Error(body.message || `Upload failed (${xhr.status})`); err.code = body.error; return reject(err);
+      }
+      resolve({ data: body.data, message: body.message });
+    };
+    xhr.onerror = () => reject(new Error('The upload was interrupted.'));
+    xhr.send(file);
+  });
+}
+
 export const api = {
   health: () => get('/health'),
 
@@ -196,6 +220,10 @@ export const api = {
   visuals: (id) => get(`/productions/${id}/visuals`),
   updateVisual: (id, rowId, body) => patch(`/productions/${id}/visuals/${rowId}`, body),
   approveVisuals: (id) => post(`/productions/${id}/visuals/approve`),
+  uploadFinishedVideo: (id, file, onProgress) => uploadFile(`/productions/${id}/media/final`, file, onProgress),
+  uploadRecording: (id, sceneId, file, onProgress) => uploadFile(`/productions/${id}/media/recording/${sceneId}`, file, onProgress),
+  transcription: (id) => get(`/productions/${id}/transcription`),
+  retranscribe: (id) => post(`/productions/${id}/transcription`),
   setVoiceSpeed: (id, speed) => patch(`/productions/${id}/voice-speed`, { speed }),
   keepScript: (id, versionId) => post(`/productions/${id}/script/${versionId}/keep`),
   listenLine: (id, versionId, lineId) => post(`/productions/${id}/script/${versionId}/listen/${lineId}`),

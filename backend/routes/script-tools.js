@@ -6,6 +6,7 @@ import { resolveSpeaker, presenterCasting } from '../lib/casting.js';
 import { listLocalVoices, speakLocal, localFile, SPEED_RANGE, LOCAL } from '../lib/local-voice.js';
 import { invalidateTakes } from '../lib/segments.js';
 import { visualsFor, updateVisualRow, approveVisuals } from '../lib/visuals.js';
+import { receiveUpload, acceptFinishedVideo, acceptRecording, transcribeInBackground, transcriptionFor } from '../lib/media.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -136,6 +137,53 @@ router.patch('/:id/visuals/:rowId', route(async (req, res) => {
 router.post('/:id/visuals/approve', route(async (req, res) => {
   try { return ok(res, approveVisuals(Number(req.params.id)), 'Visuals approved'); }
   catch (err) { return fail(res, visualStatus[err.code] ?? 400, err.code ?? 'ERROR', err.message); }
+}));
+
+// --------------------------------------------------------------- uploads
+// The file is the raw request body (a browser file input posts it as-is);
+// its name travels in X-File-Name. Nothing is buffered in memory.
+const fileName = (req) => {
+  try { return decodeURIComponent(String(req.headers['x-file-name'] ?? '')).replace(/\.[a-z0-9]+$/i, '').slice(0, 160); }
+  catch { return ''; }
+};
+const uploadStatus = { BAD_TYPE: 415, TOO_LARGE: 413, EMPTY: 400, UPLOAD_FAILED: 400, NOT_FOUND: 404, BAD_VIDEO: 400 };
+
+router.post('/:id/media/final', route(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!exists(id)) return fail(res, 404, 'NOT_FOUND', 'Production not found');
+  try {
+    const tmp = await receiveUpload(req);
+    const r = await acceptFinishedVideo(id, tmp, fileName(req) || undefined);
+    return ok(res, r, `Saved "${r.name}" — transcribing its words now`);
+  } catch (err) { return fail(res, uploadStatus[err.code] ?? 500, err.code ?? 'ERROR', err.message); }
+}));
+
+router.post('/:id/media/recording/:sceneId', route(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!exists(id)) return fail(res, 404, 'NOT_FOUND', 'Production not found');
+  try {
+    const tmp = await receiveUpload(req);
+    const r = await acceptRecording(id, Number(req.params.sceneId), tmp, fileName(req) || undefined);
+    return ok(res, { recording: r, visuals: visualsFor(id) }, `Recording saved for this section`);
+  } catch (err) { return fail(res, uploadStatus[err.code] ?? 500, err.code ?? 'ERROR', err.message); }
+}));
+
+/** Where the transcription of this production's finished video stands. */
+router.get('/:id/transcription', route(async (req, res) => {
+  const id = Number(req.params.id);
+  const job = transcriptionFor(id);
+  const stored = getDb().prepare("SELECT value FROM brief_fields WHERE production_id = ? AND label = 'Transcript'").get(id)?.value ?? null;
+  return ok(res, { state: job?.state ?? (stored?.startsWith('Done') ? 'done' : stored?.startsWith('Failed') ? 'failed' : null), detail: stored });
+}));
+
+/** Transcribe (again) the finished video already stored for this production. */
+router.post('/:id/transcription', route(async (req, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const a = db.prepare("SELECT * FROM assets WHERE production_id = ? AND local_path IS NOT NULL AND kind = 'video' ORDER BY id DESC LIMIT 1").get(id);
+  if (!a) return fail(res, 404, 'NOT_FOUND', 'Upload the finished video first');
+  transcribeInBackground(id, a.local_path, a.name);
+  return ok(res, { state: 'running' }, 'Transcribing the finished video');
 }));
 
 export { LOCAL };
