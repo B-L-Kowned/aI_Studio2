@@ -20,6 +20,10 @@ import ideas from './routes/ideas.js';
 import companies from './routes/companies.js';
 import storage from './routes/storage.js';
 import workflow from './routes/workflow.js';
+import voices from './routes/voices.js';
+import register from './routes/register.js';
+import appearance from './routes/appearance.js';
+import scriptTools from './routes/script-tools.js';
 import { modeSummary } from './lib/providers/mode.js';
 import { ok, fail } from './utils/respond.js';
 import { existsSync } from 'node:fs';
@@ -55,12 +59,16 @@ app.use('/api/productions', segments);
 app.use('/api/training', training);
 app.use('/api/productions', analysis);
 app.use('/api/productions', workflow);
+app.use('/api/productions', scriptTools);
 app.use('/api/series', series);
 app.use('/api', roster);
 app.use('/api', scheduleRoutes);
 app.use('/api', ideas);
 app.use('/api', companies);
 app.use('/api', storage);
+app.use('/api', voices);
+app.use('/api', register);
+app.use('/api', appearance);
 
 // ------------------------------------------------------- the app itself ---
 //

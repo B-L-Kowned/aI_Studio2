@@ -6,6 +6,7 @@ import {
 } from '../lib/presenters.js';
 import { programsForEntitlement, programState } from '../lib/programs.js';
 import { localAssets } from '../lib/providers/index.js';
+import { listLocalVoices } from '../lib/local-voice.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -49,7 +50,9 @@ router.get(
           // it falls back to the catalogue rather than offering nothing.
           return owned.length ? owned : all.slice(0, 200);
         };
-        return { avatars: pick('avatar'), voices: pick('voice') };
+        // Your local voices first: they are yours by definition and cost nothing to audition.
+        const local = listLocalVoices().map((v) => ({ ...v, kind: 'voice', owned: true, isFixture: false }));
+        return { avatars: pick('avatar'), voices: [...local, ...pick('voice')] };
       })(),
       catalogue: {
         avatars: localAssets('heygen', 'avatar').length,

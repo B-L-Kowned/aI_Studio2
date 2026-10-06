@@ -2,6 +2,7 @@ import { getDb } from '../db/index.js';
 import { resolveSpeaker, presenterCasting } from './casting.js';
 import * as mcp from './providers/heygen-mcp.js';
 import { canReadLive } from './providers/mode.js';
+import { LOCAL, speakLocal } from './local-voice.js';
 
 // The segment is the unit of script, take, presenter, shot, quality and render.
 //
@@ -214,6 +215,10 @@ export async function auditionSegment(segmentId, { speed = 1.0, ssml = false, co
   if (!String(seg.text).trim()) {
     throw Object.assign(new Error('Nothing to say — the line is empty.'), { code: 'EMPTY' });
   }
+  // A placeholder for a fact someone still has to check must never be spoken.
+  if (/\[CONFIRM/i.test(seg.text)) {
+    throw Object.assign(new Error('This line still has a [CONFIRM: …] placeholder — resolve it before auditioning.'), { code: 'UNCONFIRMED' });
+  }
 
   const presenter = seg.presenter_id
     ? db.prepare('SELECT * FROM presenters WHERE id = ?').get(seg.presenter_id)
@@ -231,6 +236,27 @@ export async function auditionSegment(segmentId, { speed = 1.0, ssml = false, co
 
   const version =
     (db.prepare('SELECT MAX(version) m FROM takes WHERE segment_id = ?').get(segmentId).m ?? 0) + 1;
+
+  // Your local voice: synthesised on this machine, free in every mode, and the
+  // file it writes is the audio the video will use.
+  if (cast.voice.provider === LOCAL) {
+    const out = `takes/${seg.production_id}/${segmentId}-v${version}.wav`;
+    const speed = db.prepare('SELECT voice_speed FROM productions WHERE id = ?').get(seg.production_id)?.voice_speed ?? undefined;
+    const spoken = await speakLocal(cast.voice.id, seg.text, out, { speed });
+    const id = db
+      .prepare(
+        `INSERT INTO takes (segment_id, version, text, voice_asset_id, audio_url, duration, local_path)
+         VALUES (?,?,?,?,?,?,?)`
+      )
+      .run(segmentId, version, seg.text, cast.voice.id, null, spoken.duration, out).lastInsertRowid;
+    db.prepare('UPDATE takes SET audio_url = ? WHERE id = ?').run(`/api/takes/${id}/audio`, id);
+    return {
+      take: serializeTake(db.prepare('SELECT * FROM takes WHERE id = ?').get(id)),
+      synthesised: true,
+      local: true,
+      voice: cast.voice,
+    };
+  }
 
   let audioUrl = null;
   let duration = null;
@@ -345,8 +371,10 @@ export function speakers(productionId) {
 export async function auditionPending(productionId, { confirmPaid = false, limit = null } = {}) {
   // Cast and in need of a take — including the ones holding a stale one.
   const pending = segmentsFor(productionId)
-    .filter((s) => s.needsAudition && s.presenter?.avatar && s.presenter?.voice);
-  const spends = auditionSpends();
+    .filter((s) => s.needsAudition && s.presenter?.voice
+      && (s.presenter.avatar || s.presenter.voice.provider === LOCAL));
+  // Local-voice lines cost nothing; only HeyGen lines need a yes.
+  const spends = auditionSpends() && pending.some((s) => s.presenter.voice.provider !== LOCAL);
   if (spends && confirmPaid !== true) {
     throw Object.assign(
       confirmationRequired(
@@ -360,7 +388,7 @@ export async function auditionPending(productionId, { confirmPaid = false, limit
   for (const seg of batch) {
     try {
       const r = await auditionSegment(seg.id, { confirmPaid });
-      done.push({ id: seg.id, position: seg.position, synthesised: r.synthesised });
+      done.push({ id: seg.id, position: seg.position, synthesised: r.synthesised, local: !!r.local });
       if (!r.synthesised) break; // Fixtures: the rest would be the same no-op.
     } catch (err) {
       return { done, failedAt: seg.position + 1, error: err.message };

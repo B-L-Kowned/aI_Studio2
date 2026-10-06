@@ -206,6 +206,88 @@ export const TEMPLATES = [
       ['The ask', '0:30', 'Principal'],
     ],
   },
+  // The register's video types (Bialkowned End-to-End Video register). Each
+  // runtime is the middle of the register's target range.
+  {
+    id: 'company-overview', name: 'Company Overview', purpose: 'promotion',
+    mode: 'content', runtime: '0:50', format: 'Overview',
+    brief: [
+      ['Type', 'One-off'], ['Audience', 'People who have not heard of it yet'],
+      ['Goal', 'One audience problem, one verified promise, one next step'],
+      ['Format', 'Avatar or product visuals'],
+      ['Primary output', '16:9 master'], ['Clip extraction', '9:16 cutdown'],
+    ],
+    outline: [
+      ['Who it is for', '0:10', 'Presenter'],
+      ['The problem', '0:12', 'Presenter'],
+      ['What it does', '0:18', 'Presenter'],
+      ['The next step', '0:10', 'Presenter'],
+    ],
+  },
+  {
+    id: 'workflow-demo', name: 'Workflow Demo', purpose: 'gtm',
+    mode: 'content', runtime: '2:15', format: 'Screen recording + voice',
+    brief: [
+      ['Type', 'One-off'], ['Audience', 'Buyers deciding right now'],
+      ['Goal', 'Show the primary workflow working, start to finish'],
+      ['Format', 'Actual screen recording + voice'],
+      ['Primary output', '16:9 master'], ['Clip extraction', '2 shorts'],
+    ],
+    outline: [
+      ['The job to be done', '0:15', 'Narrator'],
+      ['The walkthrough', '1:30', 'Narrator'],
+      ['The result', '0:20', 'Narrator'],
+      ['Where to start', '0:10', 'Narrator'],
+    ],
+  },
+  {
+    id: 'role-walkthrough', name: 'Role Walkthrough', purpose: 'training',
+    mode: 'content', runtime: '3:00', format: 'Screen recording + voice',
+    brief: [
+      ['Type', 'Training'], ['Audience', 'People who will use this role'],
+      ['Goal', 'Someone in this role can do their first day unaided'],
+      ['Format', 'Actual screen recording + voice'],
+      ['Primary output', '16:9 master'], ['Clip extraction', 'None'],
+    ],
+    outline: [
+      ['What this role is for', '0:20', 'Narrator'],
+      ['Signing in and finding your way', '0:40', 'Narrator'],
+      ['The core tasks', '1:30', 'Narrator'],
+      ['Where to get help', '0:30', 'Narrator'],
+    ],
+  },
+  {
+    id: 'opportunity-outreach', name: 'Opportunity / Partnership Outreach', purpose: 'recruiting',
+    mode: 'content', runtime: '0:55', format: 'Outreach',
+    brief: [
+      ['Type', 'One-off'], ['Audience', 'A person or organisation we want to work with'],
+      ['Goal', 'Explain the opportunity and earn one conversation'],
+      ['Format', 'Avatar + supporting visuals'],
+      ['Primary output', '16:9 master'], ['Clip extraction', '9:16 cutdown'],
+    ],
+    outline: [
+      ['Why we are reaching out', '0:10', 'Presenter'],
+      ['The opportunity', '0:25', 'Presenter'],
+      ['What you get', '0:12', 'Presenter'],
+      ['The next step', '0:08', 'Presenter'],
+    ],
+  },
+  {
+    id: 'investor-briefing', name: 'Investor Briefing', purpose: 'investor',
+    mode: 'content', runtime: '1:30', format: 'Briefing',
+    brief: [
+      ['Type', 'One-off'], ['Audience', 'Investors assessing the portfolio'],
+      ['Goal', 'The thesis, the fit, and what is proven so far'],
+      ['Format', 'Founder voice + restrained graphics'],
+      ['Primary output', '16:9 master'], ['Clip extraction', 'None'],
+    ],
+    outline: [
+      ['The thesis', '0:20', 'Principal'],
+      ['The companies and how they fit', '0:35', 'Principal'],
+      ['What is proven so far', '0:25', 'Principal'],
+      ['The conversation we want', '0:10', 'Principal'],
+    ],
+  },
   {
     id: 'how-to', name: 'How-To / Training Module', purpose: 'training',
     mode: 'content', runtime: '4:00', format: 'Training',

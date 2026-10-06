@@ -90,7 +90,7 @@ export function productionLock(productionId) {
       : appearanceMissing.length
         ? `Approve an appearance proof for ${appearanceMissing.join(', ')}.`
         : 'Every personal or fictional performer has an approved proof; stock avatars use their selected provider appearance.',
-    'Plan · Appearance'
+    'Plan · People & look'
   ));
   gates.push(gate(
     'decisions', 'Open decisions', unresolved ? 'warn' : 'pass',

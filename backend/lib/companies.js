@@ -26,7 +26,7 @@ export function listCompanies({ includeRetired = false } = {}) {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT * FROM companies WHERE (? OR is_active = 1) ORDER BY position, name`
+      `SELECT * FROM companies WHERE (? OR is_active = 1) ORDER BY name COLLATE NOCASE`
     )
     .all(includeRetired ? 1 : 0);
 
@@ -43,7 +43,7 @@ export function listCompanies({ includeRetired = false } = {}) {
 
     return {
       id: c.id, name: c.name, slug: c.slug, domain: c.domain,
-      notes: c.notes, isActive: !!c.is_active,
+      notes: c.notes, group: c.group_name ?? null, isActive: !!c.is_active,
       tracks: tracks.map((t) => ({
         id: t.id, name: t.name, purpose: t.purpose ?? null, audience: t.audience ?? null,
         productions: db
@@ -56,7 +56,7 @@ export function listCompanies({ includeRetired = false } = {}) {
   });
 }
 
-export function addCompany({ name, domain = null, notes = '' }) {
+export function addCompany({ name, domain = null, notes = '', group = null }) {
   const db = getDb();
   const clean = String(name ?? '').trim();
   if (!clean) throw Object.assign(new Error('A company needs a name.'), { code: 'EMPTY' });
@@ -70,8 +70,9 @@ export function addCompany({ name, domain = null, notes = '' }) {
   }
   const position = db.prepare('SELECT COUNT(*) n FROM companies').get().n;
   const id = db
-    .prepare('INSERT INTO companies (name, slug, domain, notes, position) VALUES (?,?,?,?,?)')
-    .run(clean, slug, domain ? String(domain).trim() : null, String(notes).slice(0, 500), position)
+    .prepare('INSERT INTO companies (name, slug, domain, notes, group_name, position) VALUES (?,?,?,?,?,?)')
+    .run(clean, slug, domain ? String(domain).trim() : null, String(notes).slice(0, 500),
+      group ? String(group).trim().slice(0, 60) : null, position)
     .lastInsertRowid;
   return listCompanies({ includeRetired: true }).find((c) => c.id === id);
 }
@@ -81,7 +82,7 @@ export function updateCompany(id, patch) {
   if (!db.prepare('SELECT 1 FROM companies WHERE id = ?').get(id)) {
     throw Object.assign(new Error('No such company.'), { code: 'NOT_FOUND' });
   }
-  for (const [key, col] of [['name', 'name'], ['domain', 'domain'], ['notes', 'notes']]) {
+  for (const [key, col] of [['name', 'name'], ['domain', 'domain'], ['notes', 'notes'], ['group', 'group_name']]) {
     if (patch[key] !== undefined) {
       db.prepare(`UPDATE companies SET ${col} = ? WHERE id = ?`)
         .run(patch[key] === null ? null : String(patch[key]).trim(), id);

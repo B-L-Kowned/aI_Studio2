@@ -81,7 +81,7 @@ export function presenterCasting(presenterId) {
   const v = asset(p.voice_asset_id);
   return {
     avatar: a ? { id: a.id, remoteId: a.remote_id, name: a.name } : null,
-    voice: v ? { id: v.id, remoteId: v.remote_id, name: v.name } : null,
+    voice: v ? { id: v.id, remoteId: v.remote_id, name: v.name, provider: v.provider } : null,
   };
 }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Building2, X, Archive, RotateCcw, ChevronRight } from 'lucide-react';
+import { Plus, Building2, X, Archive, RotateCcw, ChevronRight, Search } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { PageHead, Empty } from '../components/Section.jsx';
@@ -20,6 +20,15 @@ const TRACK_TITLE = 'truncate text-[13px] font-[560]';
 const AUDIENCE = `truncate text-[11.5px] lte800:[grid-column:1] lte800:[grid-row:2]`;
 const TRACK_BUTTON = `justify-self-end lte800:[grid-column:2] lte800:[grid-row:2]`;
 const HELP = 'block mt-[5px] text-faint text-[11.5px] leading-[1.5]';
+const GROUP_HEAD = 'flex items-baseline gap-[10px] p-[14px_14px_8px] bg-surface [border-top:1px_solid_var(--line-2)] first:border-t-0';
+const UNGROUPED = 'No group';
+
+// "Goalzie — Go to market" under the Goalzie heading reads as "Go to market".
+const squash = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+const trackLabel = (track, company) => {
+  const [head, ...rest] = track.split(' — ');
+  return rest.length && squash(head) === squash(company) ? rest.join(' — ') : track;
+};
 
 // The purpose is a closed set so the same track means the same thing across
 // fifty companies. Colour reinforces that they are comparable.
@@ -57,6 +66,7 @@ export default function Companies({ go, tabs }) {
   const [domain, setDomain] = useState('');
   const [editing, setEditing] = useState(null);   // campaign id being assigned
   const [showRetired, setShowRetired] = useState(false);
+  const [query, setQuery] = useState('');
 
   const load = useCallback(
     () => api.companies(showRetired).then(setData),
@@ -75,6 +85,16 @@ export default function Companies({ go, tabs }) {
   // Campaigns with no company yet — the thing to clean up.
   const claimed = new Set(companies.flatMap((c) => c.tracks.map((t) => t.id)));
   const loose = collections.campaigns.filter((c) => !claimed.has(c.id));
+
+  const q = query.trim().toLowerCase();
+  const matches = (c) => !q || [c.name, c.domain, c.group, c.notes, ...c.tracks.map((t) => t.name)]
+    .some((v) => v && v.toLowerCase().includes(q));
+  const shown = companies.filter(matches);
+  const looseShown = loose.filter((t) => !q || t.name.toLowerCase().includes(q));
+  // Groups A–Z with ungrouped last; the API already sorts companies A–Z.
+  const groups = [...new Set(shown.map((c) => c.group || UNGROUPED))]
+    .sort((a, b) => (a === UNGROUPED) - (b === UNGROUPED) || a.localeCompare(b))
+    .map((g) => ({ name: g, companies: shown.filter((c) => (c.group || UNGROUPED) === g) }));
 
   return (
     <>
@@ -123,6 +143,25 @@ export default function Companies({ go, tabs }) {
         </Empty>
       )}
 
+      {companies.length > 0 && (
+        <div className="flex items-center gap-[10px] mt-[14px]">
+          <label className="relative flex-1 max-w-[380px]">
+            <Search size={14} className="absolute left-[10px] top-1/2 -translate-y-1/2 text-faint" aria-hidden="true" />
+            <input
+              className="w-full text-[13px] p-[8px_10px_8px_30px]"
+              placeholder="Search companies, domains, groups"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search companies"
+            />
+          </label>
+          <span className="text-faint text-[11.5px]">
+            {q ? `${shown.length} of ${companies.length}` : companies.length} compan{companies.length === 1 ? 'y' : 'ies'}
+            {' · '}{groups.length} group{groups.length === 1 ? '' : 's'}
+          </span>
+        </div>
+      )}
+
       {(companies.length > 0 || loose.length > 0) && (
         <section
           className="overflow-hidden mt-[16px] border border-solid border-line rounded-lg bg-surface [box-shadow:var(--shadow)]" aria-label="Companies and tracks">
@@ -136,7 +175,20 @@ export default function Companies({ go, tabs }) {
             <span />
           </div>
 
-          {companies.map((c) => (
+          {q && shown.length === 0 && looseShown.length === 0 && (
+            <p className="p-[18px_14px] text-muted text-[12.5px]">No company matches “{query}”.</p>
+          )}
+
+          {groups.map((g) => (
+            <div key={g.name}>
+              <div className={GROUP_HEAD}>
+                <b className="text-[11px] font-semibold tracking-[.06em] uppercase text-ink-2">{g.name}</b>
+                <span className="text-faint text-[11px]">
+                  {g.companies.length} compan{g.companies.length === 1 ? 'y' : 'ies'}
+                  {' · '}{g.companies.reduce((n, c) => n + c.counts.productions, 0)} videos
+                </span>
+              </div>
+          {g.companies.map((c) => (
             <div
               className={'[&+&]:[border-top:1px_solid_var(--line-2)]' + (c.isActive ? '' : ' retired opacity-[.55]')}
               key={c.id}
@@ -182,9 +234,9 @@ export default function Companies({ go, tabs }) {
                     <span className={purposeTag(t.purpose ?? 'none')}>
                       {purposes.find((p) => p.id === t.purpose)?.label ?? 'no purpose'}
                     </span>
-                    <b className={TRACK_TITLE}>{t.name}</b>
+                    <b className={TRACK_TITLE} title={t.name}>{trackLabel(t.name, c.name)}</b>
                   </span>
-                  <span className={AUDIENCE + (t.audience ? ' text-ink-2' : ' missing text-warn')}>
+                  <span className={AUDIENCE + (t.audience ? ' text-ink-2' : ' missing text-warn')} title={t.audience || undefined}>
                     {t.audience || 'Audience not set'}
                   </span>
                   <span className={VIDEOS} aria-label={`${t.productions} videos`}>
@@ -195,10 +247,12 @@ export default function Companies({ go, tabs }) {
               ))}
             </div>
           ))}
+            </div>
+          ))}
 
           {/* The clean-up. Every campaign that predates this layer stays in
               the same roster until someone assigns its company and purpose. */}
-          {loose.length > 0 && (
+          {looseShown.length > 0 && (
             <div className="[&+&]:[border-top:1px_solid_var(--line-2)]">
               <div className={`${COMPANY_LINE} bg-warn-soft`}>
                 <span className={COMPANY_MAIN}>
@@ -206,12 +260,12 @@ export default function Companies({ go, tabs }) {
                   <span className={COMPANY_MAIN_TEXT}><b className={COMPANY_NAME}>Not assigned</b></span>
                 </span>
                 <span className={COMPANY_SUMMARY}>
-                  {loose.length} campaign{loose.length === 1 ? '' : 's'} with no company
+                  {looseShown.length} campaign{looseShown.length === 1 ? '' : 's'} with no company
                 </span>
                 <span />
                 <span />
               </div>
-              {loose.map((t) => (
+              {looseShown.map((t) => (
                 <div className={TRACK} key={t.id}>
                   <span className={TRACK_NAME}>
                     <ChevronRight size={13} aria-hidden="true" />

@@ -6,6 +6,7 @@ import Ideas from './Ideas.jsx';
 import Companies from './Companies.jsx';
 import CalendarPage from './CalendarPage.jsx';
 import Training from './Training.jsx';
+import Register from './Register.jsx';
 
 /**
  * Plan — what is being made, and when.
@@ -21,6 +22,8 @@ import Training from './Training.jsx';
 const VIEWS = [
   // The lot comes first: it is where work starts, before it is work.
   { id: 'Ideas', label: 'Parking lot' },
+  // The end-to-end register: every Video ID and where it really stands.
+  { id: 'Register', label: 'Register' },
   { id: 'Companies', label: 'Companies' },
   { id: 'Campaigns', label: 'Campaigns' },
   { id: 'Calendar', label: 'Calendar' },
@@ -33,7 +36,7 @@ export default function Plan({ go, routes, programs }) {
   const granted = programs ?? workspace.program?.programs ?? [];
   const allowed = VIEWS.filter((v) => !map[v.id] || granted.includes(map[v.id]));
 
-  const [view, setView] = useState('Campaigns');
+  const [view, setView] = useState('Register');
 
   // Opened from somewhere that knows which view it meant.
   useEffect(() => {
@@ -49,6 +52,7 @@ export default function Plan({ go, routes, programs }) {
     <>
       {/* The view draws the header, so its title sits above these tabs. */}
       {current === 'Ideas' && <Ideas go={go} tabs={tabs} />}
+      {current === 'Register' && <Register go={go} tabs={tabs} />}
       {current === 'Companies' && <Companies go={go} tabs={tabs} />}
       {current === 'Campaigns' && <Campaigns go={go} tabs={tabs} />}
       {current === 'Calendar' && <CalendarPage tabs={tabs} />}

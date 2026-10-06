@@ -370,6 +370,50 @@ router.get(
 );
 
 // --- Brief -----------------------------------------------------------------
+const RECORD_KEEPING = /^(script (status|source|length|review notes|pack id|pack only)|checks pending|completed (asset|confirmed)|status:|register (id|duration)|priority|owner \/ next action|existing asset|(script|audio|final) link|pre-voiceover notes|visual plan)/i;
+// Set a brief field by label, adding it when the template did not carry one —
+// how an import supplies "Source summary" and "CTA", which the script reads.
+router.post(
+  '/:id/brief',
+  route(async (req, res) => {
+    const label = String(req.body?.label ?? '').trim().slice(0, 80);
+    const { value } = req.body ?? {};
+    if (!label) return fail(res, 400, 'NO_LABEL', 'label is required');
+    if (typeof value !== 'string') return fail(res, 400, 'NO_VALUE', 'value must be a string');
+
+    const db = getDb();
+    const id = Number(req.params.id);
+    if (!db.prepare('SELECT 1 FROM productions WHERE id = ?').get(id)) {
+      return fail(res, 404, 'NOT_FOUND', 'Production not found');
+    }
+    if (label.toLowerCase() === 'target runtime' && !RUNTIME_RE.test(value)) {
+      return fail(res, 400, 'BAD_RUNTIME', 'Target runtime must look like 2:30');
+    }
+    const existing = db
+      .prepare('SELECT * FROM brief_fields WHERE production_id = ? AND lower(label) = lower(?)')
+      .get(id, label);
+    if (existing?.value === value.slice(0, 500)) return send(res, id, 'Brief unchanged', { affected: [] });
+
+    if (existing) {
+      db.prepare('UPDATE brief_fields SET value = ? WHERE id = ?').run(value.slice(0, 500), existing.id);
+    } else {
+      const pos = db.prepare('SELECT COALESCE(MAX(position), 0) n FROM brief_fields WHERE production_id = ?').get(id).n;
+      db.prepare('INSERT INTO brief_fields (production_id, label, value, position) VALUES (?,?,?,?)')
+        .run(id, label, value.slice(0, 500), pos + 1);
+    }
+    if (label.toLowerCase() === 'target runtime') {
+      db.prepare('UPDATE productions SET target_runtime = ? WHERE id = ?').run(value, id);
+    }
+    // Record-keeping (where a script came from, its status, the register's
+    // tracking columns) does not change what the video says, so it must not
+    // mark the script out of date. Everything else in the brief can.
+    const affected = RECORD_KEEPING.test(label) ? []
+      : markStaleFrom(id, 'plan', `Brief field "${label}" ${existing ? 'changed' : 'added'}`);
+    touch(id);
+    return send(res, id, existing ? 'Brief updated' : 'Brief field added', { affected });
+  })
+);
+
 router.patch(
   '/:id/brief/:fieldId',
   route(async (req, res) => {
@@ -439,7 +483,9 @@ router.patch(
     if (participants !== undefined)
       db.prepare('UPDATE outline_sections SET participants = ? WHERE id = ?').run(String(participants).slice(0, 200), section.id);
 
-    const affected = markStaleFrom(id, 'plan', `Outline section "${section.title}" changed`);
+    // Who appears does not change the words, so it does not make the script stale.
+    const wordsMayChange = [runtime, title, purpose].some((v) => v !== undefined);
+    const affected = wordsMayChange ? markStaleFrom(id, 'plan', `Outline section "${section.title}" changed`) : [];
     touch(id);
     return send(res, id, 'Outline updated', { affected });
   })
@@ -601,6 +647,31 @@ router.post(
     const affected = markStaleFrom(id, 'plan', 'A planning decision was resolved');
     touch(id);
     return send(res, id, 'Decision resolved', { affected });
+  })
+);
+
+// --- Script written elsewhere ----------------------------------------------
+// The same import "New production → Existing script" performs, for a
+// production that already exists: an accepted version, segments built.
+router.post(
+  '/:id/script/import',
+  route(async (req, res) => {
+    const id = Number(req.params.id);
+    const text = String(req.body?.text ?? '');
+    const status = req.body?.status === 'proposed' ? 'proposed' : 'accepted';
+    if (!getDb().prepare('SELECT 1 FROM productions WHERE id = ?').get(id)) {
+      return fail(res, 404, 'NOT_FOUND', 'Production not found');
+    }
+    if (!text.trim()) return fail(res, 400, 'EMPTY_SCRIPT', 'text is required');
+    try {
+      const r = importScript(id, text, { status });
+      touch(id);
+      return send(res, id,
+        `Script v${r.version} imported as ${status === 'proposed' ? 'a proposal to review' : 'accepted'} — ${r.lines} line${r.lines === 1 ? '' : 's'}`,
+        { imported: r });
+    } catch (err) {
+      return fail(res, err.code === 'EMPTY_SCRIPT' ? 422 : 400, err.code ?? 'IMPORT_FAILED', err.message);
+    }
   })
 );
 

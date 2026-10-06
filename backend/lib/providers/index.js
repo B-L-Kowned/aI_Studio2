@@ -1,4 +1,5 @@
 import * as heygen from './heygen.js';
+import { approvedLook } from '../appearance.js';
 import * as mcp from './heygen-mcp.js';
 import { getDb } from '../../db/index.js';
 import { isDryRun, canGenerateLive } from './mode.js';
@@ -192,14 +193,24 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
   const fallbackAvatar = firstOf('avatar');
   const fallbackVoice = firstOf('voice');
 
+  // The look each performer was APPROVED in for this video overrides their
+  // default avatar: outfit, background and frame are what was signed off.
+  const looks = new Map();
+  for (const s of readiness.speakers) {
+    if (s.presenterId) looks.set(s.speaker, approvedLook(productionId, s.presenterId));
+  }
   const castSegments = (segments ?? []).map((seg) => {
     const cast = bySpeaker.get(seg.speaker);
+    const look = looks.get(seg.speaker);
     return {
       ...seg,
-      avatarId: cast?.avatar?.remoteId ?? fallbackAvatar?.remote_id,
+      avatarId: look && !look.isPhoto ? look.remoteId : cast?.avatar?.remoteId ?? fallbackAvatar?.remote_id,
+      talkingPhotoId: look?.isPhoto ? look.remoteId : undefined,
+      background: look?.background,
       voiceId: cast?.voice?.remoteId ?? fallbackVoice?.remote_id,
     };
   });
+  const frame = [...looks.values()].find(Boolean);
 
   const uncast = readiness.speakers.filter((s) => s.missing).map((s) => s.speaker);
 
@@ -210,6 +221,7 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
     avatarId: fallbackAvatar?.remote_id,
     voiceId: fallbackVoice?.remote_id,
     testMode,
+    ...(frame ? { width: frame.width, height: frame.height } : {}),
   });
 
   // Which pocket. MCP spends the plan the user already pays for; the API key
@@ -218,6 +230,16 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
   const route = await chooseRenderPath();
   if (route.path === 'none') {
     throw Object.assign(new Error(route.reason), { code: route.warning ?? 'NO_PATH' });
+  }
+  // A local voice's remote id is a folder name on this Mac, not a HeyGen voice.
+  // Sending it would fail at best and, with a fallback, render a voice nobody
+  // approved. Rendering from the approved audio file is not built yet.
+  const localVoiced = readiness.speakers.filter((s) => s.voice?.provider === 'local').map((s) => s.speaker);
+  if (route.path !== 'fixtures' && localVoiced.length) {
+    throw Object.assign(
+      new Error(`${localVoiced.join(', ')} ${localVoiced.length === 1 ? 'uses' : 'use'} your local voice. Rendering a HeyGen video from approved local audio is not built yet — nothing was sent.`),
+      { code: 'LOCAL_VOICE_RENDER' }
+    );
   }
   let result;
 
@@ -232,10 +254,11 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
       );
     }
     result = await renderViaStudio({
-      segments: castSegments,
+      // The studio tool takes a look id as avatar_id whatever its type.
+      segments: castSegments.map((s) => ({ ...s, avatarId: s.talkingPhotoId ?? s.avatarId })),
       title,
-      aspectRatio: '16:9',
-      resolution: '1080p',
+      aspectRatio: frame?.aspect ?? '16:9',
+      resolution: frame?.resolution ?? '1080p',
     });
   } else {
     result = await provider.generateVideo(payload);

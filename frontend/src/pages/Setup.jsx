@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Check, AlertCircle, Lock, RefreshCw, Trash2, KeyRound, HardDrive,
-  Sparkles, Video, Share2, X, Plug,
+  Sparkles, Video, Share2, X, Plug, Mic,
 } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import ConnectionsSection from './ConnectionsSection.jsx';
+import VoiceSection from './VoiceSection.jsx';
 import { PageHead } from '../components/Section.jsx';
 import HeyGen from './HeyGen.jsx';
 
@@ -14,6 +15,7 @@ const SECTIONS = [
   { id: 'connections', label: 'Connections', icon: Plug },
   { id: 'ai', label: 'Model routing', icon: Sparkles },
   { id: 'generation', label: 'Generation', icon: Video },
+  { id: 'voice', label: 'Your voice', icon: Mic },
   { id: 'heygen', label: 'HeyGen account', icon: Video },
   { id: 'storage', label: 'Storage', icon: HardDrive },
   { id: 'publishing', label: 'Publishing', icon: Share2 },
@@ -75,6 +77,7 @@ export default function Setup() {
           {section === 'connections' && <ConnectionsSection />}
           {section === 'ai' && <AiSection />}
           {section === 'generation' && <GenerationSection />}
+          {section === 'voice' && <VoiceSection />}
           {section === 'heygen' && <HeyGen embedded />}
           {section === 'storage' && <StorageSection />}
           {section === 'publishing' && <PublishingSection />}

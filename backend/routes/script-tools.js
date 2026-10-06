@@ -1,0 +1,122 @@
+import { Router } from 'express';
+import { createReadStream } from 'node:fs';
+import { getDb } from '../db/index.js';
+import { clearStale } from '../lib/stale.js';
+import { resolveSpeaker, presenterCasting } from '../lib/casting.js';
+import { listLocalVoices, speakLocal, localFile, SPEED_RANGE, LOCAL } from '../lib/local-voice.js';
+import { invalidateTakes } from '../lib/segments.js';
+import { ok, fail, route } from '../utils/respond.js';
+
+const router = Router();
+// What a planned script was timed at, used only until the voice has been measured.
+const PLANNING_WPM = 150;
+const secs = (rt) => { const [m, s] = String(rt ?? '0:00').split(':').map(Number); return (m || 0) * 60 + (s || 0); };
+
+/** The local voice this production's narration is spoken in (the voice cast on "Pat"). */
+function narrationVoice() {
+  const p = resolveSpeaker('Pat');
+  const v = p ? presenterCasting(p.id)?.voice : null;
+  const voices = listLocalVoices();
+  return voices.find((x) => x.id === v?.id) ?? voices[0] ?? null;
+}
+
+/** Everything the Script screen needs to judge length: pace, speed, target, section budgets. */
+router.get(
+  '/:id/script-timing',
+  route(async (req, res) => {
+    const db = getDb();
+    const p = db.prepare('SELECT * FROM productions WHERE id = ?').get(Number(req.params.id));
+    if (!p) return fail(res, 404, 'NOT_FOUND', 'Production not found');
+    const voice = narrationVoice();
+    const natural = voice?.naturalWpm ?? null;
+    const speed = p.voice_speed ?? voice?.speed ?? 1;
+    const sections = db.prepare('SELECT title, runtime FROM outline_sections WHERE production_id = ? ORDER BY position').all(p.id)
+      .map((s) => ({ title: s.title, runtime: s.runtime, seconds: secs(s.runtime) }));
+    return ok(res, {
+      voice: voice && { id: voice.id, name: voice.name, naturalWpm: natural, measuredSeconds: voice.paceSeconds },
+      naturalWpm: natural ?? PLANNING_WPM,
+      measured: natural != null,
+      speed, speedRange: SPEED_RANGE,
+      wpm: Math.round((natural ?? PLANNING_WPM) * speed),
+      targetSeconds: secs(p.target_runtime),
+      sections,
+    });
+  })
+);
+
+/**
+ * Narration speed for this video. Changing it changes what every local take
+ * sounds like, so existing takes go stale and must be heard again.
+ */
+router.patch(
+  '/:id/voice-speed',
+  route(async (req, res) => {
+    const db = getDb();
+    const id = Number(req.params.id);
+    if (!db.prepare('SELECT 1 FROM productions WHERE id = ?').get(id)) return fail(res, 404, 'NOT_FOUND', 'Production not found');
+    const speed = Number(req.body?.speed);
+    if (!Number.isFinite(speed) || speed < SPEED_RANGE[0] || speed > SPEED_RANGE[1]) {
+      return fail(res, 400, 'BAD_SPEED', `Speed must be between ${SPEED_RANGE[0]}× and ${SPEED_RANGE[1]}×`);
+    }
+    const rounded = Math.round(speed * 100) / 100;
+    db.prepare('UPDATE productions SET voice_speed = ? WHERE id = ?').run(rounded, id);
+    let staled = 0;
+    for (const s of db.prepare(
+      `SELECT DISTINCT s.id FROM segments s JOIN takes t ON t.segment_id = s.id
+         WHERE s.production_id = ? AND t.local_path IS NOT NULL AND t.stale = 0`
+    ).all(id)) { invalidateTakes(s.id, `Voice speed changed to ${rounded}×`); staled++; }
+    return ok(res, { speed: rounded, takesStaled: staled },
+      `Narration speed ${rounded}×${staled ? ` — ${staled} take${staled === 1 ? '' : 's'} to hear again` : ''}`);
+  })
+);
+
+/** "The words are still right": clear a script's stale flag after a plan change. */
+router.post(
+  '/:id/script/:versionId/keep',
+  route(async (req, res) => {
+    const v = getDb().prepare('SELECT * FROM script_versions WHERE id = ? AND production_id = ?')
+      .get(Number(req.params.versionId), Number(req.params.id));
+    if (!v) return fail(res, 404, 'NOT_FOUND', 'Script version not found');
+    clearStale('script_versions', v.id);
+    return ok(res, { id: v.id }, `Kept script v${v.version} — marked current`);
+  })
+);
+
+/** Hear one line of a draft in the local voice, at this video's speed. Free; nothing is approved. */
+router.post(
+  '/:id/script/:versionId/listen/:lineId',
+  route(async (req, res) => {
+    const db = getDb();
+    const id = Number(req.params.id);
+    const line = db.prepare(
+      `SELECT ss.* FROM script_segments ss JOIN script_versions v ON v.id = ss.script_version_id
+        WHERE ss.id = ? AND v.id = ? AND v.production_id = ?`
+    ).get(Number(req.params.lineId), Number(req.params.versionId), id);
+    if (!line) return fail(res, 404, 'NOT_FOUND', 'Script line not found');
+    if (/\[CONFIRM/i.test(line.text)) return fail(res, 409, 'UNCONFIRMED', 'Resolve the [CONFIRM: …] in this line first.');
+    const voice = narrationVoice();
+    if (!voice) return fail(res, 409, 'NO_VOICE', 'Create a local voice in Settings → Your voice first.');
+    const speed = db.prepare('SELECT voice_speed FROM productions WHERE id = ?').get(id)?.voice_speed ?? undefined;
+    const rel = `samples/listen/${line.script_version_id}-${line.id}.wav`;
+    try {
+      const r = await speakLocal(voice.id, line.text, rel, { speed });
+      return ok(res, { url: `/api/productions/${id}/script/${line.script_version_id}/listen/${line.id}?t=${Date.now()}`, duration: r.duration },
+        `${r.duration?.toFixed?.(1) ?? '?'}s at ${r.speed}× — nothing spent`);
+    } catch (err) {
+      return fail(res, err.code === 'VOICE_OFFLINE' ? 503 : 502, err.code ?? 'VOICE_FAILED', err.message);
+    }
+  })
+);
+
+router.get(
+  '/:id/script/:versionId/listen/:lineId',
+  route(async (req, res) => {
+    const file = localFile(`samples/listen/${Number(req.params.versionId)}-${Number(req.params.lineId)}.wav`);
+    if (!file) return fail(res, 404, 'NOT_FOUND', 'Not generated yet');
+    res.type('audio/wav');
+    return createReadStream(file).pipe(res);
+  })
+);
+
+export { LOCAL };
+export default router;

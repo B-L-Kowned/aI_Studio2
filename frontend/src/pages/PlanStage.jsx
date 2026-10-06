@@ -6,9 +6,9 @@ import {
 import { useStudio } from '../context/studio-context.jsx';
 import { toSeconds, toClock } from '../utils/format.js';
 import { api } from '../services/api.js';
-import PeoplePage from '../components/PeoplePage.jsx';
 
-const VIEWS = ['Brief', 'Outline', 'Scenes', 'People', 'Sources', 'Appearance', 'Decisions'];
+// People and Appearance were two steps for one decision; they are one now.
+const VIEWS = ['Brief', 'Outline', 'Scenes', 'People & look', 'Sources', 'Decisions'];
 
 export default function PlanStage({ goToStage }) {
   const [view, setView] = useState('Outline');
@@ -48,9 +48,8 @@ export default function PlanStage({ goToStage }) {
         {view === 'Brief' && <Brief goToStage={goToStage} />}
         {view === 'Outline' && <Outline goToStage={goToStage} />}
         {view === 'Scenes' && <Scenes goToStage={goToStage} />}
-        {view === 'People' && <PeoplePage compact />}
+        {view === 'People & look' && <PeopleAndLook />}
         {view === 'Sources' && <Sources />}
-        {view === 'Appearance' && <Appearance />}
         {view === 'Decisions' && <Decisions />}
       </section>
     </div>
@@ -127,31 +126,141 @@ function StaleNote({ stale, goToStage }) {
   );
 }
 
+// The brief is read in three parts: what the video says (editable, and what
+// the script is written from), what the register and script pack record about
+// it (read here, changed at their source), and template plumbing (folded away).
+const BRIEF_GROUPS = [
+  { key: 'video', title: 'The video', labels: ['Audience', 'Goal', 'CTA', 'Format', 'Target runtime'] },
+  { key: 'facts', title: 'What we know', labels: ['Company', 'Website', 'Tagline', 'Source summary', 'Proposed demonstration', 'Competitive advantage', 'Core offer', 'Problems solved', 'Who we are reaching', 'Objections to expect'] },
+];
+const RECORD = /^(Register ID|Register duration|Priority|Status: .*|Existing asset|Script link|Audio link|Final link|Owner \/ next action|Completed asset|Completed confirmed|Script status|Script source|Script review notes|Script length|Script pack ID|Script pack only|Checks pending|Visual plan|Pre-voiceover notes)$/;
+const PLUMBING = /^(Template|Type|Primary output|Clip extraction)$/;
+const LONG = 90;
+const STATUS_TONE = (v) => (/complete|approved|verified|published|done/i.test(v) && !/not /i.test(v) ? 'text-ok' : /needs|pending|not /i.test(v) ? 'text-warn' : 'text-ink-2');
+
+function BriefField({ f, onSave }) {
+  const long = (f.value ?? '').length > LONG || /summary|advantage|demonstration|objections|offer|problems/i.test(f.label);
+  const Tag = long ? 'textarea' : 'input';
+  return (
+    <label className={'flex flex-col gap-[4px] text-muted text-[11.5px] font-semibold' + (long ? ' col-span-2 lte800:col-span-1' : '')}>
+      {f.label}
+      <Tag
+        className={'font-normal text-[13.5px] text-ink' + (long ? ' min-h-[64px] resize-y leading-[1.5]' : '')}
+        rows={long ? Math.min(6, Math.ceil((f.value ?? '').length / 110) + 1) : undefined}
+        defaultValue={f.value}
+        onBlur={(e) => e.target.value !== f.value && onSave(f, e.target.value)}
+      />
+    </label>
+  );
+}
+
 function Brief({ goToStage }) {
   const { production, applyProduction, mutate } = useStudio();
+  const [showPlumbing, setShowPlumbing] = useState(false);
+  const save = (f, value) => mutate(() => api.updateBrief(production.id, f.id, value), applyProduction).catch(() => {});
+  const byLabel = Object.fromEntries(production.brief.map((f) => [f.label, f]));
+  const grouped = new Set(BRIEF_GROUPS.flatMap((g) => g.labels));
+  const record = production.brief.filter((f) => RECORD.test(f.label) && f.value);
+  const plumbing = production.brief.filter((f) => PLUMBING.test(f.label));
+  const other = production.brief.filter((f) => !grouped.has(f.label) && f.label !== 'Verify first' && !RECORD.test(f.label) && !PLUMBING.test(f.label));
+  const verify = byLabel['Verify first']?.value;
+  const rec = (l) => byLabel[l]?.value;
+  const statuses = production.brief.filter((f) => /^Status: /.test(f.label));
+
   return (
     <>
-      <h2>Production Brief</h2>
+      <div className="sectiontitle">
+        <div>
+          <h2>Brief</h2>
+          <p>What this video has to say, and to whom. The script is written from this.</p>
+        </div>
+        {rec('Register ID') && (
+          <span className="flex items-center gap-[8px] text-[12px] text-muted">
+            <code className="text-[11.5px] font-semibold text-ink-2 bg-canvas border border-solid border-line rounded-[4px] p-[2px_7px]">{rec('Register ID')}</code>
+            {rec('Priority') && <span className={rec('Priority') === 'P1' ? 'text-danger font-semibold' : ''}>{rec('Priority')}</span>}
+            {rec('Register duration') && <span>· {rec('Register duration')}</span>}
+          </span>
+        )}
+      </div>
       <StaleNote stale={production.stale} goToStage={goToStage} />
-      <div className="formgrid">
-        {production.brief.map((f) => (
-          <label key={f.id}>
-            {f.label}
-            <input
-              defaultValue={f.value}
-              onBlur={(e) => {
-                if (e.target.value !== f.value) {
-                  mutate(() => api.updateBrief(production.id, f.id, e.target.value), applyProduction);
-                }
-              }}
-            />
-          </label>
-        ))}
-      </div>
-      <div className="notice">
-        <Sparkles /> Template defaults are editable. Changing a default does not modify the source
-        template unless you explicitly save it back.
-      </div>
+
+      {verify && (
+        <div className="notice warn items-start">
+          <AlertCircle />
+          <span><b>Verify before recording.</b> {verify}</span>
+        </div>
+      )}
+
+      {rec('Completed asset') && (
+        <div className="notice items-start">
+          <Check />
+          <span><b>Already made:</b> {rec('Completed asset')}{rec('Completed confirmed') ? ` — ${rec('Completed confirmed').toLowerCase()}` : ''}</span>
+        </div>
+      )}
+
+      {BRIEF_GROUPS.map((g) => {
+        const fields = g.labels.map((l) => byLabel[l]).filter(Boolean);
+        if (!fields.length) return null;
+        return (
+          <section key={g.key} className="mt-[18px]">
+            <h3 className="text-[11px] tracking-[.07em] uppercase text-faint font-semibold m-[0_0_8px]">{g.title}</h3>
+            <div className="grid grid-cols-[1fr_1fr] gap-[12px_14px] lte800:grid-cols-[1fr]">
+              {fields.map((f) => <BriefField key={f.id} f={f} onSave={save} />)}
+            </div>
+          </section>
+        );
+      })}
+
+      {other.length > 0 && (
+        <section className="mt-[18px]">
+          <h3 className="text-[11px] tracking-[.07em] uppercase text-faint font-semibold m-[0_0_8px]">More</h3>
+          <div className="grid grid-cols-[1fr_1fr] gap-[12px_14px] lte800:grid-cols-[1fr]">
+            {other.map((f) => <BriefField key={f.id} f={f} onSave={save} />)}
+          </div>
+        </section>
+      )}
+
+      {record.length > 0 && (
+        <section className="mt-[22px] border border-solid border-line rounded-lg bg-surface-2 p-[12px_14px]">
+          <h3 className="text-[11px] tracking-[.07em] uppercase text-faint font-semibold m-[0_0_10px]">On record</h3>
+          {statuses.length > 0 && (
+            <div className="flex flex-wrap gap-x-[18px] gap-y-[6px] mb-[10px] text-[12px]">
+              {statuses.map((f) => (
+                <span key={f.id} className="whitespace-nowrap">
+                  <span className="text-muted">{f.label.replace('Status: ', '')}:</span>{' '}
+                  <b className={`font-[560] ${STATUS_TONE(f.value)}`}>{f.value}</b>
+                </span>
+              ))}
+            </div>
+          )}
+          <dl className="grid grid-cols-[150px_1fr] gap-[5px_12px] m-0 text-[12.5px] lte800:grid-cols-[1fr]">
+            {record.filter((f) => !/^(Status: |Register ID|Priority|Register duration|Completed )/.test(f.label)).map((f) => (
+              <React.Fragment key={f.id}>
+                <dt className="text-muted">{f.label}</dt>
+                <dd className="m-0 text-ink-2 min-w-0 break-words">
+                  {/^https?:\/\//.test(f.value)
+                    ? <a href={f.value} target="_blank" rel="noreferrer" className="text-accent underline">{f.value.length > 70 ? `${f.value.slice(0, 70)}…` : f.value}</a>
+                    : f.value}
+                </dd>
+              </React.Fragment>
+            ))}
+          </dl>
+          <p className="text-faint text-[11px] m-[10px_0_0]">Kept from the register and the script pack. Change these at their source and re-import.</p>
+        </section>
+      )}
+
+      {plumbing.length > 0 && (
+        <>
+          <button type="button" className="ghostbtn text-[12px] text-muted p-[3px_0] mt-[14px]" onClick={() => setShowPlumbing((v) => !v)}>
+            {showPlumbing ? 'Hide' : 'Show'} template settings ({plumbing.map((f) => f.value).filter(Boolean).join(' · ')})
+          </button>
+          {showPlumbing && (
+            <div className="grid grid-cols-[1fr_1fr] gap-[12px_14px] mt-[8px] lte800:grid-cols-[1fr]">
+              {plumbing.map((f) => <BriefField key={f.id} f={f} onSave={save} />)}
+            </div>
+          )}
+        </>
+      )}
     </>
   );
 }
@@ -165,6 +274,32 @@ const ROW = 'grid items-center lte800:grid-cols-[26px_1fr]'
   + ' [&>button:last-child:hover]:text-danger [&>button:last-child:hover]:bg-danger-soft';
 const OUTLINE_ROW = 'group/row grid-cols-[24px_minmax(0,1fr)_auto_auto_28px] gap-[10px] border border-solid border-line rounded m-[4px_0] bg-surface hover:border-line-2';
 const ROW_META = 'flex items-center gap-[5px] text-[12px] text-muted lte800:hidden [&_svg]:w-[13px] [&_svg]:h-[13px]';
+
+// Who appears in a section. Every video in this slate is PJB, on camera or as
+// the voice over a screen recording; the label is what the script's speaker
+// ("Pat") is cast from, so it is chosen, never typed.
+const WHO = [
+  ['Pat', 'PJB — on camera'],
+  ['Pat (voice only)', 'PJB — voice only'],
+  ['Visuals only', 'No one — visuals only'],
+];
+function WhoAppears({ value, onChange }) {
+  const known = WHO.some(([v]) => v === value);
+  return (
+    <label className={ROW_META + ' whitespace-nowrap !flex'}>
+      <Users aria-hidden="true" />
+      <select
+        className={'text-[12px] p-[3px_6px] min-w-[150px]' + (value && known ? '' : ' text-warn')}
+        value={known ? value : ''}
+        aria-label="Who appears in this section"
+        onChange={(e) => e.target.value && onChange(e.target.value)}
+      >
+        <option value="">{value ? `${value} — choose who` : 'Choose who appears'}</option>
+        {WHO.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+      </select>
+    </label>
+  );
+}
 
 function Outline({ goToStage }) {
   const { production, applyProduction, mutate } = useStudio();
@@ -209,7 +344,10 @@ function Outline({ goToStage }) {
                 said the same nothing on every row and made each one 67px tall. */}
             {s.purpose && <small className="block text-muted text-[12px] mt-[2px]">{s.purpose}</small>}
           </div>
-          {s.participants && <span className={ROW_META + ' whitespace-nowrap'}><Users /> {s.participants}</span>}
+          <WhoAppears
+            value={s.participants}
+            onChange={(v) => mutate(() => api.updateSection(production.id, s.id, { participants: v }), applyProduction)}
+          />
           {/* The row's width:100% always beat the old 62px here, so 100% it is. */}
           <input
             className="w-full [font-variant-numeric:tabular-nums] text-center p-[5px_6px] lte800:hidden"
@@ -545,115 +683,195 @@ const PROOF_SMALL = 'text-muted text-[11px]';
 // A proof keeps its status class; the status only recolours or fades the card.
 const PROOF_STATUS = { approved: ' border-[#c5e3d5]', rejected: ' border-line opacity-[.65]' };
 
-function Appearance() {
+// Background swatches: the plain light grey the finished PJB videos use, then white and dark.
+const SUBHEAD_PLAN = 'text-[11px] tracking-[.07em] text-faint font-[600] m-[20px_0_8px] uppercase';
+const SWATCHES = ['#f6f6fc', '#ffffff', '#1f2230'];
+const LOOK_TILE = 'relative border border-solid rounded-lg overflow-hidden bg-canvas text-left p-0 cursor-pointer [&>img]:w-full [&>img]:h-[118px] [&>img]:object-cover [&>img]:block';
+
+/**
+ * Who appears in this video, and exactly how — one step. The performer is
+ * PJB unless the outline says otherwise; the look (outfit and setting),
+ * background, frame and motion direction are chosen here and, once approved,
+ * are what the render uses. Consent for people lives in Cast → Collaborators.
+ */
+function PeopleAndLook() {
   const { production, mutate } = useStudio();
+  const [opts, setOpts] = useState(null);
   const [workflow, setWorkflow] = useState(null);
-  const [presenters, setPresenters] = useState([]);
-  const [form, setForm] = useState({
-    presenterId: '', label: 'Approved look', imageUrl: '', outfit: '', background: '', framing: '', notes: '',
-  });
+  const [form, setForm] = useState(null);
+  const [showMotion, setShowMotion] = useState(false);
+  const [defaultNote, setDefaultNote] = useState(null);
 
   const load = useCallback(async () => {
-    const [flow, castable] = await Promise.all([
-      api.workflow(production.id),
-      api.castablePresenters(),
-    ]);
-    const proofable = castable.filter((p) => p.kind !== 'avatar');
+    const [o, flow] = await Promise.all([api.appearanceOptions(production.id), api.workflow(production.id)]);
+    setOpts(o);
     setWorkflow(flow);
-    setPresenters(proofable);
-    setForm((current) => ({
-      ...current,
-      presenterId: current.presenterId || (proofable[0]?.id ? String(proofable[0].id) : ''),
-    }));
+    const performer = o.performers[0];
+    if (!performer) return;
+    // Start from what is approved for this video, else the default, else the house look.
+    const approved = flow.appearances.find((a) => a.presenterId === performer.id && a.status === 'approved' && a.look);
+    const draft = flow.appearances.find((a) => a.presenterId === performer.id && a.status === 'draft' && a.look);
+    const base = approved ?? draft;
+    const d = o.default;
+    setForm({
+      presenterId: performer.id,
+      avatarAssetId: base?.look?.id ?? d?.avatarAssetId ?? performer.looks.find((l) => /sweatshirt/i.test(l.name))?.id ?? performer.looks[0]?.id,
+      backgroundKind: base?.backgroundKind ?? d?.backgroundKind ?? o.settings.backgroundKind,
+      backgroundValue: base?.backgroundValue ?? d?.backgroundValue ?? o.settings.backgroundValue,
+      aspect: base?.aspect ?? d?.aspect ?? o.settings.aspect,
+      resolution: base?.resolution ?? d?.resolution ?? o.settings.resolution,
+      motionPrompt: base?.motionPrompt ?? d?.motionPrompt ?? o.settings.motionPrompt,
+    });
   }, [production.id]);
   useEffect(() => { load(); }, [load]);
 
-  const save = async () => {
+  if (!opts || !workflow) return <p className="muted">Loading…</p>;
+  const performer = opts.performers[0];
+  if (!performer || !form) {
+    return (
+      <>
+        <h2>People &amp; look</h2>
+        <div className="notice warn"><AlertCircle /> No performer with looks yet. Cast a presenter with your HeyGen avatar in Cast.</div>
+      </>
+    );
+  }
+
+  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const proofs = workflow.appearances.filter((a) => a.presenterId === performer.id);
+  const approved = proofs.find((a) => a.status === 'approved');
+  const template = opts.template?.name;
+  const templateId = opts.template?.id;
+  const chosen = performer.looks.find((l) => l.id === form.avatarAssetId);
+
+  const saveLook = async (approve) => {
     try {
-      await mutate(
-        () => api.createAppearance(production.id, { ...form, presenterId: Number(form.presenterId) }),
-        (res) => setWorkflow(res.data)
-      );
-      setForm((current) => ({ ...current, imageUrl: '', outfit: '', background: '', framing: '', notes: '' }));
+      const res = await mutate(() => api.createAppearance(production.id, { ...form, label: chosen?.name }), (r) => setWorkflow(r.data));
+      if (approve) {
+        const newest = res.data.appearances.find((a) => a.presenterId === performer.id && a.status === 'draft');
+        if (newest) await mutate(() => api.updateAppearance(production.id, newest.id, { status: 'approved' }), (r) => setWorkflow(r.data));
+      }
     } catch { /* mutate reports it */ }
   };
-
-  const setStatus = async (proof, status) => {
+  const setStatus = (proof, status) =>
+    mutate(() => api.updateAppearance(production.id, proof.id, { status }), (r) => setWorkflow(r.data)).catch(() => {});
+  const makeDefault = async (scope) => {
     try {
-      await mutate(
-        () => api.updateAppearance(production.id, proof.id, { status }),
-        (res) => setWorkflow(res.data)
-      );
-    } catch { /* mutate reports it */ }
+      await mutate(() => api.saveAppearanceDefault(scope, form), null, { silent: true });
+      const r = await mutate(() => api.applyAppearanceDefault(scope), null);
+      setDefaultNote(r.message);
+      await load();
+    } catch { /* reported */ }
   };
 
-  if (!workflow) return <p className="muted">Loading…</p>;
   return (
     <>
-      <h2>Appearance Approval</h2>
-      <p>Approve the exact look before video generation: performer, outfit, background and framing.</p>
-
-      {presenters.length ? (
-        <div className="border border-solid border-line rounded-lg p-[14px] m-[14px_0] bg-surface-2 grid grid-cols-[1fr_1fr] gap-[10px]">
-          <label className={FORM_LABEL}>Performer
-            <select value={form.presenterId} onChange={(e) => setForm({ ...form, presenterId: e.target.value })}>
-              {presenters.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.kind}</option>)}
-            </select>
-          </label>
-          <label className={FORM_LABEL}>Proof image URL
-            <input value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-              placeholder="Provider preview or approved reference image" />
-          </label>
-          <label className={FORM_LABEL}>Outfit
-            <input value={form.outfit} onChange={(e) => setForm({ ...form, outfit: e.target.value })}
-              placeholder="Black crew neck, no logos" />
-          </label>
-          <label className={FORM_LABEL}>Background
-            <input value={form.background} onChange={(e) => setForm({ ...form, background: e.target.value })}
-              placeholder="Warm neutral studio" />
-          </label>
-          <label className={FORM_LABEL}>Framing
-            <input value={form.framing} onChange={(e) => setForm({ ...form, framing: e.target.value })}
-              placeholder="9:16, waist-up, centered" />
-          </label>
-          <label className={FORM_LABEL}>Notes
-            <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              placeholder="Expression, lighting, continuity notes" />
-          </label>
-          <button className="primary justify-self-start self-end" onClick={save}
-            disabled={!form.presenterId || !form.imageUrl.trim() || !form.outfit.trim() || !form.background.trim() || !form.framing.trim()}>
-            <ImageIcon size={14} /> Save proof for approval
-          </button>
+      <div className="sectiontitle">
+        <div>
+          <h2>People &amp; look</h2>
+          <p>Who appears in this video and exactly how. The approved look is what the render uses.</p>
         </div>
-      ) : (
-        <div className="notice"><Check /> No personal or fictional performer is castable yet. Stock avatars use the selected provider appearance.</div>
-      )}
+      </div>
 
-      <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-[11px] mt-[14px]">
-        {workflow.appearances.map((proof) => (
-          <article className={'grid grid-cols-[120px_1fr] border border-solid rounded-lg overflow-hidden bg-surface ' + proof.status + (PROOF_STATUS[proof.status] ?? ' border-line')} key={proof.id}>
-            {/^https?:\/\//i.test(proof.imageUrl ?? '')
-              ? <img className="w-[120px] h-[150px] object-cover bg-canvas" src={proof.imageUrl} alt={`${proof.presenterName} appearance proof`} />
-              : <div className="w-[120px] h-[150px] object-cover bg-canvas grid place-items-center text-line-2"><ImageIcon /></div>}
-            <div className="flex flex-col gap-[5px] p-[11px] min-w-0">
-              <span className={'rstatus ' + proof.status}>{proof.status}</span>
-              <b className="text-[12.5px]">{proof.presenterName} · {proof.label}</b>
-              <small className={PROOF_SMALL}><strong className="text-ink-2 font-semibold">Outfit</strong> {proof.outfit || '—'}</small>
-              <small className={PROOF_SMALL}><strong className="text-ink-2 font-semibold">Background</strong> {proof.background || '—'}</small>
-              <small className={PROOF_SMALL}><strong className="text-ink-2 font-semibold">Framing</strong> {proof.framing || '—'}</small>
-              {proof.notes && <p className="text-[11.5px] text-muted m-[2px_0]">{proof.notes}</p>}
-              {proof.status === 'draft' && (
-                <div className="flex gap-[6px] mt-auto">
-                  <button onClick={() => setStatus(proof, 'rejected')}>Reject</button>
-                  <button className="primary" onClick={() => setStatus(proof, 'approved')}>
-                    <Check size={13} /> Approve this look
-                  </button>
-                </div>
-              )}
-            </div>
-          </article>
+      <div className={'notice ' + (approved ? '' : 'warn')}>
+        {approved ? <Check /> : <AlertCircle />}
+        <span>
+          <b>{performer.name.replace(/ \(your likeness\)/, '')} — PJB</b> · voice: your local voice ·{' '}
+          {approved ? `approved look: ${approved.look?.name ?? approved.outfit}` : 'no approved look yet — choose one below and approve it'}
+        </span>
+      </div>
+
+      <div className={SUBHEAD_PLAN}>Look — outfit and setting ({performer.looks.length})</div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(118px,1fr))] gap-[8px]">
+        {performer.looks.map((l) => (
+          <button key={l.id} type="button" onClick={() => set({ avatarAssetId: l.id })}
+            className={LOOK_TILE + (l.id === form.avatarAssetId ? ' border-accent [box-shadow:0_0_0_2px_var(--accent)]' : ' border-line hover:border-line-2')}
+            title={l.name}>
+            {l.previewUrl ? <img src={l.previewUrl} alt="" loading="lazy" /> : <div className="h-[118px] grid place-items-center text-faint"><ImageIcon /></div>}
+            <span className="block p-[5px_7px] text-[11px] leading-[1.3] truncate text-ink-2">{l.name}</span>
+            {l.avatarType === 'digital_twin' && <span className="absolute top-[5px] left-[5px] text-[9.5px] bg-ink text-[#fff] rounded-[3px] p-[1px_5px]">VIDEO TWIN</span>}
+          </button>
         ))}
       </div>
+
+      <div className="grid grid-cols-[1fr_1fr_1fr] gap-[12px] mt-[16px] lte800:grid-cols-[1fr]">
+        <label className={FORM_LABEL}>Background
+          <span className="flex items-center gap-[6px]">
+            {SWATCHES.map((c) => (
+              <button key={c} type="button" aria-label={`Background ${c}`} onClick={() => set({ backgroundKind: 'color', backgroundValue: c })}
+                className={'w-[26px] h-[26px] p-0 rounded-full border border-solid ' + (form.backgroundKind === 'color' && form.backgroundValue === c ? 'border-accent [box-shadow:0_0_0_2px_var(--accent)]' : 'border-line')}
+                style={{ background: c }} />
+            ))}
+            <input type="color" aria-label="Custom background colour" className="w-[34px] h-[28px] p-[2px]"
+              value={form.backgroundKind === 'color' ? form.backgroundValue : '#f6f6fc'}
+              onChange={(e) => set({ backgroundKind: 'color', backgroundValue: e.target.value })} />
+          </span>
+          <input className="mt-[6px] font-normal" placeholder="…or an https image URL"
+            value={form.backgroundKind === 'image' ? form.backgroundValue : ''}
+            onChange={(e) => set(e.target.value ? { backgroundKind: 'image', backgroundValue: e.target.value } : { backgroundKind: 'color', backgroundValue: '#f6f6fc' })} />
+        </label>
+        <label className={FORM_LABEL}>Framing
+          <select value={form.aspect} onChange={(e) => set({ aspect: e.target.value })}>
+            {opts.settings.aspects.map((a) => <option key={a} value={a}>{a}{a === '9:16' ? ' — vertical (social)' : a === '16:9' ? ' — widescreen' : ' — square'}</option>)}
+          </select>
+          {chosen?.orientation && ((chosen.orientation === 'portrait') !== (form.aspect === '9:16')) && (
+            <small className="font-normal text-warn">This look was shot {chosen.orientation}; it may be cropped in {form.aspect}.</small>
+          )}
+        </label>
+        <label className={FORM_LABEL}>Resolution
+          <select value={form.resolution} onChange={(e) => set({ resolution: e.target.value })}>
+            {opts.settings.resolutions.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <button type="button" className="ghostbtn mt-[10px] text-[12px] p-[3px_0]" onClick={() => setShowMotion((v) => !v)}>
+        {showMotion ? 'Hide' : 'Edit'} motion direction
+      </button>
+      {showMotion && (
+        <textarea className="w-full min-h-[90px] text-[12.5px] mt-[6px]" value={form.motionPrompt}
+          onChange={(e) => set({ motionPrompt: e.target.value })} aria-label="Motion direction" />
+      )}
+
+      <div className="flex flex-wrap gap-[8px] mt-[14px] items-center">
+        <button className="primary" onClick={() => saveLook(true)} disabled={!form.avatarAssetId}>
+          <Check size={13} /> Approve this look for this video
+        </button>
+        <button onClick={() => saveLook(false)} disabled={!form.avatarAssetId}>Save as draft</button>
+        <span className="text-faint text-[11.5px]">or set it as the starting look for</span>
+        {templateId && <button onClick={() => makeDefault(`template:${templateId}`)}>All {template} videos</button>}
+        <button onClick={() => makeDefault('all')}>Every video</button>
+      </div>
+      {defaultNote && <p className="text-[12px] text-muted m-[8px_0_0]">{defaultNote} — each still needs its own approval.</p>}
+
+      {proofs.length > 0 && (
+        <>
+          <div className={SUBHEAD_PLAN}>Looks for this video</div>
+          <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-[10px] lte800:grid-cols-[1fr]">
+            {proofs.map((proof) => (
+              <article key={proof.id} className={'grid grid-cols-[84px_1fr] border border-solid rounded-lg overflow-hidden bg-surface ' + (PROOF_STATUS[proof.status] ?? ' border-line')}>
+                {/^https?:\/\//i.test(proof.imageUrl ?? '')
+                  ? <img className="w-[84px] h-[104px] object-cover bg-canvas" src={proof.imageUrl} alt="" />
+                  : <div className="w-[84px] h-[104px] bg-canvas grid place-items-center text-line-2"><ImageIcon /></div>}
+                <div className="flex flex-col gap-[3px] p-[9px] min-w-0">
+                  <span className={'rstatus ' + proof.status}>{proof.status}</span>
+                  <b className="text-[12.5px] truncate">{proof.look?.name ?? proof.label}</b>
+                  <small className={PROOF_SMALL}>{proof.background} · {proof.framing}</small>
+                  {proof.status === 'draft' && (
+                    <div className="flex gap-[6px] mt-auto">
+                      <button className="text-[12px] p-[4px_8px]" onClick={() => setStatus(proof, 'rejected')}>Reject</button>
+                      <button className="primary text-[12px] p-[4px_8px]" onClick={() => setStatus(proof, 'approved')}><Check size={12} /> Approve</button>
+                    </div>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+
+      <p className="text-faint text-[11.5px] mt-[16px]">
+        People and consent for the whole workspace are managed in Cast → Collaborators.
+      </p>
     </>
   );
 }

@@ -65,6 +65,7 @@ export const api = {
   invitePerson: (name, role) => post('/people/invite', { name, role }),
   grantConsent: (id, scope) => post(`/people/${id}/consent`, { scope }),
   revokeConsent: (id) => post(`/people/${id}/revoke`),
+  removePerson: (id) => del(`/people/${id}`),
   campaigns: () => get('/campaigns'),
   createCampaign: (body) => post('/campaigns', body),
   deleteCampaign: (id) => del(`/campaigns/${id}`),
@@ -190,6 +191,13 @@ export const api = {
     post(`/productions/${id}/research/${researchId}/review`, { applyBrief }),
   createAppearance: (id, body) => post(`/productions/${id}/appearance`, body),
   updateAppearance: (id, proofId, body) => patch(`/productions/${id}/appearance/${proofId}`, body),
+  appearanceOptions: (id) => get(`/productions/${id}/appearance/options`),
+  scriptTiming: (id) => get(`/productions/${id}/script-timing`),
+  setVoiceSpeed: (id, speed) => patch(`/productions/${id}/voice-speed`, { speed }),
+  keepScript: (id, versionId) => post(`/productions/${id}/script/${versionId}/keep`),
+  listenLine: (id, versionId, lineId) => post(`/productions/${id}/script/${versionId}/listen/${lineId}`),
+  saveAppearanceDefault: (scope, body) => request(`/appearance-defaults/${encodeURIComponent(scope)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  applyAppearanceDefault: (scope) => post(`/appearance-defaults/${encodeURIComponent(scope)}/apply`),
   productionLock: (id) => get(`/productions/${id}/lock`),
 
   // pipeline
@@ -208,4 +216,25 @@ export const api = {
   // Channel names may contain spaces ("Artificial Funny"), so the segment is encoded.
   publish: (id, platform, mode) =>
     post(`/productions/${id}/publications/${encodeURIComponent(platform)}`, { mode }),
+
+  // Your own voice, synthesised on this machine (voice/server.py).
+  register: () => get('/register'),
+  localVoices: () => get('/voices/local'),
+  // The recording goes up as the raw body — it would never fit the JSON limit.
+  createLocalVoice: (name, file, { exaggeration, cfgWeight } = {}) => {
+    const q = new URLSearchParams({ name });
+    if (exaggeration != null) q.set('exaggeration', exaggeration);
+    if (cfgWeight != null) q.set('cfgWeight', cfgWeight);
+    return request(`/voices/local?${q}`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+  },
+  updateLocalVoice: (id, changes) => patch(`/voices/local/${id}`, changes),
+  sampleLocalVoice: (id, text) => post(`/voices/local/${id}/sample`, { text }),
+  pronunciations: () => get('/pronunciations'),
+  savePronunciation: (p) => post('/pronunciations', p),
+  deletePronunciation: (id) => del(`/pronunciations/${id}`),
+  hearPronunciation: (id, voiceId) => post(`/pronunciations/${id}/hear`, { voiceId }),
 };

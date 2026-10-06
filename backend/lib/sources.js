@@ -50,7 +50,10 @@ export function parseScript(text) {
  * nothing here for you to approve. The outline is left alone — an imported
  * script is evidence of a plan, not a replacement for one.
  */
-export function importScript(productionId, text) {
+export function importScript(productionId, text, { status = 'accepted' } = {}) {
+  if (!['accepted', 'proposed'].includes(status)) {
+    throw Object.assign(new Error('status must be accepted or proposed'), { code: 'BAD_STATUS' });
+  }
   const db = getDb();
   const segments = parseScript(text);
   if (!segments.length) {
@@ -65,8 +68,9 @@ export function importScript(productionId, text) {
       (db.prepare('SELECT MAX(version) m FROM script_versions WHERE production_id = ?')
         .get(productionId).m ?? 0) + 1;
     const vid = db
-      .prepare('INSERT INTO script_versions (production_id, version, status) VALUES (?,?,?)')
-      .run(productionId, version, 'accepted').lastInsertRowid;
+      // Recorded as imported so it is never mistaken for the app's own output.
+      .prepare('INSERT INTO script_versions (production_id, version, status, generator_provider) VALUES (?,?,?,?)')
+      .run(productionId, version, status, 'imported').lastInsertRowid;
 
     const ins = db.prepare(
       'INSERT INTO script_segments (script_version_id, scene_id, position, speaker, text) VALUES (?,?,?,?,?)'
@@ -80,6 +84,7 @@ export function importScript(productionId, text) {
 
     return {
       version,
+      status,
       lines: segments.length,
       speakers: [...new Set(segments.map((s) => s.speaker))],
     };
@@ -88,6 +93,9 @@ export function importScript(productionId, text) {
   // An imported script is accepted on arrival, so it crosses the same
   // acceptance boundary as a script approved in the editor. Its production
   // lines should be ready without teaching a second workflow for this source.
+  // A draft written elsewhere still needs your yes: it lands as a proposal you
+  // can edit, accept or reject, and nothing downstream is built from it yet.
+  if (status === 'proposed') return imported;
   return { ...imported, segmentBuild: buildSegments(productionId) };
 }
 

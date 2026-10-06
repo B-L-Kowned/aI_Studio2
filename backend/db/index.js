@@ -93,6 +93,29 @@ const ADDED_COLUMNS = [
   // across fifty companies; the audience is free text because no enum survives
   // fifty companies, and it is the thing that actually changes the script.
   ['campaigns', 'company_id', 'INTEGER'],
+  // The portfolio group a company belongs to (Innovations, More Time…). Fifty
+  // companies in one list only scan when they fall into their verticals.
+  ['companies', 'group_name', 'TEXT'],
+  // A take synthesised on this machine keeps its file here (relative to the
+  // voices folder); a HeyGen take has only its remote audio_url.
+  ['takes', 'local_path', 'TEXT'],
+  // Which avatar GROUP a look belongs to, so a picker offers one person's
+  // looks (20 of Pat) and not every face the account owns. A photo avatar is
+  // sent to HeyGen as a talking photo, not an avatar, so the type is kept too.
+  ['provider_assets', 'group_id', 'TEXT'],
+  ['provider_assets', 'avatar_type', 'TEXT'],
+  ['provider_assets', 'orientation', 'TEXT'],
+  // An appearance proof that is a real render instruction, not prose: the
+  // exact look, background and frame HeyGen will be given once it is approved.
+  ['appearance_proofs', 'avatar_asset_id', 'INTEGER'],
+  ['appearance_proofs', 'background_kind', 'TEXT'],
+  ['appearance_proofs', 'background_value', 'TEXT'],
+  ['appearance_proofs', 'aspect', 'TEXT'],
+  ['appearance_proofs', 'resolution', 'TEXT'],
+  ['appearance_proofs', 'motion_prompt', 'TEXT'],
+  // How fast this video's narration runs, relative to the clone's natural
+  // pace (1 = natural). Set to fit the words to the target length.
+  ['productions', 'voice_speed', 'REAL'],
   ['campaigns', 'purpose', 'TEXT'],
   ['campaigns', 'audience', 'TEXT'],
   // A library video attached to a production, and where it was saved.

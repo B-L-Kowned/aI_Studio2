@@ -11,6 +11,22 @@ const STEP_LABEL = { plan: 'Plan', script: 'Script', render: 'Render', export: '
 const PIP_FILL = { done: 'bg-ok', active: 'bg-warn' };
 const TABULAR = '[font-variant-numeric:tabular-nums]';
 
+// Register titles lead with a Video ID ("V23-01 — GRIDIRON: …"). Rows sort
+// by it, naturally (V2 before V10), so a campaign reads 01, 02 — not by
+// whichever was touched last.
+const ID_RE = /^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*) — (.*)$/;
+const splitTitle = (t) => { const m = ID_RE.exec(t ?? ''); return m ? [m[1], m[2]] : [null, t]; };
+const byVideoId = (a, b) => {
+  const [ia] = splitTitle(a.title); const [ib] = splitTitle(b.title);
+  if (ia && ib) return ia.localeCompare(ib, 'en', { numeric: true });
+  if (ia || ib) return ia ? -1 : 1;
+  return a.title.localeCompare(b.title);
+};
+// The step a production is on, in words: the first one not yet done.
+const currentStep = (steps) => steps.find((s) => s.state !== 'done') ?? steps[steps.length - 1];
+const ROW_ACTIONS = 'flex items-center justify-end gap-[2px] opacity-0 [transition:opacity_.12s] group-hover/prow:opacity-100 focus-within:opacity-100';
+const ICON_BTN = 'ghostbtn p-[6px] text-faint [&:hover:not(:disabled)]:text-ink';
+
 function relTime(iso) {
   if (!iso) return '';
   const secs = Math.max(0, (Date.now() - Date.parse(iso.replace(' ', 'T') + 'Z')) / 1000);
@@ -76,7 +92,7 @@ export default function Campaigns({ go, tabs }) {
     ...collections.campaigns
       .map((c) => ({
         ...c,
-        items: inView.filter((p) => p.campaignId === c.id),
+        items: inView.filter((p) => p.campaignId === c.id).sort(byVideoId),
         real: true,
       }))
       // A campaign belonging to the other program goes away entirely. An empty
@@ -184,20 +200,22 @@ export default function Campaigns({ go, tabs }) {
                     that actually reaches generateScript. Both were in the
                     database and reached this page as null. */}
                 {g.purpose && (
-                  <span className="text-[10.5px] tracking-[.02em] p-[1px_7px] rounded-[999px] bg-accent-soft text-accent border border-solid border-accent-line">
-                    {g.purpose}
+                  <span className="text-[10px] font-semibold tracking-[.05em] uppercase p-[1px_7px] rounded-[999px] bg-accent-soft text-accent border border-solid border-accent-line">
+                    {g.purpose === 'gtm' ? 'GTM' : g.purpose}
                   </span>
                 )}
-                <span className="text-[10px] tracking-[.05em] uppercase text-muted border border-solid border-line-2 rounded-sm p-[1px_6px]">
-                  {g.mode}
-                </span>
+                {g.mode === 'comedy' && (
+                  <span className="text-[10px] tracking-[.05em] uppercase text-muted border border-solid border-line-2 rounded-sm p-[1px_6px]">
+                    {g.mode}
+                  </span>
+                )}
                 <span className={`text-[11px] text-muted ${TABULAR} bg-canvas rounded-[20px] p-[1px_8px]`}>
                   {g.items.length}
                 </span>
                 {/* Audience is free text: it truncates rather than pushing the counts off the row. */}
                 {g.audience && (
-                  <span className="text-[11px] text-faint italic truncate max-w-[340px] min-w-0" title={g.audience}>
-                    {g.audience}
+                  <span className="text-[11.5px] text-muted truncate max-w-[420px] min-w-0" title={g.audience}>
+                    {g.audience.replace(/\s+—\s+proposed$/i, '')}
                   </span>
                 )}
                 {!visible && <span className="conn off"><Lock size={11} /> {g.mode} only</span>}
@@ -209,7 +227,7 @@ export default function Campaigns({ go, tabs }) {
                     needed, so the header keeps only what is unique to it. */}
                 {g.real && g.items.length === 0 && (
                   <button
-                    className="ghostbtn danger"
+                    className="ghostbtn p-[6px] text-faint [&:hover:not(:disabled)]:text-danger"
                     title="Delete this empty campaign"
                     onClick={() => mutate(() => api.deleteCampaign(g.id), null).then(reload)}
                   >
@@ -227,7 +245,7 @@ export default function Campaigns({ go, tabs }) {
               ) : (
                 g.items.map((p) => (
                   <div
-                    className={'grid grid-cols-[1fr_132px_132px] lte760:grid-cols-[1fr_auto] items-center gap-[12px] p-[0_14px_0_0] [border-bottom:1px_solid_var(--line)] last:[border-bottom:0] hover:bg-surface-2'
+                    className={'group/prow grid grid-cols-[1fr_150px_150px] lte760:grid-cols-[1fr_auto] items-center gap-[12px] p-[0_14px_0_0] [border-bottom:1px_solid_var(--line)] last:[border-bottom:0] hover:bg-surface-2'
                       + (p.id === production.id ? ' [box-shadow:inset_2px_0_0_var(--ink)]' : '')}
                     key={p.id}
                   >
@@ -236,17 +254,23 @@ export default function Campaigns({ go, tabs }) {
                       onClick={() => open(p.id)}
                       disabled={!visible}
                     >
-                      <span className="flex items-center gap-[7px] text-[13.5px] font-[520]">
-                        {p.title}
+                      <span className="flex items-center gap-[9px] text-[13.5px] font-[520] min-w-0">
+                        {splitTitle(p.title)[0] && (
+                          <code className="flex-none text-[11px] font-semibold text-ink-2 bg-canvas border border-solid border-line rounded-[4px] p-[1px_6px] min-w-[56px] text-center">
+                            {splitTitle(p.title)[0]}
+                          </code>
+                        )}
+                        <span className="truncate">{splitTitle(p.title)[1]}</span>
                         {p.id === production.id && (
                           <em className="not-italic text-[10px] text-ok inline-flex items-center gap-[3px] border border-solid border-[#c5e3d5] bg-ok-soft rounded-[20px] p-[1px_6px]">
                             <Check size={11} /> open
                           </em>
                         )}
                       </span>
-                      <span className={`block text-[11.5px] text-muted mt-[2px] ${TABULAR}`}>
-                        {p.counts.sections} sections · {p.counts.scenes} scenes · {p.targetRuntime}
-                        {p.updatedAt && ` · ${relTime(p.updatedAt)}`}
+                      <span className={`block text-[11.5px] text-muted mt-[2px] ${TABULAR} ${splitTitle(p.title)[0] ? 'pl-[65px]' : ''}`}
+                        title={p.updatedAt ? `Updated ${relTime(p.updatedAt)}` : undefined}>
+                        {p.targetRuntime} target · {p.counts.sections} section{p.counts.sections === 1 ? '' : 's'}
+                        {p.counts.scenes > 0 && ` · ${p.counts.scenes} scene${p.counts.scenes === 1 ? '' : 's'}`}
                       </span>
                     </button>
 
@@ -257,15 +281,19 @@ export default function Campaigns({ go, tabs }) {
                           className={`${s.state} w-[16px] h-[4px] rounded-[2px] block ${PIP_FILL[s.state] ?? 'bg-line'}`}
                         />
                       ))}
-                      <span className={`text-[10.5px] text-faint ml-[5px] ${TABULAR}`}>{p.stage}/5</span>
+                      <span className="text-[11px] text-muted ml-[7px] whitespace-nowrap">{STEP_LABEL[currentStep(p.steps)?.key] ?? ''}</span>
                     </div>
 
-                    <div className="flex items-center justify-end gap-[4px]">
+                    <div className="flex items-center justify-end gap-[6px]">
                       {p.stale > 0 && (
                         <em className="not-italic text-[11px] text-warn inline-flex items-center gap-[4px] whitespace-nowrap" title={Object.values(p.staleDetail)[0]?.reason}>
-                          <AlertCircle size={12} /> {p.stale} stale
+                          <AlertCircle size={12} /> Plan changed
                         </em>
                       )}
+                      {p.dueAt && dating !== p.id && (
+                        <span className="font-mono text-[11px] text-ink-2 whitespace-nowrap" title={`Due ${p.dueAt}`}>Due {p.dueAt.slice(5)}</span>
+                      )}
+                      <div className={ROW_ACTIONS + (dating === p.id ? ' !opacity-100' : '')}>
                       {/* The schedule tells you to set deadlines here, so they
                           are settable here. A date is what makes a production
                           schedulable rather than just present. */}
@@ -281,30 +309,29 @@ export default function Campaigns({ go, tabs }) {
                             refreshProductions();
                           }}
                           onKeyDown={(e) => e.key === 'Escape' && setDating(null)}
+                          onBlur={() => setDating(null)}
                         />
                       ) : (
-                        <button
-                          className={'ghostbtn' + (p.dueAt ? ' text-ink-2' : '')}
-                          title={p.dueAt ? `Due ${p.dueAt}` : 'Set a deadline'}
-                          onClick={() => setDating(p.id)}
-                        >
-                          <CalendarDays size={13} />
-                          {p.dueAt && <span className="font-mono text-[11px] not-italic font-normal leading-[normal] ml-[4px]">{p.dueAt.slice(5)}</span>}
+                        <button className={ICON_BTN} title={p.dueAt ? `Due ${p.dueAt} — change` : 'Set a deadline'}
+                          aria-label="Set a deadline" onClick={() => setDating(p.id)}>
+                          <CalendarDays size={14} />
                         </button>
                       )}
-                      <button className="ghostbtn" title="Rename" onClick={() => setRenaming(p)}>
-                        <Pencil size={13} />
+                      <button className={ICON_BTN} title="Rename" aria-label="Rename" onClick={() => setRenaming(p)}>
+                        <Pencil size={14} />
                       </button>
                       {/* A list you cannot remove anything from fills up with
                           everything you ever tried. The endpoint existed the
                           whole time; nothing in the UI reached it. */}
                       <button
-                        className="ghostbtn danger"
+                        className="ghostbtn p-[6px] text-faint [&:hover:not(:disabled)]:text-danger [&:hover:not(:disabled)]:bg-danger-soft"
                         title={`Delete "${p.title}"`}
+                        aria-label="Delete"
                         onClick={() => setDeleting(p)}
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={14} />
                       </button>
+                      </div>
                     </div>
                   </div>
                 ))

@@ -92,6 +92,13 @@ export default function PeoplePage({ compact, tabs }) {
                       ))}
                     </>
                   )}
+                  {!/owner/i.test(p.role) && (
+                    <button className="text-[12px] p-[6px_9px] m-0 text-danger" onClick={async () => {
+                      if (!window.confirm(`Remove ${p.name}? Their consent record is deleted; productions are not affected.`)) return;
+                      try { await mutate(() => api.removePerson(p.id), null); } catch { return; }
+                      await refreshPeople(); setManaging(null);
+                    }}>Remove {p.name}</button>
+                  )}
                   <button className="text-[12px] p-[6px_9px] m-0" onClick={() => setManaging(null)}>Cancel</button>
                 </div>
               ) : (
@@ -112,8 +119,8 @@ export default function PeoplePage({ compact, tabs }) {
       <>
         <div className="sectiontitle">
           <div>
-            <h2>People in this production</h2>
-            <p>Use approved avatars, real footage, or a hybrid.</p>
+            <h2>People and consent</h2>
+            <p>Shared across every production in this workspace.</p>
           </div>
           {inviteBtn}
         </div>

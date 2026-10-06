@@ -464,3 +464,30 @@ CREATE TABLE IF NOT EXISTS companies (
   position   INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- How a word is SAID, for the local voice. The script keeps the brand as it is
+-- written; only the text sent to the speech model is rewritten. "Bialkowned"
+-- read cold comes out wrong, and it is in every one of 150 videos.
+CREATE TABLE IF NOT EXISTS pronunciations (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  term       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  say_as     TEXT NOT NULL,
+  note       TEXT NOT NULL DEFAULT '',
+  checked    INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- The look a kind of video starts from ("all company overviews in the
+-- quarter-zip"). Applying a default creates DRAFT proofs; each video's look is
+-- still approved on its own, because approval is of what that video shows.
+CREATE TABLE IF NOT EXISTS appearance_defaults (
+  scope            TEXT PRIMARY KEY,          -- 'all' or 'template:<template id>'
+  presenter_id     INTEGER REFERENCES presenters(id) ON DELETE CASCADE,
+  avatar_asset_id  INTEGER REFERENCES provider_assets(id) ON DELETE SET NULL,
+  background_kind  TEXT NOT NULL DEFAULT 'color',
+  background_value TEXT NOT NULL DEFAULT '#f6f6fc',
+  aspect           TEXT NOT NULL DEFAULT '9:16',
+  resolution       TEXT NOT NULL DEFAULT '1080p',
+  motion_prompt    TEXT NOT NULL DEFAULT '',
+  updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
