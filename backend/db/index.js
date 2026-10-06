@@ -116,6 +116,11 @@ const ADDED_COLUMNS = [
   // How fast this video's narration runs, relative to the clone's natural
   // pace (1 = natural). Set to fit the words to the target length.
   ['productions', 'voice_speed', 'REAL'],
+  // A scene is a row of the shot list: what is on screen while a section of
+  // the script plays. `purpose` holds the shot detail.
+  ['scenes', 'shot_type', 'TEXT'],
+  ['scenes', 'onscreen_text', "TEXT NOT NULL DEFAULT ''"],
+  ['scenes', 'captured', 'INTEGER NOT NULL DEFAULT 0'],
   ['campaigns', 'purpose', 'TEXT'],
   ['campaigns', 'audience', 'TEXT'],
   // A library video attached to a production, and where it was saved.

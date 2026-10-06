@@ -79,7 +79,9 @@ export function importScript(productionId, text, { status = 'accepted' } = {}) {
 
     // An imported script is already agreed, so the gates it would have passed
     // through are marked passed rather than left to be clicked through.
-    db.prepare('UPDATE productions SET outline_approved = 1, scenes_approved = 1 WHERE id = ?')
+    // The outline is evidenced by the script; the visuals are not — they are
+    // planned and approved in Visuals, not assumed from an imported text.
+    db.prepare('UPDATE productions SET outline_approved = 1 WHERE id = ?')
       .run(productionId);
 
     return {

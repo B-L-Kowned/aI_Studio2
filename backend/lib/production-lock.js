@@ -61,8 +61,8 @@ export function productionLock(productionId) {
     production.outline_approved ? 'Approved.' : 'Approve the outline.', 'Plan · Outline'
   ));
   gates.push(gate(
-    'scenes', 'Scene plan', production.scenes_approved ? 'pass' : 'block',
-    production.scenes_approved ? 'Approved.' : 'Develop and approve the scene plan.', 'Plan · Scenes'
+    'scenes', 'Visuals', production.scenes_approved ? 'pass' : 'block',
+    production.scenes_approved ? 'Shot list approved.' : 'Plan what is on screen for each section and approve it.', 'Plan · Visuals'
   ));
   gates.push(gate(
     'script', 'Script', accepted && !accepted.stale ? 'pass' : 'block',

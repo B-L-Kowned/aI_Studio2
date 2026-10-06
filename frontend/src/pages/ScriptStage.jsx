@@ -94,7 +94,8 @@ export default function ScriptStage({ goToStage }) {
   if (!state || !workflow || !timing) return <LoadState error={loadError} retry={() => load().catch(setLoadError)} label="Loading script…" />;
 
   const researchGate = workflow.lock?.gates.find((g) => g.key === 'research');
-  const ready = production.outlineApproved && production.scenesApproved && researchGate?.status !== 'block';
+  // Writing needs an approved structure; the shot list is planned beside the script, not before it.
+  const ready = production.outlineApproved && researchGate?.status !== 'block';
   const apply = (res) => { setState(res.data); setDrafts({}); };
   const imported = latest?.generatorProvider === 'imported';
   const editable = latest?.status === 'proposed';
@@ -150,10 +151,9 @@ export default function ScriptStage({ goToStage }) {
 
       {!ready && (
         <div className="notice warn">
-          <Lock /> Locked until source evidence, the outline and scenes are approved in Plan.
+          <Lock /> Locked until source evidence and the outline are approved in Plan.
           {' '}Research: {researchGate?.status === 'pass' ? 'approved' : researchGate?.detail ?? 'not approved'} ·
-          {' '}Outline: {production.outlineApproved ? 'approved' : 'not approved'} ·
-          {' '}Scenes: {production.scenesApproved ? 'approved' : 'not approved'}
+          {' '}Outline: {production.outlineApproved ? 'approved' : 'not approved'}
         </div>
       )}
 

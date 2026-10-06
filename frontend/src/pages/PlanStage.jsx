@@ -8,7 +8,7 @@ import { toSeconds, toClock } from '../utils/format.js';
 import { api } from '../services/api.js';
 
 // People and Appearance were two steps for one decision; they are one now.
-const VIEWS = ['Brief', 'Outline', 'Scenes', 'People & look', 'Sources', 'Decisions'];
+const VIEWS = ['Brief', 'Outline', 'Visuals', 'People & look', 'Sources', 'Decisions'];
 
 export default function PlanStage({ goToStage }) {
   const [view, setView] = useState('Outline');
@@ -47,7 +47,7 @@ export default function PlanStage({ goToStage }) {
         )}
         {view === 'Brief' && <Brief goToStage={goToStage} />}
         {view === 'Outline' && <Outline goToStage={goToStage} />}
-        {view === 'Scenes' && <Scenes goToStage={goToStage} />}
+        {view === 'Visuals' && <Visuals goToStage={goToStage} />}
         {view === 'People & look' && <PeopleAndLook />}
         {view === 'Sources' && <Sources />}
         {view === 'Decisions' && <Decisions />}
@@ -381,62 +381,108 @@ function Outline({ goToStage }) {
           disabled={production.outlineApproved}
           onClick={() => mutate(() => api.approveOutline(production.id), applyProduction)}
         >
-          {production.outlineApproved ? <><Check size={15} /> Outline approved</> : 'Approve outline → Develop scenes'}
+          {production.outlineApproved ? <><Check size={15} /> Outline approved</> : 'Approve outline'}
         </button>
       </div>
     </>
   );
 }
 
-function Scenes({ goToStage }) {
-  const { production, applyProduction, mutate } = useStudio();
+// What a section looks like on screen, and what the editor needs to make it.
+const SHOT_HINT = {
+  camera: 'PJB speaking to camera in the approved look',
+  screen: 'What to record, step by step — e.g. Sign in → create a goal → invite a partner',
+  diagram: 'What the graphic shows — e.g. three layers: parent → verticals → city',
+  broll: 'Footage to use — e.g. a homeowner at the front door',
+  title: 'Words on the card',
+};
+const SHOT_TONE = {
+  camera: 'bg-accent-soft text-accent border-accent-line', screen: 'bg-ok-soft text-ok border-[#c5e3d5]',
+  diagram: 'bg-warn-soft text-warn border-warn-line', broll: 'bg-surface-2 text-ink-2 border-line', title: 'bg-surface-2 text-ink-2 border-line',
+};
+
+/**
+ * Visuals: the shot list. For each section of the outline — what is on
+ * screen while those lines are spoken. For screen-recording videos it is
+ * also the recording checklist.
+ */
+function Visuals({ goToStage }) {
+  const { production, mutate } = useStudio();
+  const [v, setV] = useState(null);
+  const load = useCallback(() => api.visuals(production.id).then(setV), [production.id]);
+  useEffect(() => { load(); }, [load]);
+
+  if (!v) return <p className="muted">Loading…</p>;
+  const save = (row, patch) => mutate(() => api.updateVisual(production.id, row.id, patch), (r) => setV(r.data), { silent: true }).catch(() => {});
+  const recordable = v.rows.filter((r) => r.shotType === 'screen');
+  const captured = recordable.filter((r) => r.captured).length;
 
   return (
     <>
       <div className="sectiontitle">
         <div>
-          <h2>Scenes</h2>
-          <p>Decide who is present, what is shown and what each scene accomplishes before scripting.</p>
+          <h2>Visuals</h2>
+          <p>What is on screen while each part of the script plays. Sections follow the outline.</p>
         </div>
-        <button onClick={() => mutate(() => api.addScene(production.id, {}), applyProduction)}>+ Scene</button>
+        {recordable.length > 0 && (
+          <span className={`text-[12px] ${captured === recordable.length ? 'text-ok' : 'text-muted'}`}>
+            Screens recorded: <b>{captured} of {recordable.length}</b>
+          </span>
+        )}
       </div>
 
       <StaleNote stale={production.stale} goToStage={goToStage} />
-
       {!production.outlineApproved && (
-        <div className="notice warn">
-          <Lock /> Approve the outline first — scenes are generated from approved sections.
-        </div>
+        <div className="notice warn"><Lock /> Approve the outline first — the shot list follows its sections.</div>
       )}
 
-      {production.scenes.map((s) => (
-        <div className={ROW + ' grid-cols-[30px_minmax(0,1fr)_auto_auto_30px] gap-[12px] border-b border-b-line [border-bottom-style:solid] p-[13px_0]'} key={s.id}>
-          <div className="w-[32px] h-[32px] bg-canvas border border-solid border-line rounded grid place-items-center text-muted [&_svg]:w-[15px] [&_svg]:h-[15px]"><Video /></div>
-          <div>
-            <b className="text-[13.5px] font-[560]">Scene {s.ref} — {s.title}</b>
-            {s.purpose && <p className="text-muted m-[3px_0_0] text-[12px]">{s.purpose}</p>}
+      {v.rows.map((r) => (
+        <section key={r.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-[16px] border border-solid border-line rounded-lg bg-surface p-[12px_14px] mb-[10px] lte800:grid-cols-[1fr]">
+          <div className="min-w-0">
+            <div className="flex items-baseline gap-[8px] mb-[6px]">
+              <code className="text-[11px] text-faint">{String(r.ref).padStart(2, '0')}</code>
+              <b className="text-[13.5px] font-[580]">{r.title}</b>
+              <span className="text-[11.5px] text-muted [font-variant-numeric:tabular-nums]">{r.runtime}</span>
+            </div>
+            {r.lines.length ? (
+              <ol className="m-0 p-0 list-none flex flex-col gap-[4px]">
+                {r.lines.map((l) => (
+                  <li key={l.id} className="text-[12.5px] leading-[1.5] text-ink-2 [border-left:2px_solid_var(--line)] pl-[8px]">{l.text}</li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-faint text-[12px] m-0">No script lines here yet.</p>
+            )}
           </div>
-          {s.participants && <span className={ROW_META}><Users /> {s.participants}</span>}
-          <span className={ROW_META}><Clock /> {s.runtime}</span>
-          <button onClick={() => mutate(() => api.deleteScene(production.id, s.id), applyProduction)}>
-            <Trash2 size={14} />
-          </button>
-        </div>
+
+          <div className="flex flex-col gap-[8px] min-w-0">
+            <div className="flex flex-wrap gap-[5px]" role="group" aria-label={`What is on screen in ${r.title}`}>
+              {v.shots.map((s) => (
+                <button key={s.id} type="button" onClick={() => r.shotType !== s.id && save(r, { shotType: s.id })}
+                  className={'text-[11.5px] p-[4px_10px] rounded-full border border-solid ' + (r.shotType === s.id ? SHOT_TONE[s.id] + ' font-semibold' : 'bg-surface text-muted border-line hover:border-line-2')}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <textarea className="w-full min-h-[58px] text-[12.5px] leading-[1.5] resize-y" defaultValue={r.detail}
+              key={`${r.id}-${r.shotType}`} placeholder={SHOT_HINT[r.shotType]} aria-label="What is shown"
+              onBlur={(e) => e.target.value !== r.detail && save(r, { detail: e.target.value })} />
+            <input className="text-[12px]" defaultValue={r.onscreenText} placeholder="On-screen text or caption (optional)"
+              aria-label="On-screen text" onBlur={(e) => e.target.value !== r.onscreenText && save(r, { onscreenText: e.target.value })} />
+            {r.shotType === 'screen' && (
+              <label className="flex items-center gap-[7px] text-[12px] text-ink-2 cursor-pointer">
+                <input type="checkbox" checked={r.captured} onChange={(e) => save(r, { captured: e.target.checked })} />
+                Recorded — the screen capture for this section exists
+              </label>
+            )}
+          </div>
+        </section>
       ))}
 
       <div className="actions">
-        <button
-          disabled={!production.outlineApproved}
-          onClick={() => mutate(() => api.developScenes(production.id), applyProduction)}
-        >
-          Develop scenes from outline
-        </button>
-        <button
-          className="primary"
-          disabled={production.scenesApproved || !production.scenes.length}
-          onClick={() => mutate(() => api.approveScenes(production.id), applyProduction)}
-        >
-          {production.scenesApproved ? <><Check size={15} /> Scenes approved</> : 'Approve scenes → Script'}
+        <button className="primary" disabled={v.approved || !v.rows.length || !production.outlineApproved}
+          onClick={() => mutate(() => api.approveVisuals(production.id), (r) => setV(r.data)).catch(() => {})}>
+          {v.approved ? <><Check size={15} /> Visuals approved</> : 'Approve visuals'}
         </button>
       </div>
     </>

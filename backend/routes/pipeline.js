@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { syncVisualRows } from '../lib/visuals.js';
 import { getDb } from '../db/index.js';
 import { markStaleFrom, clearStale, staleSummary } from '../lib/stale.js';
 import {
@@ -85,11 +86,10 @@ router.post(
     // Script is downstream of an approved plan — the handoff makes this explicit.
     if (!p.outline_approved)
       return fail(res, 409, 'OUTLINE_NOT_APPROVED', 'Approve the outline before generating a script');
-    if (!p.scenes_approved)
-      return fail(res, 409, 'SCENES_NOT_APPROVED', 'Approve the scenes before generating a script');
-
+    // One shot-list row per section exists before any dialogue is written.
+    syncVisualRows(id);
     const scenes = db.prepare('SELECT * FROM scenes WHERE production_id = ? ORDER BY position').all(id);
-    if (!scenes.length) return fail(res, 409, 'NO_SCENES', 'Develop scenes before generating a script');
+    if (!scenes.length) return fail(res, 409, 'NO_SCENES', 'Add an outline section before generating a script');
 
     const nextVersion =
       (db.prepare('SELECT MAX(version) m FROM script_versions WHERE production_id = ?').get(id).m ?? 0) + 1;

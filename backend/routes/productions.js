@@ -5,6 +5,7 @@ import { assess, rebalance } from '../lib/producer.js';
 import { templateById, BLANK_TEMPLATE, SOURCE_TYPES } from '../data/templates.js';
 import { allowedModes } from '../lib/capabilities.js';
 import { importScript, copyPlanFrom } from '../lib/sources.js';
+import { syncVisualRows } from '../lib/visuals.js';
 import { analyse } from '../lib/video-analysis.js';
 import { researchSource } from '../lib/research.js';
 import { normaliseWebsiteUrl } from '../lib/web-research.js';
@@ -527,6 +528,8 @@ router.post(
   route(async (req, res) => {
     const id = Number(req.params.id);
     getDb().prepare('UPDATE productions SET outline_approved = 1 WHERE id = ?').run(id);
+    // The shot list starts from the approved structure: one row per section.
+    syncVisualRows(id);
     return send(res, id, 'Outline approved');
   })
 );

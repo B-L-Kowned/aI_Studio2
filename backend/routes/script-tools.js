@@ -5,6 +5,7 @@ import { clearStale } from '../lib/stale.js';
 import { resolveSpeaker, presenterCasting } from '../lib/casting.js';
 import { listLocalVoices, speakLocal, localFile, SPEED_RANGE, LOCAL } from '../lib/local-voice.js';
 import { invalidateTakes } from '../lib/segments.js';
+import { visualsFor, updateVisualRow, approveVisuals } from '../lib/visuals.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -117,6 +118,25 @@ router.get(
     return createReadStream(file).pipe(res);
   })
 );
+
+// ------------------------------------------------------------- visuals
+const visualStatus = { NOT_FOUND: 404, BAD_SHOT: 400, EMPTY: 409, INCOMPLETE: 409 };
+const exists = (id) => getDb().prepare('SELECT 1 FROM productions WHERE id = ?').get(id);
+
+router.get('/:id/visuals', route(async (req, res) => {
+  const id = Number(req.params.id);
+  return exists(id) ? ok(res, visualsFor(id)) : fail(res, 404, 'NOT_FOUND', 'Production not found');
+}));
+
+router.patch('/:id/visuals/:rowId', route(async (req, res) => {
+  try { return ok(res, updateVisualRow(Number(req.params.id), Number(req.params.rowId), req.body ?? {}), 'Shot updated'); }
+  catch (err) { return fail(res, visualStatus[err.code] ?? 400, err.code ?? 'ERROR', err.message); }
+}));
+
+router.post('/:id/visuals/approve', route(async (req, res) => {
+  try { return ok(res, approveVisuals(Number(req.params.id)), 'Visuals approved'); }
+  catch (err) { return fail(res, visualStatus[err.code] ?? 400, err.code ?? 'ERROR', err.message); }
+}));
 
 export { LOCAL };
 export default router;
