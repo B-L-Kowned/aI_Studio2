@@ -133,7 +133,7 @@ const BRIEF_GROUPS = [
   { key: 'video', title: 'The video', labels: ['Audience', 'Goal', 'CTA', 'Format', 'Target runtime'] },
   { key: 'facts', title: 'What we know', labels: ['Company', 'Website', 'Tagline', 'Source summary', 'Proposed demonstration', 'Competitive advantage', 'Core offer', 'Problems solved', 'Who we are reaching', 'Objections to expect'] },
 ];
-const RECORD = /^(Register ID|Register duration|Priority|Status: .*|Existing asset|Script link|Audio link|Final link|Owner \/ next action|Completed asset|Completed confirmed|Script status|Script source|Script review notes|Script length|Script pack ID|Script pack only|Checks pending|Visual plan|Pre-voiceover notes)$/;
+const RECORD = /^(Register ID|Register duration|Priority|Status: .*|Existing asset|Script link|Audio link|Final link|Owner \/ next action|Completed asset|Completed confirmed|Final file|Script status|Script source|Script review notes|Script length|Script pack ID|Script pack only|Checks pending|Visual plan|Pre-voiceover notes)$/;
 const PLUMBING = /^(Template|Type|Primary output|Clip extraction)$/;
 const LONG = 90;
 const STATUS_TONE = (v) => (/complete|approved|verified|published|done/i.test(v) && !/not /i.test(v) ? 'text-ok' : /needs|pending|not /i.test(v) ? 'text-warn' : 'text-ink-2');
@@ -157,6 +157,11 @@ function BriefField({ f, onSave }) {
 function Brief({ goToStage }) {
   const { production, applyProduction, mutate } = useStudio();
   const [showPlumbing, setShowPlumbing] = useState(false);
+  // A finished video stored for this production, so it can be watched here.
+  const [finished, setFinished] = useState(null);
+  useEffect(() => {
+    api.library().then((items) => setFinished(items.find((a) => a.productionId === production.id && a.fileUrl) ?? null)).catch(() => {});
+  }, [production.id]);
   const save = (f, value) => mutate(() => api.updateBrief(production.id, f.id, value), applyProduction).catch(() => {});
   const byLabel = Object.fromEntries(production.brief.map((f) => [f.label, f]));
   const grouped = new Set(BRIEF_GROUPS.flatMap((g) => g.labels));
@@ -191,10 +196,21 @@ function Brief({ goToStage }) {
         </div>
       )}
 
-      {rec('Completed asset') && (
+      {(rec('Completed asset') || finished) && (
         <div className="notice items-start">
           <Check />
-          <span><b>Already made:</b> {rec('Completed asset')}{rec('Completed confirmed') ? ` — ${rec('Completed confirmed').toLowerCase()}` : ''}</span>
+          <span className="flex-1 min-w-0">
+            <b>Already made:</b> {rec('Completed asset') ?? finished?.name}{rec('Completed confirmed') ? ` — ${rec('Completed confirmed').toLowerCase()}` : ''}
+            {finished && (
+              <span className="flex flex-wrap items-start gap-[14px] mt-[10px]">
+                <video className="w-[180px] rounded-md bg-ink" src={finished.fileUrl} controls preload="metadata" />
+                <span className="text-[12px] text-muted break-all max-w-[480px]">
+                  {finished.duration ? `${Math.floor(finished.duration / 60)}:${String(Math.round(finished.duration % 60)).padStart(2, '0')} · ` : ''}
+                  saved at {finished.localPath}
+                </span>
+              </span>
+            )}
+          </span>
         </div>
       )}
 
