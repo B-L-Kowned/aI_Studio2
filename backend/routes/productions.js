@@ -449,7 +449,11 @@ router.post(
       (db.prepare('SELECT MAX(position) m FROM outline_sections WHERE production_id = ?').get(id).m ?? -1) + 1;
     db.prepare(
       'INSERT INTO outline_sections (production_id, position, title, runtime, participants, purpose) VALUES (?,?,?,?,?,?)'
-    ).run(id, next, req.body?.title || 'New Section', req.body?.runtime || '1:00', req.body?.participants || '', '');
+    ).run(id, next, req.body?.title || 'New Section', req.body?.runtime || '1:00',
+      // A new section starts with whoever appears in the one before it.
+      req.body?.participants
+        || db.prepare('SELECT participants FROM outline_sections WHERE production_id = ? ORDER BY position DESC LIMIT 1').get(id)?.participants
+        || '', '');
 
     const affected = markStaleFrom(id, 'plan', 'Outline section added');
     touch(id);

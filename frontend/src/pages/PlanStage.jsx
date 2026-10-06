@@ -281,6 +281,9 @@ const ROW_META = 'flex items-center gap-[5px] text-[12px] text-muted lte800:hidd
 const WHO = [
   ['Pat', 'PJB — on camera'],
   ['Pat (voice only)', 'PJB — voice only'],
+  ['Pat + Guest', 'PJB + guest'],
+  ['Avatar', 'Avatar presenter'],
+  ['Avatar + Avatar', 'Two avatar presenters'],
   ['Visuals only', 'No one — visuals only'],
 ];
 function WhoAppears({ value, onChange }) {
