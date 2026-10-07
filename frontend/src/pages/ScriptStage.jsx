@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { Sparkles, Check, X, Lock, AlertCircle, FileText, Play, Minus, Plus, ChevronDown } from 'lucide-react';
+import { Sparkles, Check, X, Lock, AlertCircle, FileText, Play, Minus, Plus, ChevronDown, Headphones } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
@@ -45,6 +45,7 @@ export default function ScriptStage({ goToStage }) {
   const [drafts, setDrafts] = useState({});           // line id → unsaved text, for live timing
   const [listening, setListening] = useState(null);   // { id, url } | { id, busy }
   const [showVersions, setShowVersions] = useState(false);
+  const [fullRead, setFullRead] = useState(null);     // the whole script in one track
   const lineRefs = useRef({});
 
   const load = useCallback(async () => {
@@ -56,7 +57,20 @@ export default function ScriptStage({ goToStage }) {
   useEffect(() => { load().catch(setLoadError); }, [load]);
 
   const latest = state?.latest;
+
+  useEffect(() => {
+    if (!latest?.id) return undefined;
+    let live = true;
+    api.fullRead(production.id, latest.id).then((r) => live && setFullRead(r)).catch(() => {});
+    return () => { live = false; };
+  }, [production.id, latest?.id]);
+  useEffect(() => {
+    if (fullRead?.state !== 'running') return undefined;
+    const t = setInterval(() => api.fullRead(production.id, latest.id).then(setFullRead).catch(() => {}), 2000);
+    return () => clearInterval(t);
+  }, [fullRead?.state, production.id, latest?.id]);
   const brief = useMemo(() => Object.fromEntries(production.brief.map((b) => [b.label, b.value])), [production.brief]);
+
 
   // ---- timing, recomputed as you type
   const lines = useMemo(() => (latest?.segments ?? []).map((s) => {
@@ -113,6 +127,12 @@ export default function ScriptStage({ goToStage }) {
       const r = await mutate(() => api.listenLine(production.id, latest.id, l.id), null, { silent: true });
       setListening({ id: l.id, url: r.data.url });
     } catch { setListening(null); }
+  };
+  const hearAll = async () => {
+    try {
+      const r = await mutate(() => api.listenAll(production.id, latest.id), null, { silent: true });
+      setFullRead(r.data);
+    } catch { /* mutate reports it */ }
   };
   const nextCheck = () => {
     const ids = lines.filter((l) => l.checks).map((l) => l.id);
@@ -212,6 +232,32 @@ export default function ScriptStage({ goToStage }) {
                 <span className="text-muted">{timing.wpm} wpm</span>
               </span>
             </div>
+
+            <div className="flex flex-wrap items-center gap-[10px] mt-[12px] pt-[12px] [border-top:1px_solid_var(--line)] text-[12.5px]">
+              {fullRead?.state === 'running' ? (
+                <span className="text-ink-2">
+                  <Headphones size={13} className="inline mr-[4px] align-[-2px]" />
+                  Preparing the full read — line {Math.min(fullRead.done + 1, fullRead.total)} of {fullRead.total}…
+                  <span className="text-muted"> (your voice is made on this Mac at about 2× real time)</span>
+                </span>
+              ) : (
+                <button className="text-[12.5px] p-[5px_11px]" onClick={hearAll} disabled={!lines.length}
+                  title="Every line in order, in your voice at this speed — free">
+                  <Headphones size={13} /> {fullRead?.state === 'done' ? 'Rebuild the full read' : 'Hear the whole script'}
+                </button>
+              )}
+              {fullRead?.state === 'done' && fullRead.duration != null && (
+                <span className="text-ink-2">
+                  Runs <b className="font-[560] [font-variant-numeric:tabular-nums]">{clock(fullRead.duration)}</b> spoken
+                  {target > 0 && <span className="text-muted"> · target {clock(target)}</span>}
+                  {fullRead.skipped > 0 && <span className="text-warn"> · {fullRead.skipped} line{fullRead.skipped === 1 ? '' : 's'} with open checks left out</span>}
+                </span>
+              )}
+              {fullRead?.state === 'failed' && <span className="text-danger">{fullRead.error}</span>}
+            </div>
+            {fullRead?.state === 'done' && fullRead.url && (
+              <audio key={fullRead.url} className="w-full h-[34px] mt-[8px]" src={fullRead.url} controls />
+            )}
 
             {target > 0 && !within && (
               <p className="m-[10px_0_0] text-[12.5px] text-ink-2">

@@ -16,6 +16,9 @@ import time
 
 from faster_whisper import WhisperModel
 
+VOCABULARY = ("Bialkowned, bialkowned.com, Pat Bialko, Fixology, Get Liberated, FutureForge Mentors, "
+              "Northstar Fractional Services, Launchpad Collective.")
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -26,7 +29,8 @@ def main() -> int:
 
     started = time.time()
     model = WhisperModel(a.model, device="cpu", compute_type="int8")
-    segments, info = model.transcribe(a.file, beam_size=5, vad_filter=True)
+    # Names Whisper cannot guess: without them "Bialkowned" comes back "BuyElkOwned".
+    segments, info = model.transcribe(a.file, beam_size=5, vad_filter=True, initial_prompt=VOCABULARY)
     segs = [{"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip()} for s in segments]
     if not segs:
         print("No speech found.", file=sys.stderr)

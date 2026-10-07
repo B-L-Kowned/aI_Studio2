@@ -1,15 +1,20 @@
 import { Router } from 'express';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { getDb } from '../db/index.js';
 import { clearStale } from '../lib/stale.js';
 import { resolveSpeaker, presenterCasting } from '../lib/casting.js';
-import { listLocalVoices, speakLocal, localFile, SPEED_RANGE, LOCAL } from '../lib/local-voice.js';
+import { listLocalVoices, speakLocal, localFile, voicesDir, SPEED_RANGE, LOCAL } from '../lib/local-voice.js';
 import { invalidateTakes } from '../lib/segments.js';
 import { visualsFor, updateVisualRow, approveVisuals } from '../lib/visuals.js';
 import { receiveUpload, acceptFinishedVideo, acceptRecording, transcribeInBackground, transcriptionFor } from '../lib/media.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
+const run = promisify(execFile);
 // What a planned script was timed at, used only until the voice has been measured.
 const PLANNING_WPM = 150;
 const secs = (rt) => { const [m, s] = String(rt ?? '0:00').split(':').map(Number); return (m || 0) * 60 + (s || 0); };
@@ -114,6 +119,80 @@ router.get(
   '/:id/script/:versionId/listen/:lineId',
   route(async (req, res) => {
     const file = localFile(`samples/listen/${Number(req.params.versionId)}-${Number(req.params.lineId)}.wav`);
+    if (!file) return fail(res, 404, 'NOT_FOUND', 'Not generated yet');
+    res.type('audio/wav');
+    return createReadStream(file).pipe(res);
+  })
+);
+
+// ------------------------------------------------------------- the whole script, end to end
+// Synthesis runs at ~2× real time, so a full read is built in the background and
+// polled. Each line is cached by voice + speed + text: re-hearing after one edit
+// regenerates one line, not the script.
+const fullReads = new Map(); // versionId → job
+const GAP_SECONDS = 0.35;
+
+async function buildFullRead(job, voice, speed, lines) {
+  const dir = join(voicesDir(), 'samples', 'listen', 'cache');
+  mkdirSync(dir, { recursive: true });
+  const parts = [];
+  for (const l of lines) {
+    const key = createHash('sha1').update(`${voice.id}|${speed ?? ''}|${l.text}`).digest('hex').slice(0, 16);
+    const rel = `samples/listen/cache/${key}.wav`;
+    if (!localFile(rel)) await speakLocal(voice.id, l.text, rel, { speed });
+    parts.push(join(voicesDir(), rel));
+    job.done++;
+  }
+  const gap = join(dir, 'gap.wav');
+  if (!existsSync(gap)) {
+    await run('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'anullsrc=r=24000:cl=mono', '-t', String(GAP_SECONDS), gap]);
+  }
+  const list = join(dir, `${job.versionId}-all.txt`);
+  writeFileSync(list, parts.flatMap((p, i) => (i ? [gap, p] : [p])).map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'));
+  const out = join(voicesDir(), 'samples', 'listen', `${job.versionId}-all.wav`);
+  await run('ffmpeg', ['-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', list, '-ar', '24000', '-ac', '1', out]);
+  const { stdout } = await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', out]);
+  Object.assign(job, { state: 'done', duration: Number(stdout) || null, builtAt: Date.now() });
+}
+
+const fullReadView = (id, job) => job && {
+  state: job.state, done: job.done, total: job.total, skipped: job.skipped, duration: job.duration ?? null, error: job.error ?? null,
+  url: job.state === 'done' ? `/api/productions/${id}/script/${job.versionId}/listen-all/audio?t=${job.builtAt}` : null,
+};
+
+router.post(
+  '/:id/script/:versionId/listen-all',
+  route(async (req, res) => {
+    const db = getDb();
+    const id = Number(req.params.id);
+    const versionId = Number(req.params.versionId);
+    if (!db.prepare('SELECT 1 FROM script_versions WHERE id = ? AND production_id = ?').get(versionId, id)) {
+      return fail(res, 404, 'NOT_FOUND', 'Script version not found');
+    }
+    if (fullReads.get(versionId)?.state === 'running') return ok(res, fullReadView(id, fullReads.get(versionId)));
+    const voice = narrationVoice();
+    if (!voice) return fail(res, 409, 'NO_VOICE', 'Create a local voice in Settings → Your voice first.');
+    const all = db.prepare('SELECT * FROM script_segments WHERE script_version_id = ? ORDER BY position').all(versionId)
+      .filter((l) => l.text.trim());
+    const lines = all.filter((l) => !/\[CONFIRM/i.test(l.text));
+    if (!lines.length) return fail(res, 409, 'UNCONFIRMED', 'Every line has an open [CONFIRM: …] check — resolve them first.');
+    const speed = db.prepare('SELECT voice_speed FROM productions WHERE id = ?').get(id)?.voice_speed ?? undefined;
+    const job = { versionId, state: 'running', done: 0, total: lines.length, skipped: all.length - lines.length };
+    fullReads.set(versionId, job);
+    buildFullRead(job, voice, speed, lines).catch((err) => Object.assign(job, { state: 'failed', error: err.message }));
+    return ok(res, fullReadView(id, job), 'Preparing the full read');
+  })
+);
+
+router.get(
+  '/:id/script/:versionId/listen-all',
+  route(async (req, res) => ok(res, fullReadView(Number(req.params.id), fullReads.get(Number(req.params.versionId))) ?? null))
+);
+
+router.get(
+  '/:id/script/:versionId/listen-all/audio',
+  route(async (req, res) => {
+    const file = localFile(`samples/listen/${Number(req.params.versionId)}-all.wav`);
     if (!file) return fail(res, 404, 'NOT_FOUND', 'Not generated yet');
     res.type('audio/wav');
     return createReadStream(file).pipe(res);
