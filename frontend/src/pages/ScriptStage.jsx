@@ -71,6 +71,21 @@ export default function ScriptStage({ goToStage }) {
   }, [fullRead?.state, production.id, latest?.id]);
   const brief = useMemo(() => Object.fromEntries(production.brief.map((b) => [b.label, b.value])), [production.brief]);
 
+  // A finished video is the length it was published at; there is nothing left
+  // to fit, so no speed or word-count advice. The file's own duration wins: the
+  // transcript's figure is where the speech ends, not where the video does.
+  const published = !!brief['Completed asset'];
+  const recordedLength = /(\d+:\d{2}) as published/.exec(brief['Script length'] ?? '')?.[1] ?? null;
+  const [fileSeconds, setFileSeconds] = useState(null);
+  useEffect(() => {
+    if (!published) return undefined;
+    let live = true;
+    api.library().then((items) => {
+      const f = items.filter((a) => a.productionId === production.id && a.duration && !/^Recording — /.test(a.name)).pop();
+      if (live) setFileSeconds(f?.duration ?? null);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [published, production.id]);
 
   // ---- timing, recomputed as you type
   const lines = useMemo(() => (latest?.segments ?? []).map((s) => {
@@ -199,17 +214,30 @@ export default function ScriptStage({ goToStage }) {
           {/* ---- timing: what this will run, at the voice it will be read in */}
           <section className="border border-solid border-line rounded-lg bg-surface p-[14px_16px] mt-[12px]" aria-label="Timing">
             <div className="flex flex-wrap items-baseline gap-x-[18px] gap-y-[6px]">
+              {published ? (
+                <div>
+                  <span className="text-[26px] font-[620] [font-variant-numeric:tabular-nums] text-ink">
+                    {fileSeconds ? clock(fileSeconds) : recordedLength ?? '—'}
+                  </span>
+                  <span className="text-muted text-[13px]">
+                    {recordedLength || fileSeconds ? ' as published' : ' — the finished video has no length on record'}
+                  </span>
+                  {target > 0 && <span className="text-faint text-[12px] ml-[8px]">planned {clock(target)}</span>}
+                </div>
+              ) : (
               <div>
                 <span className={`text-[26px] font-[620] [font-variant-numeric:tabular-nums] ${tone}`}>{clock(total)}</span>
                 <span className="text-muted text-[13px]"> of {clock(target)} target</span>
                 {target > 0 && <span className={`ml-[8px] text-[12px] font-semibold ${tone}`}>{within ? 'fits' : signed(delta)}</span>}
               </div>
+              )}
               <span className="text-muted text-[12px]">
                 {totalWords} words · {lines.length} lines
                 {openChecks > 0 && <> · <button className="ghostbtn p-0 text-warn text-[12px] underline" onClick={nextCheck}>{openChecks} check{openChecks === 1 ? '' : 's'} open — next</button></>}
               </span>
             </div>
 
+            {!published && <>
             <div className="relative h-[6px] rounded-full bg-canvas mt-[10px] overflow-visible" aria-hidden="true">
               <div className={`h-full rounded-full ${within ? 'bg-ok' : 'bg-warn'}`} style={{ width: `${barPct}%` }} />
               {target > 0 && <div className="absolute top-[-4px] w-[2px] h-[14px] bg-ink" style={{ left: `calc(${targetPct}% - 1px)` }} title={`Target ${clock(target)}`} />}
@@ -232,6 +260,7 @@ export default function ScriptStage({ goToStage }) {
                 <span className="text-muted">{timing.wpm} wpm</span>
               </span>
             </div>
+            </>}
 
             <div className="flex flex-wrap items-center gap-[10px] mt-[12px] pt-[12px] [border-top:1px_solid_var(--line)] text-[12.5px]">
               {fullRead?.state === 'running' ? (
@@ -259,7 +288,7 @@ export default function ScriptStage({ goToStage }) {
               <audio key={fullRead.url} className="w-full h-[34px] mt-[8px]" src={fullRead.url} controls />
             )}
 
-            {target > 0 && !within && (
+            {target > 0 && !within && !published && (
               <p className="m-[10px_0_0] text-[12.5px] text-ink-2">
                 {fitSpeed >= NATURAL_SPEED[0] && fitSpeed <= NATURAL_SPEED[1] ? (
                   <>At {fitSpeed.toFixed(2)}× it lands on {clock(target)} and still sounds natural.{' '}

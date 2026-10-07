@@ -228,6 +228,9 @@ export const api = {
   keepScript: (id, versionId) => post(`/productions/${id}/script/${versionId}/keep`),
   listenAll: (id, versionId) => post(`/productions/${id}/script/${versionId}/listen-all`),
   fullRead: (id, versionId) => get(`/productions/${id}/script/${versionId}/listen-all`),
+  // For an editor (CapCut, Descript): approved audio and the script as text and subtitles.
+  editorKit: (id) => get(`/productions/${id}/editor-kit`),
+  editorKitUrl: (id, file) => `${BASE}/productions/${id}/editor-kit/${file}`,
   listenLine: (id, versionId, lineId) => post(`/productions/${id}/script/${versionId}/listen/${lineId}`),
   saveAppearanceDefault: (scope, body) => request(`/appearance-defaults/${encodeURIComponent(scope)}`, { method: 'PUT', body: JSON.stringify(body) }),
   applyAppearanceDefault: (scope) => post(`/appearance-defaults/${encodeURIComponent(scope)}/apply`),

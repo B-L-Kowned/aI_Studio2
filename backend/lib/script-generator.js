@@ -28,7 +28,8 @@ const BRIDGES = [
 function speakersOf(participants) {
   return String(participants)
     .split(/[+↔,&]/)
-    .map((s) => s.trim())
+    // "Pat (voice only)", "Pat (recorded myself)": how Pat appears, not who speaks.
+    .map((s) => s.replace(/\s*\([^)]*\)\s*$/, '').trim())
     .filter(Boolean);
 }
 

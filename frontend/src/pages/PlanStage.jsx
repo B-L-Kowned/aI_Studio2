@@ -7,6 +7,7 @@ import { useStudio } from '../context/studio-context.jsx';
 import { toSeconds, toClock } from '../utils/format.js';
 import { api } from '../services/api.js';
 import UploadDrop from '../components/UploadDrop.jsx';
+import { SELF_RECORDED, isSelfRecorded } from '../utils/self-recorded.js';
 
 // People and Appearance were two steps for one decision; they are one now.
 const VIEWS = ['Brief', 'Outline', 'Visuals', 'People & look', 'Sources', 'Decisions'];
@@ -342,12 +343,13 @@ const ROW = 'grid items-center lte800:grid-cols-[26px_1fr]'
 const OUTLINE_ROW = 'group/row grid-cols-[24px_minmax(0,1fr)_auto_auto_28px] gap-[10px] border border-solid border-line rounded m-[4px_0] bg-surface hover:border-line-2';
 const ROW_META = 'flex items-center gap-[5px] text-[12px] text-muted lte800:hidden [&_svg]:w-[13px] [&_svg]:h-[13px]';
 
-// Who appears in a section. Every video in this slate is PJB, on camera or as
-// the voice over a screen recording; the label is what the script's speaker
-// ("Pat") is cast from, so it is chosen, never typed.
+// Who appears in a section. Every video in this slate is PJB — an avatar on
+// camera, the voice over a screen recording, or filmed by you; the label is
+// what the script's speaker ("Pat") is cast from, so it is chosen, never typed.
 const WHO = [
   ['Pat', 'PJB — on camera'],
   ['Pat (voice only)', 'PJB — voice only'],
+  [SELF_RECORDED, 'PJB — recorded myself'],
   ['Pat + Guest', 'PJB + guest'],
   ['Avatar', 'Avatar presenter'],
   ['Avatar + Avatar', 'Two avatar presenters'],
@@ -856,6 +858,16 @@ function PeopleAndLook() {
   }, [production.id]);
   useEffect(() => { load(); }, [load]);
 
+  if (isSelfRecorded(production)) {
+    return (
+      <>
+        <h2>People &amp; look</h2>
+        <div className="notice"><Check /> <span><b>PJB — recorded myself.</b> You film and edit this one, so it needs no HeyGen look and no render.
+          Approve the audio in Segments, take the editor kit from Edit, and upload the finished video in Brief — that marks it done.</span></div>
+        <p className="text-faint text-[11.5px] mt-[12px]">To use an avatar instead, change who appears in the Outline.</p>
+      </>
+    );
+  }
   if (!opts || !workflow) return <p className="muted">Loading…</p>;
   const performer = opts.performers[0];
   if (!performer || !form) {

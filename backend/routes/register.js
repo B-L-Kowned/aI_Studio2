@@ -6,11 +6,16 @@ const router = Router();
 
 // The register's Video ID leads the production title: "V14-02 — Goalzie: …".
 // Register IDs (V14-02, O05) and the script pack's own (GTM-03, SRC-NS-ADMIN).
+// Every outline section of a video you film and edit yourself carries this.
+export const SELF_RECORDED = 'Pat (recorded myself)';
+const secs = (rt) => { const [m, s] = String(rt ?? '').split(':').map(Number); return (m || 0) * 60 + (s || 0); };
 const REGISTER_ID = /^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*) — (.*)$/;
 const WORKSTREAM = { V: 'Company', O: 'Outreach', T: 'Training', L: 'Wrapper', A: 'Editions', I: 'Investor', GTM: 'GTM masters', SRC: 'Training' };
 const streamOf = (id) => WORKSTREAM[/^(GTM|SRC)-/.exec(id)?.[1] ?? id[0]] ?? 'Other';
 // Read the furthest true step, in the order the work actually happens.
-const STAGES = ['needs-script', 'draft', 'script', 'audio', 'audio-approved', 'final', 'done'];
+// A draft splits by whether it still holds [CONFIRM: …] checks: one with none
+// only needs your yes.
+const STAGES = ['needs-script', 'draft-checks', 'draft-ready', 'script', 'audio', 'audio-approved', 'final', 'done'];
 
 /**
  * The video register as the app sees it: what the workbook says (priority,
@@ -41,6 +46,13 @@ router.get(
       `SELECT ap.status, pa.name FROM appearance_proofs ap LEFT JOIN provider_assets pa ON pa.id = ap.avatar_asset_id
         WHERE ap.production_id = ? AND ap.status IN ('approved','draft') ORDER BY ap.status = 'approved' DESC, ap.id DESC LIMIT 1`
     );
+    // Open checks in the newest draft (or, with none, the accepted script).
+    const checksOf = db.prepare(
+      `SELECT ss.text FROM script_segments ss WHERE ss.script_version_id = (
+         SELECT id FROM script_versions WHERE production_id = ? AND status != 'rejected'
+          ORDER BY status = 'proposed' DESC, id DESC LIMIT 1)`
+    );
+    const whoOf = db.prepare('SELECT participants FROM outline_sections WHERE production_id = ?');
     const segs = db.prepare(
       `SELECT s.id,
               (SELECT t.heard FROM takes t WHERE t.segment_id = s.id ORDER BY t.version DESC LIMIT 1) AS heard,
@@ -58,19 +70,22 @@ router.get(
       const format = b.Format ?? '';
       const voiceOnly = /screen recording|diagram|graphics|visuals \+ voice/i.test(format) && !/avatar/i.test(format);
       const done = !!b['Completed asset'];
+      const checks = checksOf.all(r.id).reduce((n, l) => n + (l.text.match(/\[CONFIRM/gi) ?? []).length, 0);
+      const who = whoOf.all(r.id);
+      const selfRecorded = who.length > 0 && who.every((w) => w.participants === SELF_RECORDED);
       const stage = done ? 'done'
         : lines.length && rendered === lines.length ? 'final'
         : lines.length && heard === lines.length ? 'audio-approved'
         : lines.some((l) => l.takes) ? 'audio'
         : accepted.get(r.id).n ? 'script'
         // A draft written elsewhere, waiting for your yes.
-        : proposed.get(r.id).n ? 'draft'
+        : proposed.get(r.id).n ? (checks ? 'draft-checks' : 'draft-ready')
         : 'needs-script';
       return {
         id: r.id, videoId, name, workstream: streamOf(videoId),
         company: r.company, group: r.grp, track: r.track,
-        priority: b.Priority || null, format, voiceOnly,
-        runtime: r.target_runtime, registerDuration: b['Register duration'] || null,
+        priority: b.Priority || null, format, voiceOnly, selfRecorded, checks,
+        runtime: r.target_runtime, runtimeSeconds: secs(r.target_runtime), registerDuration: b['Register duration'] || null,
         scriptStatus: b['Script status'] || null,
         inRegister: !b['Script pack only'],
         stage, lines: lines.length, heard, rendered,
@@ -78,9 +93,10 @@ router.get(
         marks: {
           script: done ? 'done' : accepted.get(r.id).n ? 'done' : proposed.get(r.id).n ? 'draft' : 'none',
           audio: done ? 'done' : lines.length && heard === lines.length ? 'done' : lines.some((l) => l.takes) ? 'partial' : 'none',
-          look: done ? 'done' : voiceOnly ? 'n/a' : (() => { const l = lookOf.get(r.id); return l ? (l.status === 'approved' ? 'done' : 'draft') : 'none'; })(),
+          look: done ? 'done' : voiceOnly || selfRecorded ? 'n/a' : (() => { const l = lookOf.get(r.id); return l ? (l.status === 'approved' ? 'done' : 'draft') : 'none'; })(),
           lookName: lookOf.get(r.id)?.name ?? null,
-          video: done ? 'done' : lines.length && rendered === lines.length ? 'done' : rendered ? 'partial' : 'none',
+          // Your own recording is done when its file arrives; there is no render.
+          video: done ? 'done' : selfRecorded ? 'none' : lines.length && rendered === lines.length ? 'done' : rendered ? 'partial' : 'none',
         },
         completedAsset: b['Completed asset'] || null,
         verify: b['Verify first'] || null,

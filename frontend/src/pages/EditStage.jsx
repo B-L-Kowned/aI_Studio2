@@ -1,10 +1,48 @@
-import React, { useState } from 'react';
-import { Play, Scissors, Lock, AlertCircle, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Play, Scissors, Lock, AlertCircle, Check, Download } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { toSeconds, toClock } from '../utils/format.js';
 import { api } from '../services/api.js';
 import { useResource } from '../hooks/use-resource.js';
 import LoadState from '../components/LoadState.jsx';
+import { isSelfRecorded } from '../utils/self-recorded.js';
+
+const KIT_LINK = 'inline-flex items-center gap-[6px] text-[12.5px] p-[6px_11px] rounded-md border border-solid border-line bg-surface text-ink no-underline hover:border-line-2';
+const KIT_OFF = 'inline-flex items-center gap-[6px] text-[12.5px] p-[6px_11px] rounded-md border border-dashed border-line text-faint cursor-not-allowed';
+const clock = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+
+/** The approved audio and the script, ready to drop into CapCut or Descript. */
+function EditorKit({ production }) {
+  const [kit, setKit] = useState(null);
+  useEffect(() => { api.editorKit(production.id).then(setKit).catch(() => setKit(null)); }, [production.id]);
+  if (!kit) return null;
+  const url = (f) => api.editorKitUrl(production.id, f);
+  const link = (on, file, label, title) => (on
+    ? <a className={KIT_LINK} href={url(file)} download title={title}><Download size={13} /> {label}</a>
+    : <span className={KIT_OFF} title={title}><Download size={13} /> {label}</span>);
+
+  return (
+    <section className="border border-solid border-line rounded-lg bg-surface p-[14px_16px] mt-[12px]" aria-label="Editor kit">
+      <div className="flex flex-wrap items-baseline gap-x-[12px]">
+        <b className="text-[13.5px]">Editor kit</b>
+        <span className="text-muted text-[12px]">
+          {kit.lines ? <>{kit.approved} of {kit.lines} lines with approved audio{kit.audioSeconds ? ` · ${clock(kit.audioSeconds)}` : ''}</> : 'No script yet'}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-[8px] mt-[10px]">
+        {link(kit.allApproved, 'full-read.wav', 'Full read (.wav)', kit.allApproved ? 'Every line in order, one file' : 'Approve the audio for every line in Segments first')}
+        {link(kit.approved > 0, 'lines.zip', `Each line (${kit.approved} .wav, zip)`, 'One wav per approved line, numbered in script order')}
+        {link(kit.lines > 0, 'script.txt', 'Script (.txt)', 'Plain text, one line per paragraph')}
+        {link(kit.lines > 0, 'script.srt', 'Subtitles (.srt)', kit.srtTimedTo === 'audio' ? 'Timed to the full read' : `Estimated at ${kit.wpm} wpm`)}
+      </div>
+      <p className="text-faint text-[11.5px] m-[8px_0_0]">
+        {kit.srtTimedTo === 'audio'
+          ? 'The subtitles are timed to the full read, so they line up when both go in at 0:00.'
+          : `The subtitles are estimated at ${kit.wpm} words a minute until every line has approved audio; then they are timed to the full read.`}
+      </p>
+    </section>
+  );
+}
 
 const SUPPORTED = new Set(['Trim / Cut', 'Create Short Clip']);
 
@@ -16,6 +54,15 @@ export default function EditStage() {
   const { data: state, error, reload: load, setData: setState } =
     useResource(() => api.render(production.id), [production.id]);
 
+  if (isSelfRecorded(production)) {
+    return (
+      <div className="stagepane">
+        <h2>Edit</h2>
+        <p>You record and cut this video yourself. Everything the edit needs is here; the finished file goes up in Plan → Brief.</p>
+        <EditorKit production={production} />
+      </div>
+    );
+  }
   if (!state) return <LoadState error={error} retry={load} />;
   const latest = state.latest;
   const apply = (res) => setState(res.data);
@@ -28,6 +75,8 @@ export default function EditStage() {
         Render is an intermediate asset. Edits are non-destructive — each one is recorded as a
         decision and the render itself is never modified.
       </p>
+
+      <EditorKit production={production} />
 
       {!ready && (
         <div className="notice warn">

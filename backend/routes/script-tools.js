@@ -1,26 +1,24 @@
 import { Router } from 'express';
-import { createReadStream, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createReadStream, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { getDb } from '../db/index.js';
 import { clearStale } from '../lib/stale.js';
 import { resolveSpeaker, presenterCasting } from '../lib/casting.js';
 import { listLocalVoices, speakLocal, localFile, voicesDir, SPEED_RANGE, LOCAL } from '../lib/local-voice.js';
 import { invalidateTakes } from '../lib/segments.js';
+import { joinWavs } from '../lib/audio-join.js';
 import { visualsFor, updateVisualRow, approveVisuals } from '../lib/visuals.js';
 import { receiveUpload, acceptFinishedVideo, acceptRecording, transcribeInBackground, transcriptionFor } from '../lib/media.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
-const run = promisify(execFile);
 // What a planned script was timed at, used only until the voice has been measured.
 const PLANNING_WPM = 150;
 const secs = (rt) => { const [m, s] = String(rt ?? '0:00').split(':').map(Number); return (m || 0) * 60 + (s || 0); };
 
 /** The local voice this production's narration is spoken in (the voice cast on "Pat"). */
-function narrationVoice() {
+export function narrationVoice() {
   const p = resolveSpeaker('Pat');
   const v = p ? presenterCasting(p.id)?.voice : null;
   const voices = listLocalVoices();
@@ -130,7 +128,6 @@ router.get(
 // polled. Each line is cached by voice + speed + text: re-hearing after one edit
 // regenerates one line, not the script.
 const fullReads = new Map(); // versionId → job
-const GAP_SECONDS = 0.35;
 
 async function buildFullRead(job, voice, speed, lines) {
   const dir = join(voicesDir(), 'samples', 'listen', 'cache');
@@ -143,16 +140,9 @@ async function buildFullRead(job, voice, speed, lines) {
     parts.push(join(voicesDir(), rel));
     job.done++;
   }
-  const gap = join(dir, 'gap.wav');
-  if (!existsSync(gap)) {
-    await run('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'anullsrc=r=24000:cl=mono', '-t', String(GAP_SECONDS), gap]);
-  }
-  const list = join(dir, `${job.versionId}-all.txt`);
-  writeFileSync(list, parts.flatMap((p, i) => (i ? [gap, p] : [p])).map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'));
   const out = join(voicesDir(), 'samples', 'listen', `${job.versionId}-all.wav`);
-  await run('ffmpeg', ['-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', list, '-ar', '24000', '-ac', '1', out]);
-  const { stdout } = await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', out]);
-  Object.assign(job, { state: 'done', duration: Number(stdout) || null, builtAt: Date.now() });
+  const duration = await joinWavs(parts, out, dir, `${job.versionId}-all.txt`);
+  Object.assign(job, { state: 'done', duration, builtAt: Date.now() });
 }
 
 const fullReadView = (id, job) => job && {

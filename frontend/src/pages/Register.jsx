@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Mic, User, Check, AlertTriangle, ChevronDown, Minus } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Search, Mic, User, Video, Check, AlertTriangle, ChevronDown, Minus } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { PageHead } from '../components/Section.jsx';
@@ -7,7 +7,8 @@ import { PageHead } from '../components/Section.jsx';
 // Where each video is: the furthest step that is actually true.
 const STAGES = [
   { id: 'needs-script', label: 'Needs script', tone: 'bg-surface-2 text-muted border-line' },
-  { id: 'draft', label: 'Draft to approve', tone: 'bg-warn-soft text-warn border-warn-line' },
+  { id: 'draft-ready', label: 'Ready to approve', tone: 'bg-warn-soft text-warn border-warn-line' },
+  { id: 'draft-checks', label: 'Has checks', tone: 'bg-warn-soft text-warn border-warn-line' },
   { id: 'script', label: 'Script approved', tone: 'bg-accent-soft text-accent border-accent-line' },
   { id: 'audio', label: 'Audio made', tone: 'bg-accent-soft text-accent border-accent-line' },
   { id: 'audio-approved', label: 'Audio approved', tone: 'bg-ok-soft text-ok border-[#c5e3d5]' },
@@ -15,6 +16,14 @@ const STAGES = [
   { id: 'done', label: 'Done', tone: 'bg-ink text-[#fff] border-ink' },
 ];
 const stageOf = (id) => STAGES.find((s) => s.id === id) ?? STAGES[0];
+const STAGE_RANK = Object.fromEntries(['needs-script', 'draft-checks', 'draft-ready', 'script', 'audio', 'audio-approved', 'final', 'done'].map((s, i) => [s, i]));
+const SORTS = [
+  ['release', 'Release order'],
+  ['priority', 'Priority'],
+  ['stage', 'Stage — closest to done'],
+  ['runtime', 'Shortest runtime'],
+];
+const PRIORITY_RANK = { P1: 0, P2: 1, P3: 2 };
 const WORKSTREAMS = ['Company', 'Outreach', 'Training', 'Wrapper', 'Editions', 'Investor', 'GTM masters'];
 
 // The four things that have to be true before a video exists, in order.
@@ -24,6 +33,20 @@ const MARKS = [
 const MARK_TEXT = {
   done: 'done', draft: 'waiting for your approval', partial: 'started', none: 'not started', 'n/a': 'not needed',
 };
+// A step that is done, or that this video does not need, is not left to do.
+const settled = (state) => state === 'done' || state === 'n/a';
+
+// The view lives in the address, so opening a video and pressing back returns
+// to it. The last view is also remembered for when you come back by the nav.
+const FILTER_KEYS = ['q', 'stage', 'pri', 'fmt', 'ws', 'co', 'need', 'sort'];
+const VIEW_KEY = 'register-view';
+function initialView() {
+  let search = window.location.search;
+  if (!search) { try { search = sessionStorage.getItem(VIEW_KEY) ?? ''; } catch { /* storage blocked */ } }
+  const p = new URLSearchParams(search);
+  return Object.fromEntries(FILTER_KEYS.map((k) => [k, p.get(k) ?? '']));
+}
+
 const ROW = 'grid grid-cols-[86px_minmax(220px,1.7fr)_minmax(110px,.7fr)_34px_132px_repeat(4,46px)] gap-[10px] items-center p-[9px_14px] lte860:grid-cols-[64px_1fr_auto]';
 const TAG = 'text-[10px] tracking-[.04em] uppercase font-semibold p-[3px_7px] rounded-[3px] whitespace-nowrap border border-solid text-center';
 const CHIP = 'text-[12px] p-[5px_11px] rounded-full border border-solid cursor-pointer whitespace-nowrap [transition:background_.12s]';
@@ -59,31 +82,87 @@ function ChipGroup({ label, value, options, onChange }) {
 export default function Register({ go, tabs }) {
   const { openProduction } = useStudio();
   const [data, setData] = useState(null);
-  const [q, setQ] = useState('');
-  const [stage, setStage] = useState('');
-  const [priority, setPriority] = useState('');
-  const [stream, setStream] = useState('');
-  const [format, setFormat] = useState('');
+  const [view, setView] = useState(initialView);
+  const { q, stage, pri: priority, fmt: format, ws: stream, co: company, need } = view;
+  const sort = view.sort || 'release';
+  const set = (k) => (v) => setView((cur) => ({ ...cur, [k]: v }));
+  const [setQ, setStage, setPriority, setFormat, setStream, setCompany, setNeed, setSort] =
+    ['q', 'stage', 'pri', 'fmt', 'ws', 'co', 'need', 'sort'].map(set);
 
   useEffect(() => { api.register().then(setData).catch(() => setData({ items: [], totals: null })); }, []);
 
-  const shown = useMemo(() => {
+  useEffect(() => {
+    const p = new URLSearchParams();
+    for (const k of FILTER_KEYS) if (view[k] && !(k === 'sort' && view[k] === 'release')) p.set(k, view[k]);
+    const search = p.toString() ? `?${p}` : '';
+    try { sessionStorage.setItem(VIEW_KEY, search); } catch { /* storage blocked */ }
+    if (window.location.search !== search) {
+      try { window.history.replaceState(window.history.state, '', window.location.pathname + search); } catch { /* restricted */ }
+    }
+  }, [view]);
+  // Leaving for another tab of this page: take the register's view out of the address.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const path = window.location.pathname;
+      // A remount (StrictMode, or this tab chosen again) cancels it.
+      setTimeout(() => {
+        if (!mounted.current && window.location.pathname === path && window.location.search) {
+          try { window.history.replaceState(window.history.state, '', path); } catch { /* restricted */ }
+        }
+      }, 0);
+    };
+  }, []);
+
+  // Every filter except stage — the stage chips count within these.
+  const base = useMemo(() => {
     if (!data) return [];
     const needle = q.trim().toLowerCase();
     return data.items.filter((i) =>
-      (!stage || i.stage === stage)
-      && (!priority || i.priority === priority)
+      (!priority || i.priority === priority)
       && (!stream || i.workstream === stream)
+      && (!company || i.company === company)
       && (!format || (format === 'voice') === i.voiceOnly)
+      && (!need || !settled(i.marks?.[need]))
       && (!needle || [i.videoId, i.name, i.company, i.group, i.format].some((v) => v && v.toLowerCase().includes(needle))));
-  }, [data, q, stage, priority, stream, format]);
+  }, [data, q, priority, stream, company, format, need]);
+
+  const shown = useMemo(() => {
+    const rows = base.filter((i) => !stage || i.stage === stage);
+    if (sort === 'release') return rows;
+    const at = new Map(rows.map((r, n) => [r.id, n]));
+    const by = {
+      priority: (a, b) => (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9),
+      stage: (a, b) => STAGE_RANK[b.stage] - STAGE_RANK[a.stage],
+      runtime: (a, b) => (a.runtimeSeconds || Infinity) - (b.runtimeSeconds || Infinity),
+    }[sort];
+    return by ? [...rows].sort((a, b) => by(a, b) || at.get(a.id) - at.get(b.id)) : rows;
+  }, [base, stage, sort]);
+
+  // Companies by vertical, as the Companies tab groups them.
+  const companies = useMemo(() => {
+    const groups = new Map();
+    for (const i of data?.items ?? []) {
+      if (!i.company) continue;
+      const g = i.group || 'No group';
+      if (!groups.has(g)) groups.set(g, new Set());
+      groups.get(g).add(i.company);
+    }
+    return [...groups].sort(([a], [b]) => (a === 'No group') - (b === 'No group') || a.localeCompare(b))
+      .map(([g, set]) => [g, [...set].sort((a, b) => a.localeCompare(b))]);
+  }, [data]);
 
   const open = async (id) => { await openProduction(id); go('Create'); };
-  const filtered = stage || priority || stream || format || q.trim();
+  const filtered = stage || priority || stream || company || format || need || q.trim();
 
   if (!data) return <><PageHead title="Register" tabs={tabs} /><p className="muted">Loading…</p></>;
   const t = data.totals;
-  const count = (key) => shown.filter((i) => i.marks?.[key] === 'done').length;
+  const count = (key) => shown.filter((i) => settled(i.marks?.[key])).length;
+  const stageCount = (id) => base.filter((i) => i.stage === id).length;
+  const SELECT = (on) => 'appearance-none text-[12px] rounded-full p-[5px_30px_5px_12px] cursor-pointer border border-solid max-w-[220px] '
+    + (on ? 'bg-ink text-[#fff] border-ink' : 'bg-surface text-ink-2 border-line');
 
   return (
     <>
@@ -95,10 +174,10 @@ export default function Register({ go, tabs }) {
 
       {t && (
         <div className="flex flex-wrap gap-[6px] mt-[4px]" role="group" aria-label="Filter by stage">
-          <button className={`${CHIP} ${chipTone(!stage)}`} onClick={() => setStage('')}>All {t.all}</button>
+          <button className={`${CHIP} ${chipTone(!stage)}`} onClick={() => setStage('')}>All {base.length}</button>
           {STAGES.filter((s) => t.stages[s.id] || stage === s.id).map((s) => (
             <button key={s.id} className={`${CHIP} ${chipTone(stage === s.id)}`} onClick={() => setStage(stage === s.id ? '' : s.id)}>
-              {s.label} <span className={stage === s.id ? 'opacity-80' : 'text-muted'}>{t.stages[s.id]}</span>
+              {s.label} <span className={stage === s.id ? 'opacity-80' : 'text-muted'}>{stageCount(s.id)}</span>
             </button>
           ))}
         </div>
@@ -115,17 +194,32 @@ export default function Register({ go, tabs }) {
         <ChipGroup label="Format" value={format} onChange={setFormat}
           options={[['', 'All'], ['camera', 'On camera'], ['voice', 'Voice-over']]} />
         <label className="relative flex items-center">
-          <select value={stream} onChange={(e) => setStream(e.target.value)} aria-label="Workstream"
-            className={'appearance-none text-[12px] rounded-full p-[5px_30px_5px_12px] cursor-pointer border border-solid '
-              + (stream ? 'bg-ink text-[#fff] border-ink' : 'bg-surface text-ink-2 border-line')}>
+          <select value={stream} onChange={(e) => setStream(e.target.value)} aria-label="Workstream" className={SELECT(stream)}>
             <option value="">All workstreams</option>
             {WORKSTREAMS.map((w) => <option key={w} value={w}>{w}</option>)}
           </select>
           <ChevronDown size={13} className={`absolute right-[10px] pointer-events-none ${stream ? 'text-[#fff]' : 'text-muted'}`} />
         </label>
+        <label className="relative flex items-center">
+          <select value={company} onChange={(e) => setCompany(e.target.value)} aria-label="Company" className={SELECT(company)}>
+            <option value="">All companies</option>
+            {companies.map(([g, names]) => (
+              <optgroup key={g} label={g}>
+                {names.map((n) => <option key={n} value={n}>{n}</option>)}
+              </optgroup>
+            ))}
+          </select>
+          <ChevronDown size={13} className={`absolute right-[10px] pointer-events-none ${company ? 'text-[#fff]' : 'text-muted'}`} />
+        </label>
+        <label className="relative flex items-center">
+          <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort" className={SELECT(sort !== 'release')}>
+            {SORTS.map(([v, l]) => <option key={v} value={v}>Sort: {l}</option>)}
+          </select>
+          <ChevronDown size={13} className={`absolute right-[10px] pointer-events-none ${sort !== 'release' ? 'text-[#fff]' : 'text-muted'}`} />
+        </label>
         {filtered && (
           <button className="ghostbtn text-[12px] text-accent p-[2px_4px]"
-            onClick={() => { setStage(''); setPriority(''); setStream(''); setFormat(''); setQ(''); }}>
+            onClick={() => setView((cur) => ({ ...Object.fromEntries(FILTER_KEYS.map((k) => [k, ''])), sort: cur.sort }))}>
             Clear filters
           </button>
         )}
@@ -137,9 +231,14 @@ export default function Register({ go, tabs }) {
         <div className={`${ROW} min-h-[36px] bg-surface-2 [border-bottom:1px_solid_var(--line)] text-faint text-[10px] font-semibold tracking-[.06em] uppercase lte860:hidden`}>
           <span>ID</span><span>Video</span><span>Company</span><span>Pri</span><span>Stage</span>
           {MARKS.map(([k, l]) => (
-            <span key={k} className="text-center" title={`${count(k)} of ${shown.length} done`}>
-              {l}<span className="block text-[9.5px] font-normal tracking-normal normal-case text-faint">{count(k)}/{shown.length}</span>
-            </span>
+            <button key={k} type="button" aria-pressed={need === k} onClick={() => setNeed(need === k ? '' : k)}
+              title={need === k ? `Showing videos whose ${l.toLowerCase()} is not done — click to show all` : `${count(k)} of ${shown.length} done — click to show only the ones left`}
+              className={'text-center p-[3px_0] rounded-[4px] [border:0] text-[10px] font-semibold tracking-[.06em] uppercase cursor-pointer '
+                + (need === k ? 'bg-ink text-[#fff]' : 'bg-transparent text-faint hover:bg-surface hover:text-ink-2')}>
+              {l}<span className={'block text-[9.5px] font-normal tracking-normal normal-case ' + (need === k ? 'text-[#fff] opacity-80' : 'text-faint')}>
+                {need === k ? 'not done' : `${count(k)}/${shown.length}`}
+              </span>
+            </button>
           ))}
         </div>
 
@@ -159,8 +258,8 @@ export default function Register({ go, tabs }) {
               <span className="min-w-0">
                 <b className="flex items-center gap-[6px] text-[13px] font-[560] min-w-0">
                   <span className="truncate" title={i.name}>{i.name}</span>
-                  <span className="flex-none text-faint" title={i.voiceOnly ? 'Voice-over — no avatar' : 'On camera'}>
-                    {i.voiceOnly ? <Mic size={12} /> : <User size={12} />}
+                  <span className="flex-none text-faint" title={i.selfRecorded ? 'Recorded by you — no avatar' : i.voiceOnly ? 'Voice-over — no avatar' : 'On camera'}>
+                    {i.selfRecorded ? <Video size={12} /> : i.voiceOnly ? <Mic size={12} /> : <User size={12} />}
                   </span>
                 </b>
                 <small className="block truncate text-faint text-[11px]" title={sub}>{sub}</small>
@@ -169,6 +268,11 @@ export default function Register({ go, tabs }) {
               <span className={`text-[11.5px] font-[600] lte860:hidden ${i.priority === 'P1' ? 'text-danger' : 'text-muted'}`}>{i.priority}</span>
               <span className="flex items-center gap-[5px]">
                 <span className={`${TAG} ${s.tone}`}>{s.label}</span>
+                {i.checks > 0 && i.stage !== 'done' && (
+                  <span className="text-[11px] text-warn font-[600] [font-variant-numeric:tabular-nums]" title={`${i.checks} open [CONFIRM] check${i.checks === 1 ? '' : 's'}`}>
+                    {i.checks}
+                  </span>
+                )}
                 {claimed && <AlertTriangle size={13} className="text-warn" aria-label="Register says complete; nothing here yet" />}
               </span>
               {MARKS.map(([k, l]) => (
@@ -186,7 +290,8 @@ export default function Register({ go, tabs }) {
         <span className="flex items-center gap-[5px]"><Mark state="done" /> done</span>
         <span className="flex items-center gap-[5px]"><Mark state="draft" /> waiting for approval / started</span>
         <span className="flex items-center gap-[5px]"><Mark state="none" /> not started</span>
-        <span className="flex items-center gap-[5px]"><Mark state="n/a" /> not needed (voice-over has no look)</span>
+        <span className="flex items-center gap-[5px]"><Mark state="n/a" /> not needed (voice-over or recorded by you)</span>
+        <span>Click Script, Audio, Look or Video to see only what is left.</span>
       </p>
     </>
   );

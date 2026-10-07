@@ -4,6 +4,7 @@ import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import PaidConfirm from '../components/PaidConfirm.jsx';
+import { isSelfRecorded } from '../utils/self-recorded.js';
 
 // Which pocket pays: every render path is exactly one of these, so the tone
 // carries its whole colour set (the icon inherits it).
@@ -55,6 +56,15 @@ export default function RenderStage() {
     return () => clearTimeout(t);
   }, [live, state, load]);
 
+  if (isSelfRecorded(production)) {
+    return (
+      <div className="stagepane">
+        <h2>Render</h2>
+        <div className="notice"><Check /> <span><b>Recorded by you — nothing to render.</b> Take the approved audio, script and subtitles
+          from Edit → Editor kit, cut it in CapCut or Descript, then upload the finished video in Plan → Brief.</span></div>
+      </div>
+    );
+  }
   if (!state) return <LoadState error={loadError} retry={() => load().catch(setLoadError)} />;
   const latest = state.latest;
   const apply = (res) => setState(res.data);
