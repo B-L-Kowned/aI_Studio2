@@ -18,6 +18,7 @@ import { renderGate } from '../lib/segments.js';
 import { productionLock } from '../lib/production-lock.js';
 import { madeBy } from '../lib/made-by.js';
 import { cleanRecordingAudio } from '../lib/assemble.js';
+import { keepRenderLocally } from '../lib/render-keep.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -354,6 +355,7 @@ async function advanceRenders(productionId) {
       .run(progress, status, r.id);
 
     if (status === 'complete') {
+      keepRenderLocally(r.id);
       const exists = db.prepare('SELECT 1 FROM exports WHERE render_version_id = ?').get(r.id);
       if (!exists) {
         const n = (db.prepare('SELECT MAX(version) m FROM exports WHERE production_id = ?').get(productionId).m ?? 0) + 1;

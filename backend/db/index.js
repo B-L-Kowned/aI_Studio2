@@ -141,6 +141,8 @@ const ADDED_COLUMNS = [
   ['line_takes', 'cuts', 'TEXT'],
   // How this video is finished in the app: clean audio, look, frame, captions.
   ['productions', 'edit_settings', 'TEXT'],
+  // A finished HeyGen render, saved into the video's folder: its link expires.
+  ['render_versions', 'local_path', 'TEXT'],
 ];
 
 function migrate(db) {

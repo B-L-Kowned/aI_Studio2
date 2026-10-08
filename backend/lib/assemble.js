@@ -10,6 +10,8 @@ import { voicesDir } from './local-voice.js';
 import { madeBy } from './made-by.js';
 import { editSettings, keptSpans, PYTHON, MEDIA_TOOLS } from './cleanup.js';
 import { recordFinal } from './media.js';
+import { importLocalVideo } from './video-library.js';
+import { visualsFor } from './visuals.js';
 
 const run = promisify(execFile);
 const SIZE = { '16:9': [1920, 1080], '9:16': [1080, 1920], '1:1': [1080, 1080] };
@@ -140,6 +142,17 @@ async function selfBuild(productionId, settings, preview, dir, out) {
     '-map', '[v]', '-map', '[a]', '-c:v', 'libx264', '-preset', preview ? 'ultrafast' : 'medium', '-crf', preview ? '28' : '19',
     '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', body], { timeout: 2 * 60 * 60 * 1000 });
 
+  // Cutaways: where the shot list has a screen recording for a section, it
+  // fills the frame for that stretch while your voice carries on.
+  let at = 0; const lineSpan = new Map();
+  for (const p of pieces) {
+    const span = lineSpan.get(p.line.id) ?? { start: at, end: at };
+    span.end = at + (p.b - p.a);
+    lineSpan.set(p.line.id, span);
+    at += p.b - p.a;
+  }
+  const cut = await cutaways(productionId, pieces, lineSpan, W, H, preview, body, dir);
+
   // Captions: the words heard, moved onto the new timeline; fillers dropped.
   let chunks = [];
   if (settings.captions) {
@@ -159,9 +172,42 @@ async function selfBuild(productionId, settings, preview, dir, out) {
     }
     chunks = chunk(timeline);
   }
-  if (chunks.length) await burnCaptions(body, out, chunks, W, H, dir);
-  else await run('/bin/mv', [body, out]);
-  return { pieces: pieces.length, missing, captions: chunks.length };
+  if (chunks.length) await burnCaptions(cut.file, out, chunks, W, H, dir);
+  else await run('/bin/mv', [cut.file, out]);
+  return { pieces: pieces.length, missing, captions: chunks.length, cutaways: cut.count };
+}
+
+/**
+ * Lay each section's screen recording over the part of the assembled video
+ * where that section's lines play. Sections are matched to lines the way the
+ * shot list places them (same lines, same order).
+ */
+async function cutaways(productionId, pieces, lineSpan, W, H, preview, body, dir) {
+  const db = getDb();
+  const rows = visualsFor(productionId).rows.filter((r) => r.shotType === 'screen' && r.recording);
+  if (!rows.length) return { file: body, count: 0 };
+  const textOf = new Map(pieces.map((p) => [p.line.text, p.line.id]));
+  const overlays = [];
+  for (const r of rows) {
+    const spans = r.lines.map((l) => lineSpan.get(textOf.get(l.text))).filter(Boolean);
+    const file = db.prepare('SELECT local_path FROM assets WHERE id = ?').get(r.recording.id)?.local_path;
+    if (!spans.length || !file || !existsSync(file)) continue;
+    overlays.push({ file, start: Math.min(...spans.map((x) => x.start)), end: Math.max(...spans.map((x) => x.end)) });
+  }
+  if (!overlays.length) return { file: body, count: 0 };
+  const graph = []; let last = '0:v';
+  overlays.forEach((o, k) => {
+    const len = o.end - o.start;
+    graph.push(`[${k + 1}:v]trim=duration=${f3(len)},setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=${f3(len)},trim=duration=${f3(len)},`
+      + `${fitChain(W, H)},setpts=PTS+${f3(o.start)}/TB[c${k}]`);
+    graph.push(`[${last}][c${k}]overlay=0:0:eof_action=pass:enable='between(t,${f3(o.start)},${f3(o.end)})'[o${k}]`);
+    last = `o${k}`;
+  });
+  const file = join(dir, 'cutaways.mp4');
+  await run('ffmpeg', ['-v', 'error', '-y', '-i', body, ...overlays.flatMap((o) => ['-i', o.file]), '-filter_complex', graph.join(';'),
+    '-map', `[${last}]`, '-map', '0:a', '-c:v', 'libx264', '-preset', preview ? 'ultrafast' : 'medium', '-crf', preview ? '28' : '19',
+    '-c:a', 'copy', '-movflags', '+faststart', file], { timeout: 2 * 60 * 60 * 1000 });
+  return { file, count: overlays.length };
 }
 
 /** Your voice over screen recordings: the full read, with each section's recording (or a title card) on screen. */
@@ -271,6 +317,21 @@ export function assemble(productionId, { preview = true } = {}) {
       const { stdout } = await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', out]);
       Object.assign(job, built, { duration: Number(stdout) || null, bytes: statSync(out).size, finishedAt: Date.now() });
       if (!preview) {
+        // The same edit in the other shapes asked for, filed beside it.
+        job.extras = [];
+        for (const aspect of settings.alsoExport.filter((a) => a !== settings.aspect)) {
+          job.step = `Exporting ${aspect} as well…`;
+          const extraName = `${job.name} ${aspect.replace(':', 'x')}`;
+          const extra = join(out, '..', `${extraName}.mp4`);
+          const sub = mkdtempSync(join(tmpdir(), 'studio-assemble-'));
+          try {
+            const build = made === 'voice' ? voiceBuild : selfBuild;
+            await build(productionId, { ...settings, aspect }, false, sub, extra);
+            await importLocalVideo({ path: extra, productionId, name: extraName });
+            job.extras.push(extraName);
+          } finally { rmSync(sub, { recursive: true, force: true }); }
+        }
+        job.step = null;
         const cuts = getDb().prepare('SELECT cuts FROM line_takes WHERE production_id = ? AND chosen = 1').all(productionId)
           .reduce((n, t) => n + JSON.parse(t.cuts ?? '[]').filter((c) => c.on).length, 0);
         const r = await recordFinal(productionId, out, job.name, { editsApplied: cuts, note: 'exported in the app' });

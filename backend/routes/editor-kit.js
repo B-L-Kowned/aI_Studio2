@@ -97,7 +97,8 @@ export function kitFor(id) {
   sections.forEach((s, i) => { if (s.start == null) s.start = s.end = i ? sections[i - 1].end ?? 0 : 0; });
 
   const r = db.prepare("SELECT * FROM render_versions WHERE production_id = ? AND status = 'complete' ORDER BY version DESC LIMIT 1").get(id);
-  const render = r ? { version: r.version, url: r.video_url, standIn: !r.video_url || /^file:\/\/fixtures\//.test(r.video_url) } : null;
+  const render = r ? { version: r.version, url: r.video_url, local: r.local_path && existsSync(r.local_path) ? r.local_path : null,
+    standIn: !r.video_url || /^file:\/\/fixtures\//.test(r.video_url) } : null;
 
   return { p, stem, source, lines, wpm, allApproved, total, sections, render, madeBy: madeBy(id) };
 }
@@ -138,6 +139,7 @@ export async function renderFile(kit) {
   const dir = cacheDir(kit);
   mkdirSync(dir, { recursive: true });
   const out = join(dir, `render-v${kit.render.version}${kit.render.standIn ? '-stand-in' : ''}.mp4`);
+  if (kit.render.local) return kit.render.local;
   if (existsSync(out)) return out;
   if (!kit.render.standIn) {
     await download(kit.render.url, out);

@@ -246,6 +246,17 @@ function FinishInApp({ production, goToStage }) {
           ))}
         </span>
         {self && check('reframe', 'Keep my face centred', 'Crop around your face when the frame changes shape')}
+        <span className="flex items-center gap-[5px] text-[12.5px]">
+          Also export
+          {['16:9', '9:16', '1:1'].filter((a) => a !== s.aspect).map((a) => {
+            const on = (s.alsoExport ?? []).includes(a);
+            return (
+              <button key={a} type="button" title={a === '9:16' ? 'Shorts, Reels, TikTok' : a === '1:1' ? 'Feeds' : 'YouTube'}
+                onClick={() => set({ alsoExport: on ? s.alsoExport.filter((x) => x !== a) : [...(s.alsoExport ?? []), a] })}
+                className={'text-[11.5px] p-[2px_9px] rounded-full ' + (on ? 'bg-ink text-[#fff] border-ink' : '')}>{on ? '✓ ' : '+ '}{a}</button>
+            );
+          })}
+        </span>
       </div>
 
       {self && (
@@ -297,10 +308,10 @@ function FinishInApp({ production, goToStage }) {
       <div className="flex flex-wrap items-center gap-[10px] mt-[14px]">
         <button onClick={() => act(() => api.previewEdit(production.id))} disabled={busy}><Film size={14} /> Preview</button>
         <button className="primary" onClick={() => act(() => api.exportEdit(production.id))} disabled={busy}><Check size={14} /> Export the finished video</button>
-        {st.job?.state === 'running' && <span className="text-warn text-[12.5px]"><RefreshCw size={12} className="inline animate-spin" /> {st.job.preview ? 'Building a preview…' : 'Exporting at full size…'}</span>}
+        {st.job?.state === 'running' && <span className="text-warn text-[12.5px]"><RefreshCw size={12} className="inline animate-spin" /> {st.job.preview ? 'Building a preview…' : st.job.step ?? 'Exporting at full size…'}</span>}
         {st.job?.state === 'failed' && <span className="text-danger text-[12.5px]">{st.job.error}</span>}
         {st.job?.state === 'done' && !st.job.preview && (
-          <span className="text-ok text-[12.5px]"><Check size={13} className="inline" /> Exported "{st.job.name}" ({secs(st.job.duration ?? 0)}) — marked done.
+          <span className="text-ok text-[12.5px]"><Check size={13} className="inline" /> Exported "{st.job.name}" ({secs(st.job.duration ?? 0)}){st.job.extras?.length ? ` + ${st.job.extras.length} more shape${st.job.extras.length === 1 ? '' : 's'}` : ''} — marked done.
             {' '}<button className="ghostbtn text-[12.5px] text-accent p-0 underline" onClick={() => goToStage?.('Finish')}>Publish it</button></span>
         )}
       </div>
@@ -308,7 +319,7 @@ function FinishInApp({ production, goToStage }) {
         <video key={st.preview.url} className="w-full max-w-[560px] mt-[10px] rounded-md bg-ink" src={st.preview.url} controls preload="metadata" />
       )}
       {st.job?.state === 'done' && st.job.preview && (
-        <p className="text-faint text-[11.5px] m-[6px_0_0]">Preview: {secs(st.job.duration ?? 0)}, {st.job.pieces} pieces{st.job.captions ? `, ${st.job.captions} captions` : ''}{st.job.missing?.length ? ` — line ${st.job.missing.join(', ')} not recorded yet` : ''}.</p>
+        <p className="text-faint text-[11.5px] m-[6px_0_0]">Preview: {secs(st.job.duration ?? 0)}, {st.job.pieces} pieces{st.job.cutaways ? `, ${st.job.cutaways} screen cutaway${st.job.cutaways === 1 ? '' : 's'}` : ''}{st.job.captions ? `, ${st.job.captions} captions` : ''}{st.job.missing?.length ? ` — line ${st.job.missing.join(', ')} not recorded yet` : ''}.</p>
       )}
     </section>
   );

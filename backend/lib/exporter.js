@@ -204,7 +204,11 @@ export async function buildExport({ productionId, render, decisions, slug, versi
   const source = join(dir, `v${version}-source.mp4`);
   const final = join(dir, `v${version}.mp4`);
 
-  const bytes = render?.video_url
+  // The copy saved when the render finished, before the provider's link expires.
+  const { copyFile } = await import('node:fs/promises');
+  const bytes = render?.local_path && (await exists(render.local_path))
+    ? (await copyFile(render.local_path, source), (await stat(source)).size)
+    : render?.video_url
     ? await download(render.video_url, source)
     : await placeholder(source, seconds(render?.duration) ?? 10);
   const { applied, skipped } = planEdits(decisions ?? []);

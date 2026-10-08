@@ -273,6 +273,10 @@ export const api = {
 
   // Your own voice, synthesised on this machine (voice/server.py).
   register: () => get('/register'),
+  review: (sort = 'release') => get(`/review?sort=${sort}`),
+  voiceBatch: () => get('/voice-batch'),
+  queueVoice: (productionIds) => post('/voice-batch', { productionIds }),
+  stopVoiceBatch: () => post('/voice-batch/cancel'),
   localVoices: () => get('/voices/local'),
   // The recording goes up as the raw body — it would never fit the JSON limit.
   createLocalVoice: (name, file, { exaggeration, cfgWeight } = {}) => {

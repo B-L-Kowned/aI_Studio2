@@ -513,3 +513,17 @@ CREATE TABLE IF NOT EXISTS line_takes (
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_line_takes_segment ON line_takes(segment_id, version);
+
+-- Voice made in bulk, overnight: one row per video queued. It lives here, not
+-- in memory, so a restart in the night carries on where it stopped.
+CREATE TABLE IF NOT EXISTS voice_batch (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  production_id INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+  state         TEXT NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','running','done','failed','cancelled','skipped')),
+  done          INTEGER NOT NULL DEFAULT 0,
+  total         INTEGER NOT NULL DEFAULT 0,
+  failed        INTEGER NOT NULL DEFAULT 0,
+  note          TEXT,
+  queued_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at   TEXT
+);

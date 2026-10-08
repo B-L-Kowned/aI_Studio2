@@ -28,6 +28,9 @@ import editorKit from './routes/editor-kit.js';
 import recording from './routes/recording.js';
 import steps from './routes/steps.js';
 import edit from './routes/edit.js';
+import review from './routes/review.js';
+import voiceBatch from './routes/voice-batch.js';
+import { resume as resumeVoiceBatch } from './lib/voice-batch.js';
 import { modeSummary } from './lib/providers/mode.js';
 import { ok, fail } from './utils/respond.js';
 import { existsSync } from 'node:fs';
@@ -76,6 +79,8 @@ app.use('/api', companies);
 app.use('/api', storage);
 app.use('/api', voices);
 app.use('/api', register);
+app.use('/api', review);
+app.use('/api', voiceBatch);
 app.use('/api', appearance);
 
 // ------------------------------------------------------- the app itself ---
@@ -135,6 +140,8 @@ const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`[db]  ${dbPath}`);
   console.log(`[web] ${packaged ? webRoot : 'not built — use the dev server for the UI'}`);
   console.log(`[api] listening on http://localhost:${actual}  mode=${MODE.mode}`);
+  // A voice batch the last run was in the middle of carries on.
+  resumeVoiceBatch();
   // One machine-readable line, so a parent process never has to parse prose
   // that was written for a person.
   console.log(`STUDIO_READY ${JSON.stringify({ port: actual, packaged, dbPath })}`);

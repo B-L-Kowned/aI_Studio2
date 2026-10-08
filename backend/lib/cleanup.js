@@ -23,6 +23,8 @@ const TAIL = 0.3;       // and after the last
 export const DEFAULT_SETTINGS = {
   removeFillers: true, tightenGaps: true, trimEnds: true,
   cleanAudio: true, look: 'auto', aspect: '16:9', reframe: 'face', captions: false,
+  // Other shapes made by the same export — 9:16 for Shorts, Reels and TikTok.
+  alsoExport: [],
 };
 
 export function editSettings(productionId) {
@@ -37,6 +39,13 @@ export function saveEditSettings(productionId, patch) {
   };
   const next = editSettings(productionId);
   for (const [k, v] of Object.entries(patch ?? {})) {
+    if (k === 'alsoExport') {
+      if (!Array.isArray(v) || v.some((a) => !['16:9', '9:16', '1:1'].includes(a))) {
+        throw Object.assign(new Error('alsoExport takes a list of 16:9, 9:16 and 1:1.'), { code: 'BAD_SETTING' });
+      }
+      next.alsoExport = [...new Set(v)];
+      continue;
+    }
     const rule = allowed[k];
     if (!rule) continue;
     if (rule === 'boolean' ? typeof v !== 'boolean' : !rule.includes(v)) {

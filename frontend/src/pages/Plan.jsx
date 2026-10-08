@@ -7,6 +7,7 @@ import Companies from './Companies.jsx';
 import CalendarPage from './CalendarPage.jsx';
 import Training from './Training.jsx';
 import Register from './Register.jsx';
+import Review from './Review.jsx';
 
 /**
  * Plan — what is being made, and when.
@@ -24,6 +25,8 @@ const VIEWS = [
   { id: 'Ideas', label: 'Parking lot' },
   // The end-to-end register: every Video ID and where it really stands.
   { id: 'Register', label: 'Register' },
+  // Reading work across the register: drafts to approve, checks to answer.
+  { id: 'Review', label: 'Review' },
   { id: 'Companies', label: 'Companies' },
   { id: 'Campaigns', label: 'Campaigns' },
   { id: 'Calendar', label: 'Calendar' },
@@ -36,7 +39,9 @@ export default function Plan({ go, routes, programs }) {
   const granted = programs ?? workspace.program?.programs ?? [];
   const allowed = VIEWS.filter((v) => !map[v.id] || granted.includes(map[v.id]));
 
-  const [view, setView] = useState('Register');
+  // The tab you were on, so opening a video and coming back lands you there.
+  const [view, setViewState] = useState(() => { try { return sessionStorage.getItem('plan-view') || 'Register'; } catch { return 'Register'; } });
+  const setView = (v) => { setViewState(v); try { sessionStorage.setItem('plan-view', v); } catch { /* storage blocked */ } };
 
   // Opened from somewhere that knows which view it meant.
   useEffect(() => {
@@ -53,6 +58,7 @@ export default function Plan({ go, routes, programs }) {
       {/* The view draws the header, so its title sits above these tabs. */}
       {current === 'Ideas' && <Ideas go={go} tabs={tabs} />}
       {current === 'Register' && <Register go={go} tabs={tabs} />}
+      {current === 'Review' && <Review go={go} tabs={tabs} />}
       {current === 'Companies' && <Companies go={go} tabs={tabs} />}
       {current === 'Campaigns' && <Campaigns go={go} tabs={tabs} />}
       {current === 'Calendar' && <CalendarPage tabs={tabs} />}

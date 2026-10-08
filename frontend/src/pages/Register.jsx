@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, Mic, User, Video, Check, AlertTriangle, ChevronDown, Minus } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Search, Mic, User, Video, Check, AlertTriangle, ChevronDown, Minus, Headphones } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { PageHead } from '../components/Section.jsx';
@@ -16,6 +16,24 @@ const STAGES = [
   { id: 'done', label: 'Done', tone: 'bg-ink text-[#fff] border-ink' },
 ];
 const stageOf = (id) => STAGES.find((s) => s.id === id) ?? STAGES[0];
+const MAKE = { heygen: 'render', self: 'record', voice: 'add screen recordings' };
+// What the app knows about where a video stands, and what is next. The
+// workbook's own note can lag behind ("Draft — text approval needed" after
+// you approved it), so it is kept for the hover text, not the line.
+function nowLine(i) {
+  if (i.stage === 'done') return i.completedAsset;
+  const make = MAKE[i.madeBy] ?? 'render';
+  const next = {
+    'needs-script': 'No script yet',
+    'draft-ready': 'Draft with no checks — ready for your yes',
+    'draft-checks': `Draft — ${i.checks} check${i.checks === 1 ? '' : 's'} to answer`,
+    script: i.madeBy === 'self' ? 'Script approved — next: record' : 'Script approved — next: voice',
+    audio: `Voice ${i.heard} of ${i.lines} lines approved`,
+    'audio-approved': `Voice approved — next: ${make}`,
+    final: 'Rendered — next: edit and finish',
+  }[i.stage];
+  return [next, i.format, i.registerDuration].filter(Boolean).join(' · ');
+}
 const STAGE_RANK = Object.fromEntries(['needs-script', 'draft-checks', 'draft-ready', 'script', 'audio', 'audio-approved', 'final', 'done'].map((s, i) => [s, i]));
 const SORTS = [
   ['release', 'Release order'],
@@ -80,7 +98,8 @@ function ChipGroup({ label, value, options, onChange }) {
  * complete" with nothing behind it stays visible.
  */
 export default function Register({ go, tabs }) {
-  const { openProduction } = useStudio();
+  const { openProduction, mutate } = useStudio();
+  const [batch, setBatch] = useState(null);
   const [data, setData] = useState(null);
   const [view, setView] = useState(initialView);
   const { q, stage, pri: priority, fmt: format, ws: stream, co: company, need } = view;
@@ -90,6 +109,16 @@ export default function Register({ go, tabs }) {
     ['q', 'stage', 'pri', 'fmt', 'ws', 'co', 'need', 'sort'].map(set);
 
   useEffect(() => { api.register().then(setData).catch(() => setData({ items: [], totals: null })); }, []);
+
+  // The overnight voice queue: checked every few seconds while it has work.
+  const loadBatch = useCallback(() => api.voiceBatch().then(setBatch).catch(() => {}), []);
+  useEffect(() => { loadBatch(); }, [loadBatch]);
+  const batchBusy = batch && (batch.running || batch.queued > 0);
+  useEffect(() => {
+    if (!batchBusy) return undefined;
+    const t = setInterval(loadBatch, 5000);
+    return () => clearInterval(t);
+  }, [batchBusy, loadBatch]);
 
   useEffect(() => {
     const p = new URLSearchParams();
@@ -158,6 +187,13 @@ export default function Register({ go, tabs }) {
   const filtered = stage || priority || stream || company || format || need || q.trim();
 
   if (!data) return <><PageHead title="Register" tabs={tabs} /><p className="muted">Loading…</p></>;
+  // Approved script, voice not finished, and the AI voice is part of how it is made.
+  const voiceable = shown.filter((i) => ['script', 'audio'].includes(i.stage) && i.madeBy !== 'self');
+  const queueVoice = () => {
+    if (!window.confirm(`Make your voice for ${voiceable.length} video${voiceable.length === 1 ? '' : 's'}? It runs on this Mac, free, about twice real time — leave it overnight. You still listen and approve each line.`)) return;
+    mutate(() => api.queueVoice(voiceable.map((i) => i.id)), (r) => setBatch(r.data)).catch(() => {});
+  };
+  const now = batch?.items.find((b) => b.state === 'running');
   const t = data.totals;
   const count = (key) => shown.filter((i) => settled(i.marks?.[key])).length;
   const stageCount = (id) => base.filter((i) => i.stage === id).length;
@@ -223,8 +259,27 @@ export default function Register({ go, tabs }) {
             Clear filters
           </button>
         )}
+        <button className="text-[12px] p-[5px_11px]" disabled={!voiceable.length} onClick={queueVoice}
+          title="Videos shown here with an approved script whose voice is not finished">
+          <Headphones size={13} /> Make the voice for these ({voiceable.length})
+        </button>
         <span className="text-faint text-[11.5px] ml-auto">{shown.length} of {data.items.length}</span>
       </div>
+
+      {batch?.items.length > 0 && (
+        <p className="flex flex-wrap items-center gap-[10px] text-[12px] m-[10px_0_0] text-ink-2">
+          <Headphones size={13} className="text-muted" />
+          {batchBusy ? (
+            <span>Voice batch: {batch.items.filter((b) => ['done', 'failed', 'skipped'].includes(b.state)).length} of {batch.items.filter((b) => b.state !== 'cancelled').length} videos done
+              {now && <> · now {now.title.split(' — ')[0]}, line {Math.min(now.done + 1, now.total)} of {now.total}</>}</span>
+          ) : (
+            <span>Voice batch finished: {batch.items.filter((b) => b.state === 'done').length} made, ready to listen to and approve
+              {batch.items.some((b) => b.state === 'skipped') && <> · {batch.items.filter((b) => b.state === 'skipped').length} skipped</>}
+              {batch.items.some((b) => b.failed) && <span className="text-warn"> · {batch.items.reduce((n, b) => n + b.failed, 0)} lines failed</span>}</span>
+          )}
+          {batchBusy && <button className="ghostbtn text-[12px] text-danger p-0" onClick={() => mutate(() => api.stopVoiceBatch(), (r) => setBatch(r.data)).catch(() => {})}>Stop</button>}
+        </p>
+      )}
 
       <section className="overflow-hidden mt-[12px] border border-solid border-line rounded-lg bg-surface [box-shadow:var(--shadow)]"
         aria-label="Video register">
@@ -248,7 +303,8 @@ export default function Register({ go, tabs }) {
           const s = stageOf(i.stage);
           // The workbook says done but the app has no evidence of it.
           const claimed = /complete/i.test(i.register.overall ?? '') && i.stage !== 'done';
-          const sub = i.completedAsset ?? i.scriptStatus ?? `${i.format}${i.registerDuration ? ` · ${i.registerDuration}` : ''}`;
+          const sub = nowLine(i);
+          const subTitle = i.scriptStatus ? `${sub}\nWorkbook: ${i.scriptStatus}` : sub;
           return (
             <button key={i.id} type="button" onClick={() => open(i.id)}
               className={`${ROW} w-full text-left bg-transparent [border:0] rounded-none [&+&]:[border-top:1px_solid_var(--line)] hover:bg-surface-2`}>
@@ -262,7 +318,7 @@ export default function Register({ go, tabs }) {
                     {i.selfRecorded ? <Video size={12} /> : i.voiceOnly ? <Mic size={12} /> : <User size={12} />}
                   </span>
                 </b>
-                <small className="block truncate text-faint text-[11px]" title={sub}>{sub}</small>
+                <small className="block truncate text-faint text-[11px]" title={subTitle}>{sub}</small>
               </span>
               <span className="truncate text-[12px] text-ink-2 lte860:hidden" title={i.group ?? ''}>{i.company}</span>
               <span className={`text-[11.5px] font-[600] lte860:hidden ${i.priority === 'P1' ? 'text-danger' : 'text-muted'}`}>{i.priority}</span>
