@@ -43,8 +43,10 @@ export function groupIntoScenes(segments, { maxScenes = MAX_SCENES } = {}) {
   return head;
 }
 
-export function buildStudioArgs({ segments, title, aspectRatio = '16:9', resolution = '1080p' }) {
-  const runs = groupIntoScenes(segments);
+// `runs` may come prebuilt: scenes voiced by uploaded audio (your local voice)
+// carry an audioAssetId instead of a script for HeyGen to speak.
+export function buildStudioArgs({ segments, runs: prebuilt, title, aspectRatio = '16:9', resolution = '1080p' }) {
+  const runs = prebuilt ?? groupIntoScenes(segments);
   if (!runs.length) {
     throw Object.assign(new Error('Nothing to render — the script has no lines.'), { code: 'EMPTY' });
   }
@@ -63,22 +65,24 @@ export function buildStudioArgs({ segments, title, aspectRatio = '16:9', resolut
       resolution,
       scenes: runs.map((r) => ({
         type: 'avatar_video',
-        input: {
-          type: 'avatar',
-          avatar_id: r.avatarId,
-          script: r.text,
-          // Omitted voice_id falls back to the avatar's own default voice.
-          ...(r.voiceId ? { voice_id: r.voiceId } : {}),
-        },
+        input: r.audioAssetId
+          ? { type: 'avatar', avatar_id: r.avatarId, audio_asset_id: r.audioAssetId }
+          : {
+            type: 'avatar',
+            avatar_id: r.avatarId,
+            script: r.text,
+            // Omitted voice_id falls back to the avatar's own default voice.
+            ...(r.voiceId ? { voice_id: r.voiceId } : {}),
+          },
       })),
     },
-    stats: { scenes: runs.length, segments: segments.length, chars: runs.reduce((n, r) => n + r.text.length, 0) },
+    stats: { scenes: runs.length, segments: segments?.length ?? runs.length, chars: runs.reduce((n, r) => n + r.text.length, 0) },
   };
 }
 
 /** Render over MCP. Returns the remote video id to poll. */
-export async function renderViaStudio({ segments, title, aspectRatio, resolution }) {
-  const { args, stats } = buildStudioArgs({ segments, title, aspectRatio, resolution });
+export async function renderViaStudio({ segments, runs, title, aspectRatio, resolution }) {
+  const { args, stats } = buildStudioArgs({ segments, runs, title, aspectRatio, resolution });
   const result = await mcp.callTool(STUDIO_TOOL, args);
 
   const videoId =

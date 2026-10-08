@@ -124,7 +124,7 @@ export default function Register({ go, tabs }) {
       (!priority || i.priority === priority)
       && (!stream || i.workstream === stream)
       && (!company || i.company === company)
-      && (!format || (format === 'voice') === i.voiceOnly)
+      && (!format || i.madeBy === (format === 'camera' ? 'heygen' : format))
       && (!need || !settled(i.marks?.[need]))
       && (!needle || [i.videoId, i.name, i.company, i.group, i.format].some((v) => v && v.toLowerCase().includes(needle))));
   }, [data, q, priority, stream, company, format, need]);
@@ -191,8 +191,8 @@ export default function Register({ go, tabs }) {
         </label>
         <ChipGroup label="Priority" value={priority} onChange={setPriority}
           options={[['', 'All'], ['P1', 'P1'], ['P2', 'P2'], ['P3', 'P3']]} />
-        <ChipGroup label="Format" value={format} onChange={setFormat}
-          options={[['', 'All'], ['camera', 'On camera'], ['voice', 'Voice-over']]} />
+        <ChipGroup label="Made by" value={format === 'camera' ? 'heygen' : format} onChange={setFormat}
+          options={[['', 'All'], ['heygen', 'HeyGen'], ['self', 'Recorded by me'], ['voice', 'Voice-over']]} />
         <label className="relative flex items-center">
           <select value={stream} onChange={(e) => setStream(e.target.value)} aria-label="Workstream" className={SELECT(stream)}>
             <option value="">All workstreams</option>
@@ -258,7 +258,7 @@ export default function Register({ go, tabs }) {
               <span className="min-w-0">
                 <b className="flex items-center gap-[6px] text-[13px] font-[560] min-w-0">
                   <span className="truncate" title={i.name}>{i.name}</span>
-                  <span className="flex-none text-faint" title={i.selfRecorded ? 'Recorded by you — no avatar' : i.voiceOnly ? 'Voice-over — no avatar' : 'On camera'}>
+                  <span className="flex-none text-faint" title={i.selfRecorded ? 'Recorded by you' : i.voiceOnly ? 'Voice-over — no one on screen' : 'HeyGen avatar'}>
                     {i.selfRecorded ? <Video size={12} /> : i.voiceOnly ? <Mic size={12} /> : <User size={12} />}
                   </span>
                 </b>

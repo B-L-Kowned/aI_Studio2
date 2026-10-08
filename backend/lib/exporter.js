@@ -52,7 +52,7 @@ function run(cmd, args) {
 const exists = (p) => access(p).then(() => true, () => false);
 
 /** Fetch the rendered video to disk. Streams, so a long video is not buffered. */
-async function download(url, dest) {
+export async function download(url, dest) {
   const res = await fetch(url);
   if (!res.ok || !res.body) {
     throw Object.assign(
@@ -139,7 +139,7 @@ async function applyTrims(input, output, trims) {
  * It is a real mp4 — the point is that everything downstream handles a real file
  * — while being impossible to confuse with a rendered take.
  */
-async function placeholder(dest, secs = 10) {
+export async function placeholder(dest, secs = 10) {
   // No drawtext: it needs libfreetype, and this machine's ffmpeg is built
   // without it — an export that depends on an optional filter fails on the
   // machine that lacks it, which is exactly where a stand-in is needed most.

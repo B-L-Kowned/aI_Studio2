@@ -34,7 +34,7 @@ export default function PublishStage() {
   };
 
   return (
-    <div className="stagepane">
+    <section aria-label="Publish">
       <h2>Publish / Hand Off</h2>
       <p>
         Automation is optional. A complete platform package is prepared even when the final
@@ -103,6 +103,6 @@ export default function PublishStage() {
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }

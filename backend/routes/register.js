@@ -1,13 +1,12 @@
 import { Router } from 'express';
 import { getDb } from '../db/index.js';
 import { ok, route } from '../utils/respond.js';
+import { madeBy } from '../lib/made-by.js';
 
 const router = Router();
 
 // The register's Video ID leads the production title: "V14-02 — Goalzie: …".
 // Register IDs (V14-02, O05) and the script pack's own (GTM-03, SRC-NS-ADMIN).
-// Every outline section of a video you film and edit yourself carries this.
-export const SELF_RECORDED = 'Pat (recorded myself)';
 const secs = (rt) => { const [m, s] = String(rt ?? '').split(':').map(Number); return (m || 0) * 60 + (s || 0); };
 const REGISTER_ID = /^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*) — (.*)$/;
 const WORKSTREAM = { V: 'Company', O: 'Outreach', T: 'Training', L: 'Wrapper', A: 'Editions', I: 'Investor', GTM: 'GTM masters', SRC: 'Training' };
@@ -52,7 +51,6 @@ router.get(
          SELECT id FROM script_versions WHERE production_id = ? AND status != 'rejected'
           ORDER BY status = 'proposed' DESC, id DESC LIMIT 1)`
     );
-    const whoOf = db.prepare('SELECT participants FROM outline_sections WHERE production_id = ?');
     const segs = db.prepare(
       `SELECT s.id,
               (SELECT t.heard FROM takes t WHERE t.segment_id = s.id ORDER BY t.version DESC LIMIT 1) AS heard,
@@ -68,11 +66,11 @@ router.get(
       const heard = lines.filter((l) => l.heard).length;
       const rendered = lines.filter((l) => l.render === 'complete').length;
       const format = b.Format ?? '';
-      const voiceOnly = /screen recording|diagram|graphics|visuals \+ voice/i.test(format) && !/avatar/i.test(format);
+      const made = madeBy(r.id, format);
+      const voiceOnly = made === 'voice';
+      const selfRecorded = made === 'self';
       const done = !!b['Completed asset'];
       const checks = checksOf.all(r.id).reduce((n, l) => n + (l.text.match(/\[CONFIRM/gi) ?? []).length, 0);
-      const who = whoOf.all(r.id);
-      const selfRecorded = who.length > 0 && who.every((w) => w.participants === SELF_RECORDED);
       const stage = done ? 'done'
         : lines.length && rendered === lines.length ? 'final'
         : lines.length && heard === lines.length ? 'audio-approved'
@@ -85,6 +83,7 @@ router.get(
         id: r.id, videoId, name, workstream: streamOf(videoId),
         company: r.company, group: r.grp, track: r.track,
         priority: b.Priority || null, format, voiceOnly, selfRecorded, checks,
+        madeBy: made,
         runtime: r.target_runtime, runtimeSeconds: secs(r.target_runtime), registerDuration: b['Register duration'] || null,
         scriptStatus: b['Script status'] || null,
         inRegister: !b['Script pack only'],

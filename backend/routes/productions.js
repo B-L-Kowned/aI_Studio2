@@ -488,6 +488,13 @@ router.patch(
     if (participants !== undefined)
       db.prepare('UPDATE outline_sections SET participants = ? WHERE id = ?').run(String(participants).slice(0, 200), section.id);
 
+    // "Who appears in this production?" is answered once every section says.
+    if (participants !== undefined) {
+      const open = db.prepare('SELECT COUNT(*) n FROM outline_sections WHERE production_id = ? AND (participants IS NULL OR participants = \'\')').get(id).n;
+      if (!open) {
+        db.prepare("UPDATE decisions SET resolution = 'Chosen in How it\'s made' WHERE production_id = ? AND kind = 'warning' AND resolution IS NULL AND text = 'Who appears in this production?'").run(id);
+      }
+    }
     // Who appears does not change the words, so it does not make the script stale.
     const wordsMayChange = [runtime, title, purpose].some((v) => v !== undefined);
     const affected = wordsMayChange ? markStaleFrom(id, 'plan', `Outline section "${section.title}" changed`) : [];

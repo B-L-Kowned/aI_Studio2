@@ -231,6 +231,16 @@ export const api = {
   // For an editor (CapCut, Descript): approved audio and the script as text and subtitles.
   editorKit: (id) => get(`/productions/${id}/editor-kit`),
   editorKitUrl: (id, file) => `${BASE}/productions/${id}/editor-kit/${file}`,
+  saveEditorKit: (id) => post(`/productions/${id}/editor-kit/folder`),
+  revealEditorKit: (id) => post(`/productions/${id}/editor-kit/reveal`),
+  steps: (id) => get(`/productions/${id}/steps`),
+  // Recording it yourself: a take per line, or a whole recording split into lines.
+  lineTakes: (id) => get(`/productions/${id}/line-takes`),
+  uploadLineTake: (id, segmentId, file, onProgress, source = 'teleprompter') =>
+    uploadFile(`/productions/${id}/line-takes/line/${segmentId}?source=${source}`, file, onProgress),
+  updateLineTake: (id, takeId, body) => patch(`/productions/${id}/line-takes/${takeId}`, body),
+  discardLineTake: (id, takeId) => del(`/productions/${id}/line-takes/${takeId}`),
+  splitRecording: (id, file, onProgress) => uploadFile(`/productions/${id}/line-takes/split`, file, onProgress),
   listenLine: (id, versionId, lineId) => post(`/productions/${id}/script/${versionId}/listen/${lineId}`),
   saveAppearanceDefault: (scope, body) => request(`/appearance-defaults/${encodeURIComponent(scope)}`, { method: 'PUT', body: JSON.stringify(body) }),
   applyAppearanceDefault: (scope) => post(`/appearance-defaults/${encodeURIComponent(scope)}/apply`),

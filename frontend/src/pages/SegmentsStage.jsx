@@ -22,7 +22,7 @@ const BLOCK_LABEL = {
   unheard: 'Not approved',
 };
 
-export default function SegmentsStage() {
+export default function SegmentsStage({ optional = false }) {
   const { production, mutate } = useStudio();
   const [data, setData] = useState(null);
   const [castable, setCastable] = useState([]);
@@ -96,8 +96,10 @@ export default function SegmentsStage() {
     <div className="stagepane">
       <div className="sectiontitle">
         <div>
-          <h2>Segments</h2>
-          <p>One line, one take, one render. Nothing renders unheard.</p>
+          <h2>Voice</h2>
+          <p>{optional
+            ? 'Optional when you record it yourself: your AI read of each line, to hear the pace in the teleprompter.'
+            : 'Your voice for each line, made on this Mac. Approve every line — nothing is made from audio you have not heard.'}</p>
         </div>
         <div className="sectionactions">
           {pendingAudition > 0 && (

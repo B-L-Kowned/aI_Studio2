@@ -491,3 +491,25 @@ CREATE TABLE IF NOT EXISTS appearance_defaults (
   motion_prompt    TEXT NOT NULL DEFAULT '',
   updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- A take of one script line that you recorded yourself: a file and the span of
+-- it that is the line. Teleprompter takes are whole files; a long recording
+-- uploaded from elsewhere is split by what was said, so many takes point into
+-- one file. `text` is the line as it read when recorded — if the script moves
+-- on, the take is kept and flagged rather than silently matched to new words.
+CREATE TABLE IF NOT EXISTS line_takes (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  production_id INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+  segment_id    INTEGER REFERENCES segments(id) ON DELETE SET NULL,
+  version       INTEGER NOT NULL,
+  source        TEXT NOT NULL DEFAULT 'teleprompter' CHECK (source IN ('teleprompter','upload','split')),
+  path          TEXT NOT NULL,
+  in_point      REAL NOT NULL DEFAULT 0,
+  out_point     REAL,
+  duration      REAL,
+  text          TEXT NOT NULL DEFAULT '',
+  said          TEXT,
+  chosen        INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_line_takes_segment ON line_takes(segment_id, version);

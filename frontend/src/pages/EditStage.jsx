@@ -1,50 +1,92 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Scissors, Lock, AlertCircle, Check, Download } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Play, Scissors, Lock, AlertCircle, Check, Download, FolderOpen } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { toSeconds, toClock } from '../utils/format.js';
 import { api } from '../services/api.js';
 import { useResource } from '../hooks/use-resource.js';
 import LoadState from '../components/LoadState.jsx';
-import { isSelfRecorded } from '../utils/self-recorded.js';
+import { madeByOf, needsRender } from '../utils/made-by.js';
 
+const SUPPORTED = new Set(['Trim / Cut', 'Create Short Clip']);
 const KIT_LINK = 'inline-flex items-center gap-[6px] text-[12.5px] p-[6px_11px] rounded-md border border-solid border-line bg-surface text-ink no-underline hover:border-line-2';
 const KIT_OFF = 'inline-flex items-center gap-[6px] text-[12.5px] p-[6px_11px] rounded-md border border-dashed border-line text-faint cursor-not-allowed';
+const KIT_SUB = 'text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold m-[14px_0_6px]';
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
-/** The approved audio and the script, ready to drop into CapCut or Descript. */
+/**
+ * Everything the edit needs, on one clock: the approved audio, the script and
+ * subtitles, the shot list with your screen recordings, and for HeyGen the
+ * render and each line's clip. "Save to folder" puts it all in the video's own
+ * folder with a timeline that already points at every file.
+ */
 function EditorKit({ production }) {
+  const { mutate } = useStudio();
   const [kit, setKit] = useState(null);
-  useEffect(() => { api.editorKit(production.id).then(setKit).catch(() => setKit(null)); }, [production.id]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(null);
+  const load = useCallback(() => api.editorKit(production.id).then(setKit).catch(() => setKit(null)), [production.id]);
+  useEffect(() => { load(); }, [load]);
   if (!kit) return null;
+
   const url = (f) => api.editorKitUrl(production.id, f);
   const link = (on, file, label, title) => (on
     ? <a className={KIT_LINK} href={url(file)} download title={title}><Download size={13} /> {label}</a>
     : <span className={KIT_OFF} title={title}><Download size={13} /> {label}</span>);
+  const heygen = kit.madeBy === 'heygen';
+  const save = async () => {
+    setSaving(true);
+    try {
+      const r = await mutate(() => api.saveEditorKit(production.id), null);
+      setSaved(r.data);
+      load();
+    } catch { /* mutate reports it */ } finally { setSaving(false); }
+  };
+  const folder = saved?.path ?? kit.folder;
 
   return (
     <section className="border border-solid border-line rounded-lg bg-surface p-[14px_16px] mt-[12px]" aria-label="Editor kit">
-      <div className="flex flex-wrap items-baseline gap-x-[12px]">
+      <div className="flex flex-wrap items-baseline gap-x-[12px] gap-y-[4px]">
         <b className="text-[13.5px]">Editor kit</b>
         <span className="text-muted text-[12px]">
-          {kit.lines ? <>{kit.approved} of {kit.lines} lines with approved audio{kit.audioSeconds ? ` · ${clock(kit.audioSeconds)}` : ''}</> : 'No script yet'}
+          {kit.lines
+            ? <>{kit.approved} of {kit.lines} lines with approved audio{kit.allApproved ? ` · ${clock(kit.seconds)}` : ''}
+              {' · '}{kit.recordings} of {kit.sections} sections with a screen recording</>
+            : 'No script yet'}
         </span>
       </div>
-      <div className="flex flex-wrap gap-[8px] mt-[10px]">
+
+      <div className={KIT_SUB}>Everything in one folder</div>
+      <div className="flex flex-wrap items-center gap-[8px]">
+        <button className="primary text-[12.5px] p-[6px_12px]" onClick={save} disabled={saving || !kit.lines}>
+          <FolderOpen size={13} /> {saving ? 'Saving…' : folder ? 'Update the kit folder' : 'Save kit to folder'}
+        </button>
+        {folder && <button className="text-[12.5px] p-[6px_12px]" onClick={() => mutate(() => api.revealEditorKit(production.id), null, { silent: true }).catch(() => {})}>Open folder</button>}
+      </div>
+      {folder && <p className="text-muted text-[11.5px] m-[6px_0_0] break-all">{folder}</p>}
+      <p className="text-faint text-[11.5px] m-[6px_0_0]">
+        Audio, script, subtitles, shot list and recordings{heygen ? ', the HeyGen render and a clip per line' : ''}, plus a
+        {' '}<b className="font-[560]">timeline.fcpxml</b> with them laid out — it opens in DaVinci Resolve or Final Cut.
+        {!kit.allApproved && ' The timeline and full read need every line approved in Segments.'}
+      </p>
+
+      <div className={KIT_SUB}>Or download for CapCut / Descript</div>
+      <div className="flex flex-wrap gap-[8px]">
+        {heygen && link(!!kit.render, 'render.mp4', kit.render?.standIn ? 'Render (stand-in) .mp4' : 'HeyGen render (.mp4)',
+          kit.render ? `Render v${kit.render.version}` : 'Render the video first')}
         {link(kit.allApproved, 'full-read.wav', 'Full read (.wav)', kit.allApproved ? 'Every line in order, one file' : 'Approve the audio for every line in Segments first')}
         {link(kit.approved > 0, 'lines.zip', `Each line (${kit.approved} .wav, zip)`, 'One wav per approved line, numbered in script order')}
+        {link(kit.lines > 0, 'script.srt', 'Subtitles (.srt)', kit.timedTo === 'audio' ? 'Timed to the full read' : `Estimated at ${kit.wpm} wpm`)}
         {link(kit.lines > 0, 'script.txt', 'Script (.txt)', 'Plain text, one line per paragraph')}
-        {link(kit.lines > 0, 'script.srt', 'Subtitles (.srt)', kit.srtTimedTo === 'audio' ? 'Timed to the full read' : `Estimated at ${kit.wpm} wpm`)}
+        {link(kit.sections > 0, 'shot-list.csv', 'Shot list (.csv)', 'Each section: when it starts, the shot, on-screen text, which recording')}
       </div>
       <p className="text-faint text-[11.5px] m-[8px_0_0]">
-        {kit.srtTimedTo === 'audio'
-          ? 'The subtitles are timed to the full read, so they line up when both go in at 0:00.'
-          : `The subtitles are estimated at ${kit.wpm} words a minute until every line has approved audio; then they are timed to the full read.`}
+        {kit.timedTo === 'audio'
+          ? `Subtitles and shot list are timed to the full read${heygen ? ' — the render is lip-synced to it, so they match the render too' : ''}; drop everything in at 0:00.`
+          : `Times are estimated at ${kit.wpm} words a minute until every line has approved audio.`}
       </p>
     </section>
   );
 }
-
-const SUPPORTED = new Set(['Trim / Cut', 'Create Short Clip']);
 
 export default function EditStage() {
   const { production, meta, mutate } = useStudio();
@@ -54,11 +96,12 @@ export default function EditStage() {
   const { data: state, error, reload: load, setData: setState } =
     useResource(() => api.render(production.id), [production.id]);
 
-  if (isSelfRecorded(production)) {
+  if (!needsRender(production)) {
     return (
       <div className="stagepane">
         <h2>Edit</h2>
-        <p>You record and cut this video yourself. Everything the edit needs is here; the finished file goes up in Plan → Brief.</p>
+        <p>{madeByOf(production) === 'self' ? 'You record and cut this video yourself.' : 'Your voice over your screen recordings.'}
+          {' '}Everything the edit needs is here; the finished file goes up in Plan → Brief, which marks it done.</p>
         <EditorKit production={production} />
       </div>
     );

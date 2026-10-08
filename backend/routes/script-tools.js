@@ -8,6 +8,7 @@ import { resolveSpeaker, presenterCasting } from '../lib/casting.js';
 import { listLocalVoices, speakLocal, localFile, voicesDir, SPEED_RANGE, LOCAL } from '../lib/local-voice.js';
 import { invalidateTakes } from '../lib/segments.js';
 import { joinWavs } from '../lib/audio-join.js';
+import { madeBy } from '../lib/made-by.js';
 import { visualsFor, updateVisualRow, approveVisuals } from '../lib/visuals.js';
 import { receiveUpload, acceptFinishedVideo, acceptRecording, transcribeInBackground, transcriptionFor } from '../lib/media.js';
 import { ok, fail, route } from '../utils/respond.js';
@@ -37,7 +38,22 @@ router.get(
     const speed = p.voice_speed ?? voice?.speed ?? 1;
     const sections = db.prepare('SELECT title, runtime FROM outline_sections WHERE production_id = ? ORDER BY position').all(p.id)
       .map((s) => ({ title: s.title, runtime: s.runtime, seconds: secs(s.runtime) }));
+    // Recording it yourself, the pace that matters is yours: words over time
+    // spoken, across the takes you chose. Until there are takes, a typical pace.
+    if (madeBy(p.id) === 'self') {
+      const takes = db.prepare('SELECT text, in_point, out_point, duration FROM line_takes WHERE production_id = ? AND chosen = 1').all(p.id)
+        .map((t) => ({ words: t.text.replace(/\[CONFIRM:[^\]]*\]/gi, ' ').split(/\s+/).filter(Boolean).length, secs: (t.out_point ?? t.duration ?? 0) - t.in_point }))
+        .filter((t) => t.words && t.secs > 0.5);
+      const words = takes.reduce((n, t) => n + t.words, 0);
+      const secsSpoken = takes.reduce((n, t) => n + t.secs, 0);
+      const own = takes.length ? Math.round((words / secsSpoken) * 60) : null;
+      return ok(res, {
+        pace: 'own', voice: null, naturalWpm: own ?? PLANNING_WPM, measured: own != null, takes: takes.length,
+        speed: 1, speedRange: SPEED_RANGE, wpm: own ?? PLANNING_WPM, targetSeconds: secs(p.target_runtime), sections,
+      });
+    }
     return ok(res, {
+      pace: 'voice',
       voice: voice && { id: voice.id, name: voice.name, naturalWpm: natural, measuredSeconds: voice.paceSeconds },
       naturalWpm: natural ?? PLANNING_WPM,
       measured: natural != null,

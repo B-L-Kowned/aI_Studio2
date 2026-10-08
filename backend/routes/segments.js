@@ -167,7 +167,7 @@ router.post(
     }
     if (path.path !== 'fixtures' && seg.presenter.voice?.provider === 'local') {
       return fail(res, 409, 'LOCAL_VOICE_RENDER',
-        'This line uses your local voice. Rendering a HeyGen video from approved local audio is not built yet — nothing was sent.');
+        'This line uses your local voice. Render the whole video from Render — it lip-syncs the avatar to your approved audio, and each line\'s clip is cut from it in Edit → Editor kit. Nothing was sent.');
     }
     // The same confirmation the whole-production render demands. Without it
     // here, rendering the five lines one at a time was a way around the gate

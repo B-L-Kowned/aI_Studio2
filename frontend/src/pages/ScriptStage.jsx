@@ -3,6 +3,9 @@ import { Sparkles, Check, X, Lock, AlertCircle, FileText, Play, Minus, Plus, Che
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
+import MadeByChooser from '../components/MadeByChooser.jsx';
+import PlanStage from './PlanStage.jsx';
+import { madeByOf } from '../utils/made-by.js';
 
 const GENERATOR_LABELS = {
   included: 'Built-in deterministic',
@@ -46,6 +49,7 @@ export default function ScriptStage({ goToStage }) {
   const [listening, setListening] = useState(null);   // { id, url } | { id, busy }
   const [showVersions, setShowVersions] = useState(false);
   const [fullRead, setFullRead] = useState(null);     // the whole script in one track
+  const [details, setDetails] = useState(false);      // Plan details drawer
   const lineRefs = useRef({});
 
   const load = useCallback(async () => {
@@ -159,7 +163,8 @@ export default function ScriptStage({ goToStage }) {
     if (openChecks && !window.confirm(`${openChecks} [CONFIRM] check${openChecks === 1 ? ' is' : 's are'} still open. Those lines can't be voiced until resolved. Accept anyway?`)) return;
     await mutate(() => api.acceptScript(production.id, latest.id), apply);
     await mutate(() => api.buildSegments(production.id), null, { silent: true });
-    goToStage?.('Segments');
+    // Your own recording does not need the AI voice first; everything else does.
+    goToStage?.(madeByOf(production) === 'self' ? 'Make' : 'Voice');
   };
 
   const tone = !target ? 'text-muted' : within ? 'text-ok' : 'text-warn';
@@ -168,23 +173,41 @@ export default function ScriptStage({ goToStage }) {
 
   return (
     <div className="stagepane">
-      <div className="sectiontitle">
+      {/* The few facts that matter while reading, then how it is made. */}
+      <div className="flex flex-wrap items-baseline gap-x-[14px] gap-y-[4px] text-[12.5px] text-muted mb-[12px]">
+        {brief['Register ID'] && <code className="text-[11.5px] font-semibold text-ink-2">{brief['Register ID']}</code>}
+        {brief.Priority && <span className={brief.Priority === 'P1' ? 'text-danger font-semibold' : ''}>{brief.Priority}</span>}
+        {brief.Format && <span>{brief.Format}</span>}
+        {brief.Audience && <span className="truncate max-w-[420px]" title={brief.Audience}>For: {brief.Audience}</span>}
+        <button className="ghostbtn text-[12.5px] text-accent p-0 ml-auto" onClick={() => setDetails((d) => !d)} aria-expanded={details}>
+          <ChevronDown size={13} className={details ? 'rotate-180' : ''} /> Plan details
+        </button>
+      </div>
+      {brief['Verify first'] && (
+        <div className="notice warn items-start"><AlertCircle /> <span><b>Verify before recording.</b> {brief['Verify first']}</span></div>
+      )}
+      {details && <div className="mb-[16px]"><PlanStage goToStage={goToStage} /></div>}
+      <MadeByChooser />
+
+      <div className="sectiontitle mt-[18px]">
         <div>
           <h2>Script</h2>
           <p>
-            {imported
-              ? <>Imported{brief['Script source'] ? <> · <span className="text-ink-2">{brief['Script source']}</span></> : ''}{brief['Script status'] ? ` · ${brief['Script status']}` : ''}</>
-              : 'Generated from the approved plan. Dialogue never precedes an approved outline and scenes.'}
+            {imported ? 'Imported from your script pack' : 'Written from the plan'}
+            {/^https?:\/\//.test(brief['Script source'] ?? '') && <> · <a className="text-accent underline" href={brief['Script source']} target="_blank" rel="noreferrer">source</a></>}
+            {' · '}<span className={latest?.status === 'accepted' ? 'text-ok' : 'text-warn'}>
+              {!latest ? 'no script yet' : latest.status === 'accepted' ? 'approved' : 'draft — approve when it reads right'}
+            </span>
           </p>
         </div>
-        <button className={imported ? '' : 'primary'} disabled={!ready}
-          title={imported ? 'Writes a new draft from the plan; this one is kept as a version' : undefined}
-          onClick={() => mutate(() => api.generateScript(production.id), apply)}>
-          <Sparkles size={15} /> {latest ? 'New draft from plan' : 'Generate script'}
-        </button>
+        {!latest && (
+          <button className="primary" disabled={!ready} onClick={() => mutate(() => api.generateScript(production.id), apply)}>
+            <Sparkles size={15} /> Generate script
+          </button>
+        )}
       </div>
 
-      {!ready && (
+      {!ready && !latest && (
         <div className="notice warn">
           <Lock /> Locked until source evidence and the outline are approved in Plan.
           {' '}Research: {researchGate?.status === 'pass' ? 'approved' : researchGate?.detail ?? 'not approved'} ·
@@ -243,6 +266,12 @@ export default function ScriptStage({ goToStage }) {
               {target > 0 && <div className="absolute top-[-4px] w-[2px] h-[14px] bg-ink" style={{ left: `calc(${targetPct}% - 1px)` }} title={`Target ${clock(target)}`} />}
             </div>
 
+            {timing.pace === 'own' ? (
+              <p className="m-[12px_0_0] text-[12.5px] text-ink-2">
+                Your pace: <b className="font-[560]">{timing.wpm} words a minute</b>
+                <span className="text-muted">{timing.measured ? ` — measured from ${timing.takes} of your takes` : ' — a typical pace until you record a few lines'}</span>
+              </p>
+            ) : (
             <div className="flex flex-wrap items-center gap-[10px] mt-[12px] text-[12.5px]">
               <span className="text-ink-2">
                 Voice: <b className="font-[560]">{timing.voice?.name ?? 'planning pace'}</b>
@@ -260,6 +289,7 @@ export default function ScriptStage({ goToStage }) {
                 <span className="text-muted">{timing.wpm} wpm</span>
               </span>
             </div>
+            )}
             </>}
 
             <div className="flex flex-wrap items-center gap-[10px] mt-[12px] pt-[12px] [border-top:1px_solid_var(--line)] text-[12.5px]">
@@ -288,7 +318,12 @@ export default function ScriptStage({ goToStage }) {
               <audio key={fullRead.url} className="w-full h-[34px] mt-[8px]" src={fullRead.url} controls />
             )}
 
-            {target > 0 && !within && !published && (
+            {target > 0 && !within && !published && timing.pace === 'own' && (
+              <p className="m-[10px_0_0] text-[12.5px] text-ink-2">
+                At your pace this runs {clock(total)} — about <b>{Math.abs(Math.round(delta / 60 * wpm))} words {delta > 0 ? 'over' : 'under'}</b> the {clock(target)} target.
+              </p>
+            )}
+            {target > 0 && !within && !published && timing.pace !== 'own' && (
               <p className="m-[10px_0_0] text-[12.5px] text-ink-2">
                 {fitSpeed >= NATURAL_SPEED[0] && fitSpeed <= NATURAL_SPEED[1] ? (
                   <>At {fitSpeed.toFixed(2)}× it lands on {clock(target)} and still sounds natural.{' '}
@@ -378,11 +413,18 @@ export default function ScriptStage({ goToStage }) {
                 v{v.version} · {v.status}{v.stale ? ' · stale' : ''} · {generatorLabel(v)}
               </span>
             ))}
+            {latest && ready && (
+              <button className="ghostbtn text-[12px] text-muted p-[3px_0]" title="Writes a new draft from the plan; this one is kept as a version"
+                onClick={() => window.confirm('Write a new draft from the plan? This script is kept as a version, but the new draft becomes the one you edit.')
+                  && mutate(() => api.generateScript(production.id), apply).catch(() => {})}>
+                <Sparkles size={12} /> New draft from plan
+              </button>
+            )}
             <span className="ml-auto" />
             {editable ? (
               <>
                 <button onClick={() => mutate(() => api.rejectScript(production.id, latest.id), apply)}><X size={15} /> Reject</button>
-                <button className="primary" onClick={accept}><Check size={15} /> Accept v{latest.version} → Segments</button>
+                <button className="primary" onClick={accept}><Check size={15} /> Approve script</button>
               </>
             ) : (
               <span className="statusnote"><Check size={15} /> v{latest.version} {latest.status}</span>

@@ -5,7 +5,9 @@ import { getDb } from '../../db/index.js';
 import { isDryRun, canGenerateLive } from './mode.js';
 import { castingReadiness } from '../casting.js';
 import { chooseRenderPath } from './heygen-route.js';
-import { renderViaStudio } from './heygen-studio.js';
+import { renderViaStudio, buildStudioArgs } from './heygen-studio.js';
+import { uploadAudio } from './heygen-audio.js';
+import { approvedLines, audioRuns } from '../approved-audio.js';
 
 // Capability router. The UI asks for a capability; this decides who fulfils it.
 // PM_SPEC: "Frontend should request capabilities, not providers."
@@ -232,16 +234,34 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
     throw Object.assign(new Error(route.reason), { code: route.warning ?? 'NO_PATH' });
   }
   // A local voice's remote id is a folder name on this Mac, not a HeyGen voice.
-  // Sending it would fail at best and, with a fallback, render a voice nobody
-  // approved. Rendering from the approved audio file is not built yet.
+  // So the approved audio itself goes up, and the avatar lip-syncs to it: one
+  // scene per run of one speaker, voiced by exactly the files the editor kit
+  // hands out. Only the plan path's studio tool takes uploaded audio per scene.
   const localVoiced = readiness.speakers.filter((s) => s.voice?.provider === 'local').map((s) => s.speaker);
-  if (route.path !== 'fixtures' && localVoiced.length) {
-    throw Object.assign(
-      new Error(`${localVoiced.join(', ')} ${localVoiced.length === 1 ? 'uses' : 'use'} your local voice. Rendering a HeyGen video from approved local audio is not built yet — nothing was sent.`),
-      { code: 'LOCAL_VOICE_RENDER' }
-    );
+  let audioScenes = null;
+  if (localVoiced.length) {
+    if (route.path === 'key') {
+      throw Object.assign(
+        new Error(`${localVoiced.join(', ')} ${localVoiced.length === 1 ? 'uses' : 'use'} your local voice, which renders through your HeyGen plan connection (Settings → HeyGen), not the API key — nothing was sent.`),
+        { code: 'LOCAL_VOICE_RENDER' }
+      );
+    }
+    const lines = approvedLines(productionId);
+    const missing = lines.filter((l) => !l.file).length;
+    if (!lines.length || missing) {
+      throw Object.assign(new Error(`${missing || 'No'} line${missing === 1 ? ' has' : 's have'} no approved audio — approve every line in Segments first.`),
+        { code: 'UNHEARD' });
+    }
+    const runs = await audioRuns(productionId, lines);
+    const ids = await uploadAudio(runs.map((r) => r.file), { title, simulate: route.path === 'fixtures' });
+    const avatarFor = (speaker) => castSegments.find((c) => c.speaker === speaker)?.avatarId
+      ?? bySpeaker.get(speaker)?.avatar?.remoteId ?? fallbackAvatar?.remote_id;
+    audioScenes = runs.map((r, i) => ({
+      speaker: r.speaker, text: r.text, avatarId: looks.get(r.speaker)?.remoteId ?? avatarFor(r.speaker), audioAssetId: ids[i],
+    }));
   }
   let result;
+  let sent = payload;
 
   if (route.path === 'mcp') {
     // The studio tool has no test flag, so the router only chooses it when the
@@ -256,12 +276,15 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
     result = await renderViaStudio({
       // The studio tool takes a look id as avatar_id whatever its type.
       segments: castSegments.map((s) => ({ ...s, avatarId: s.talkingPhotoId ?? s.avatarId })),
+      runs: audioScenes ?? undefined,
       title,
       aspectRatio: frame?.aspect ?? '16:9',
       resolution: frame?.resolution ?? '1080p',
     });
   } else {
     result = await provider.generateVideo(payload);
+    // Fixtures sends nothing, but records what the plan path WOULD have sent.
+    if (audioScenes) sent = buildStudioArgs({ runs: audioScenes, title }).args;
   }
 
   const dry = isDryRun();
@@ -273,7 +296,7 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
        VALUES (?,?,?,?,?,?,?,?)`
     )
     .run(route.path === 'mcp' ? 'heygen_mcp' : id, 'render', renderVersionId, productionId,
-         result.video_id, 'pending', dry ? 1 : 0, JSON.stringify(payload))
+         result.video_id, 'pending', dry ? 1 : 0, JSON.stringify(sent))
     .lastInsertRowid;
 
   return {
@@ -282,6 +305,7 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
     path: route.path, tool: result.tool ?? null,
     dryRun: dry, testMode, note: result.note ?? route.reason,
     stats: result.stats ?? stats,
+    lipSyncedToYourAudio: !!audioScenes,
     casting: { speakers: readiness.speakers, uncast },
   };
 }
