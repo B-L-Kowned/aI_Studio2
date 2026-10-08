@@ -47,6 +47,19 @@ function LocalVoice({ data, optional, castable, run, production, busy, reload })
     setCheck('busy');
     try { setCheck(await api.voiceCheck(production.id)); setCheckAt(0); } catch { setCheck(null); }
   };
+  // Made in the background since the script was approved: follow it as the
+  // lines land, then check them without being asked — the check is cached.
+  useEffect(() => {
+    if (!missing.length) return undefined;
+    const t = setInterval(async () => {
+      const b = await api.voiceBatch().catch(() => null);
+      if (b?.items?.some((x) => x.productionId === production.id && ['queued', 'running'].includes(x.state))) reload();
+    }, 4000);
+    return () => clearInterval(t);
+  }, [missing.length, production.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (made.length && !missing.length && check == null) runCheck();
+  }, [made.length, missing.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const suspectsOf = (id) => (check && check !== 'busy' ? check.lines.find((l) => l.segmentId === id)?.suspects.map((x) => x.i) : undefined);
   const goSuspect = (k) => {
     const l = check.lines[k % check.lines.length];

@@ -14,7 +14,8 @@ import * as artificialFunny from '../lib/publishers/artificial-funny.js';
 import { pushRenderJob, jobsForRender, pollJob } from '../lib/providers/index.js';
 import { isDryRun, providerMode, canGenerateLive } from '../lib/providers/mode.js';
 import { castingReadiness } from '../lib/casting.js';
-import { renderGate } from '../lib/segments.js';
+import { renderGate, buildSegments } from '../lib/segments.js';
+import { enqueue as queueVoice } from '../lib/voice-batch.js';
 import { productionLock } from '../lib/production-lock.js';
 import { madeBy } from '../lib/made-by.js';
 import { cleanRecordingAudio } from '../lib/assemble.js';
@@ -190,7 +191,16 @@ router.post(
     if (action === 'accept') clearStale('script_versions', v.id);
 
     const affected = action === 'accept' ? markStaleFrom(id, 'script', `Script v${v.version} accepted`) : {};
-    return ok(res, { ...scriptState(id), stale: staleSummary(id), affected }, `Script v${v.version} ${action}ed`);
+    // Approving a script is the first of three decisions; what follows it is
+    // not one. Its lines are built and its voice is queued at once (on this
+    // Mac, free) — unless you record it yourself, where your voice is the take.
+    let voice = null;
+    const finished = !!db.prepare("SELECT 1 FROM brief_fields WHERE production_id = ? AND label = 'Completed asset' AND value != ''").get(id);
+    if (action === 'accept' && madeBy(id) !== 'self' && !finished) {
+      try { buildSegments(id); voice = queueVoice([id]) ? 'queued' : 'already queued'; } catch (err) { voice = `not started: ${err.message}`; }
+    }
+    return ok(res, { ...scriptState(id), stale: staleSummary(id), affected, voice },
+      `Script v${v.version} ${action}ed${voice === 'queued' ? ' — its voice is being made now' : ''}`);
   })
 );
 

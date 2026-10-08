@@ -169,9 +169,8 @@ export default function Review({ go, tabs }) {
     if (!item || busy || editing || fitting?.productionId === item?.productionId) return;
     setBusy(true);
     try {
-      await mutate(() => api.acceptScript(item.productionId, item.versionId), null, { silent: true });
-      await mutate(() => api.buildSegments(item.productionId), null, { silent: true });
-      setUndo({ productionId: item.productionId, versionId: item.versionId, videoId: item.videoId, madeBy: item.madeBy, queued: false });
+      const r = await mutate(() => api.acceptScript(item.productionId, item.versionId), null, { silent: true });
+      setUndo({ productionId: item.productionId, versionId: item.versionId, videoId: item.videoId, madeBy: item.madeBy, queued: r?.data?.voice === 'queued' || r?.data?.voice === 'already queued' });
       setApprovedHere((n) => n + 1);
       await load(); // the approved draft leaves the list; the next one moves up
     } catch { /* mutate reports it */ } finally { setBusy(false); }
@@ -272,7 +271,7 @@ export default function Review({ go, tabs }) {
         <div className="flex items-center gap-[10px] mt-[12px] p-[8px_12px] rounded-md bg-ok-soft text-ok text-[12.5px]">
           <Check size={14} /> Approved {undo.videoId} — its lines are ready for Voice.
           {undo.madeBy !== 'self' && (undo.queued
-            ? <span className="text-ink-2">Voice queued for tonight.</span>
+            ? <span className="text-ink-2">Its voice is being made on this Mac — it will be in Voices to approve.</span>
             : <button className="text-[12px] p-[3px_10px]" onClick={async () => { await mutate(() => api.queueVoice([undo.productionId]), null).catch(() => {}); setUndo((u) => u && { ...u, queued: true }); }}>
                 <Headphones size={12} /> Make its voice tonight
               </button>)}

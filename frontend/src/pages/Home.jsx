@@ -63,7 +63,7 @@ function DeadlineForm({ deadlines, onSave, onCancel, first }) {
 const H = 'text-[11.5px] tracking-[.06em] uppercase text-faint font-semibold m-[0_0_8px] flex items-center gap-[6px]';
 
 export default function Home({ go }) {
-  const { openProduction, setPendingStage, setPendingView, setPendingDate, mutate, scopeMode } = useStudio();
+  const { openProduction, setPendingStage, setPendingView, setPendingDate, mutate, scopeMode, notify } = useStudio();
   const [m, setM] = useState(null);
   const [week, setWeek] = useState(null);           // the calendar strip and campaigns (the schedule)
   const [weekStart, setWeekStart] = useState(null);
@@ -99,6 +99,19 @@ export default function Home({ go }) {
   };
   const hasDates = Object.keys(m.deadlines ?? {}).length > 0;
   const Q = m.queues;
+  // Voice approved means ready to render: one decision starts them all. A render
+  // spends HeyGen credits, so it asks once, plainly, for the whole batch.
+  const renderAll = async () => {
+    const n = Q.render.count;
+    if (n === 1) { openAt(Q.render.first, 'Make'); return; }
+    if (!window.confirm(`Start ${n} renders on HeyGen? Each one uses your HeyGen credits. Videos without an approved look are skipped and listed.`)) return;
+    const skipped = [];
+    let started = 0;
+    for (const id of Q.render.ids) {
+      try { await api.startRender(id, true); started++; } catch (err) { skipped.push(err.message); }
+    }
+    notify(`${started} render${started === 1 ? '' : 's'} started${skipped.length ? ` · ${skipped.length} skipped — ${skipped[0]}` : ''}`, skipped.length ? 'error' : 'ok');
+  };
   const fitDrafts = async () => {
     const n = Q.fit.count;
     if (!window.confirm(`Fit ${n} draft${n === 1 ? '' : 's'} to time? Each is rewritten on this Mac (about a minute a video) and kept as a new draft to compare, keep or undo — nothing is approved. Leave it running overnight.`)) return;
@@ -182,7 +195,7 @@ export default function Home({ go }) {
                 try { sessionStorage.setItem('record-session', JSON.stringify(Q.record.ids)); } catch { /* storage blocked */ }
                 openAt(Q.record.first, 'Make');
               })}
-              {queue('render', 'To render', 'Render', () => openAt(Q.render.first, 'Make'))}
+              {queue('render', 'Ready to render', Q.render?.count > 1 ? 'Render all' : 'Render', renderAll)}
               {queue('export', 'To export', 'Edit', () => openAt(Q.export.first, 'Edit'))}
               {queue('publish', 'To publish', 'Finish', () => openAt(Q.publish.first, 'Finish'))}
             </div>
