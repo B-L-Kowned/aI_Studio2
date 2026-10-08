@@ -537,3 +537,14 @@ CREATE TABLE IF NOT EXISTS company_evidence (
   error      TEXT,
   fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- What goes with the video when it is posted. Kept apart from the brief:
+-- brief edits mark scripts out of date, and post copy says nothing about them.
+CREATE TABLE IF NOT EXISTS post_copy (
+  production_id INTEGER PRIMARY KEY REFERENCES productions(id) ON DELETE CASCADE,
+  title         TEXT NOT NULL DEFAULT '',
+  description   TEXT NOT NULL DEFAULT '',
+  chapters      TEXT NOT NULL DEFAULT '',
+  hashtags      TEXT NOT NULL DEFAULT '',
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);

@@ -506,3 +506,211 @@ export async function suggestAnswer(productionId, lineId) {
   const flags = introduced(text, `${line.text}\n${quoted.map((q) => q.text).join('\n')}`).map((x) => `New ${x} — not in the quoted evidence; check it.`);
   return { lineId, found: true, question, text, quotes: quoted, why: String(d.why ?? ''), model, flags };
 }
+
+// ------------------------------------------------------------------ post copy
+
+/** A title and description from the script, held to it: nothing promised it does not say. */
+export async function enhanceCopy(productionId) {
+  const { postCopy } = await import('./post-copy.js');
+  const copy = postCopy(productionId);
+  if (!copy) throw Object.assign(new Error('Production not found.'), { code: 'NOT_FOUND' });
+  if (!copy.script.trim()) throw Object.assign(new Error('There is no script to write from yet.'), { code: 'NOT_DRAFT' });
+  const brief = briefOf(productionId);
+  const site = brief.Website ? domainOf(brief.Website) : null;
+  const source = `${copy.script}\n${factsOf(brief)}`;
+  const model = await writingModel();
+  let feedback = ''; let best = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const out = await generateStructured('ollama', {
+      model, systemPrompt: SYSTEM, temperature: 0.4, maxTokens: 700,
+      prompt: [
+        'Write the YouTube title and description for this video, from its script.',
+        'Title: at most 65 characters, plain and specific — say what the viewer gets. No clickbait, no emoji, no all caps.',
+        `Description: 2 short paragraphs (under 90 words) saying who it is for and what it covers, then the line "Learn more: https://${site ?? 'the website'}".`,
+        'Use only what the SCRIPT and FACTS say.',
+        `FACTS:\n${factsOf(brief) || '(none)'}`,
+        `SCRIPT:\n${copy.script.replace(CONFIRM_RE, ' ')}`,
+        feedback ? `YOUR LAST VERSION WAS REJECTED: ${feedback}` : '',
+        'Return JSON: {"title":"...","description":"..."}',
+      ].filter(Boolean).join('\n\n'),
+    });
+    const title = tidy(String(out.data?.title ?? '')).replace(/^["']|["']$/g, '');
+    let description = String(out.data?.description ?? '').replace(/[ \t]+/g, ' ').trim();
+    if (site && !description.toLowerCase().includes(site)) description = `${description}\n\nLearn more: https://${site}`;
+    const claims = unsupportedClaims(`${title} ${description}`, source);
+    const problems = [];
+    if (!title || !description) problems.push('a field was empty.');
+    if (title.length > 70) problems.push(`the title is ${title.length} characters; it must be at most 65.`);
+    const dw = description.split(/\s+/).length;
+    if (dw < 35) problems.push(`the description has ${dw} words; write two paragraphs, 45 to 90 words.`);
+    if (claims.length) problems.push(`it promises things the script does not say (${claims.join(', ')}).`);
+    const score = problems.length;
+    if (title && description && (!best || score < best.score)) best = { title, description, claims, score };
+    if (!problems.length) break;
+    feedback = problems.join(' ');
+  }
+  if (!best) throw Object.assign(new Error('The model returned nothing usable. Try again.'), { code: 'BAD_OUTPUT' });
+  return {
+    title: best.title, description: best.description, model,
+    flags: [...introduced(`${best.title} ${best.description}`, source).map((x) => `New ${x} — not in the script; check it.`),
+      ...best.claims.map((c) => `Promises "${c}" — the script does not say so.`)],
+  };
+}
+
+// ------------------------------------------------------------------ visuals
+
+/** What is shown and the on-screen text for each section, from its own lines. A suggestion per row. */
+export async function suggestVisuals(productionId) {
+  const { visualsFor } = await import('./visuals.js');
+  const v = visualsFor(productionId);
+  const rows = v.rows.filter((r) => r.lines.length);
+  if (!rows.length) throw Object.assign(new Error('There are no script lines to plan visuals from yet.'), { code: 'NOT_DRAFT' });
+  const brief = briefOf(productionId);
+  const site = brief.Website ? domainOf(brief.Website) : null;
+  const label = Object.fromEntries(v.shots.map((s) => [s.id, s.label]));
+  const model = await writingModel();
+  const out = await generateStructured('ollama', {
+    model, systemPrompt: SYSTEM, temperature: 0.4, maxTokens: 1200,
+    prompt: [
+      'Plan what is on screen for each section of a short video while its lines are spoken.',
+      'For each section give: "detail" — one sentence saying exactly what to show (which screen, which part of it, or which image), and',
+      '"onscreen" — the on-screen text: at most 6 words, a plain label of the point being made, never a full sentence, never a slogan.',
+      'Use only what the lines say. The last section\'s on-screen text should be the website if there is one.',
+      'The on-screen text states the POINT of the lines, not the section name. Examples:',
+      '  lines "you should have one local person who knows who to call and stays involved until it\'s done" → "One local contact, start to finish"',
+      '  lines "students and families work through admissions planning: strategy, essays, interviews" → "Strategy · essays · interviews"',
+      'The detail says what to show for this shot type: for "You on camera", where to cut away and to what; for a screen recording, which screen and what to point at.',
+      site ? `WEBSITE: ${site}` : '',
+      `SECTIONS:\n${rows.map((r) => `#${r.ref} ${r.title} [${label[r.shotType] ?? r.shotType}]\n${r.lines.map((l) => l.text.replace(CONFIRM_RE, ' ')).join(' ')}`).join('\n\n')}`,
+      'Return JSON: {"rows":[{"ref":<number>,"detail":"...","onscreen":"..."}]}',
+    ].filter(Boolean).join('\n\n'),
+  });
+  const byRef = new Map((Array.isArray(out.data?.rows) ? out.data.rows : []).map((r) => [Number(r?.ref), r]));
+  return {
+    model,
+    rows: rows.map((r, i) => {
+      const s = byRef.get(Number(r.ref)) ?? {};
+      let onscreen = tidy(String(s.onscreen ?? '')).replace(/[.!]$/, '');
+      // Plain rules over the model: short, and the website at the end.
+      if (onscreen.split(/\s+/).length > 8) onscreen = onscreen.split(/\s+/).slice(0, 6).join(' ');
+      // Text that only repeats the section's name says nothing the edit does not.
+      if (overlap(onscreen, r.title) >= 0.6) onscreen = '';
+      if (i === rows.length - 1 && site && !onscreen.toLowerCase().includes(site)) onscreen = site;
+      const detail = tidy(String(s.detail ?? ''));
+      const source = r.lines.map((l) => l.text).join(' ');
+      return { id: r.id, ref: r.ref, title: r.title, detail, onscreen,
+        flags: unsupportedClaims(`${detail} ${onscreen}`, `${source} ${factsOf(brief)}`).map((c) => `"${c}" is not in these lines.`) };
+    }).filter((r) => r.detail || r.onscreen),
+  };
+}
+
+// ------------------------------------------------------------------ brief
+
+const BRIEF_ASK = {
+  Audience: 'Who is this product or program for? Name the people, in the company\'s own terms.',
+  Goal: 'What should a viewer understand or do after this video? One sentence, from what the company offers.',
+};
+
+/**
+ * Brief fields that are empty or still an instruction ("Confirm intended
+ * learner…"): the CTA by plain rule from the website; Audience and Goal only
+ * from quotable company material, with the quote.
+ */
+export async function suggestBrief(productionId) {
+  const { corpusFor, relevant } = await import('./evidence.js');
+  const brief = briefOf(productionId);
+  const needs = (k) => !brief[k] || INSTRUCTION_RE.test(String(brief[k]).trim());
+  const out = [];
+  const site = brief.Website ? domainOf(brief.Website) : null;
+  if (needs('CTA') && site) out.push({ label: 'CTA', value: `Visit ${site}`, why: 'From the website on the brief.' });
+
+  const asks = Object.keys(BRIEF_ASK).filter(needs);
+  if (asks.length) {
+    const { items, searched } = await corpusFor(productionId);
+    const title = getDb().prepare('SELECT title FROM productions WHERE id = ?').get(productionId).title;
+    const model = items.length ? await writingModel() : null;
+    for (const label of asks) {
+      const evidence = relevant(items, `${BRIEF_ASK[label]} ${title}`, title, 5);
+      if (!evidence.length) { out.push({ label, value: null, why: `Nothing found in ${searched.join(', ')}.` }); continue; }
+      const r = await generateStructured('ollama', {
+        model, systemPrompt: SYSTEM, temperature: 0.2, maxTokens: 300,
+        prompt: [
+          `Fill one field of a video brief: ${label}. ${BRIEF_ASK[label]}`,
+          `VIDEO: ${title}`,
+          `EVIDENCE (numbered; the only thing you may rely on):\n${evidence.map((e, i) => `${i + 1}. ${e.text}`).join('\n')}`,
+          'If the evidence does not say, answer with an empty value. At most 25 words.',
+          'Return JSON: {"value":"...","uses":[<numbers>]}',
+        ].join('\n\n'),
+      });
+      const value = tidy(String(r.data?.value ?? ''));
+      const uses = (Array.isArray(r.data?.uses) ? r.data.uses : []).map(Number).filter((n) => n >= 1 && n <= evidence.length);
+      if (!value || !uses.length) { out.push({ label, value: null, why: 'The company material does not say clearly.' }); continue; }
+      out.push({ label, value, quotes: uses.map((n) => evidence[n - 1]), model });
+    }
+  }
+  return { fields: out };
+}
+
+// ------------------------------------------------------------------ batch
+
+// One video at a time — the model uses the whole GPU. Kept in memory: a
+// restart stops the batch, and each video it finished is already a draft.
+const batch = { items: [], running: false, stop: false };
+export const enhanceBatch = () => ({
+  running: batch.running,
+  items: batch.items.map(({ productionId, title, state, error, words, target, version }) => ({ productionId, title, state, error, words, target, version })),
+});
+
+/** Drafts whose length is off for their target — what Fit to time is for. */
+export function thinDrafts(ids = null) {
+  const db = getDb();
+  const all = ids ?? db.prepare("SELECT DISTINCT production_id id FROM script_versions WHERE status = 'proposed'").all().map((r) => r.id);
+  return all.filter((id) => {
+    const r = reviewScript(id);
+    return r?.canEnhance && r.targetWords && Math.abs(r.words - r.targetWords) > r.targetWords * 0.1;
+  });
+}
+
+export function queueEnhance(ids) {
+  const db = getDb();
+  const queued = new Set(batch.items.filter((i) => i.state === 'queued' || i.state === 'running').map((i) => i.productionId));
+  for (const id of thinDrafts(ids)) {
+    if (queued.has(id)) continue;
+    const title = db.prepare('SELECT title FROM productions WHERE id = ?').get(id)?.title ?? `#${id}`;
+    batch.items.push({ productionId: id, title, state: 'queued' });
+  }
+  if (!batch.running) runBatch().catch(() => { batch.running = false; });
+  return enhanceBatch();
+}
+
+export function stopEnhanceBatch() {
+  batch.stop = true;
+  for (const i of batch.items) if (i.state === 'queued') i.state = 'cancelled';
+  return enhanceBatch();
+}
+
+async function runBatch() {
+  batch.running = true; batch.stop = false;
+  let model;
+  try { model = await writingModel(); } catch (err) {
+    for (const i of batch.items) if (i.state === 'queued') Object.assign(i, { state: 'failed', error: err.message });
+    batch.running = false; return;
+  }
+  for (const item of batch.items) {
+    if (batch.stop) break;
+    if (item.state !== 'queued') continue;
+    // A draft someone changed since it was queued may no longer need it.
+    if (!thinDrafts([item.productionId]).length) { item.state = 'skipped'; continue; }
+    item.state = 'running';
+    const job = { state: 'running', mode: 'fit', model, attempt: 0, startedAt: Date.now() };
+    jobs.set(item.productionId, job);
+    try {
+      await runEnhance(job, item.productionId, 'fit');
+      Object.assign(item, { state: 'done', words: job.result.words, target: job.result.target, version: job.result.version });
+    } catch (err) {
+      Object.assign(job, { state: 'failed', error: err.message });
+      Object.assign(item, { state: 'failed', error: err.message });
+    }
+  }
+  batch.running = false;
+}

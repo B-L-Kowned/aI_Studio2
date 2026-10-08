@@ -4,6 +4,7 @@ import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import UploadDrop from '../components/UploadDrop.jsx';
 import PublishStage from './PublishStage.jsx';
+import PostCopy from '../components/PostCopy.jsx';
 import { madeByOf } from '../utils/made-by.js';
 
 /**
@@ -43,6 +44,7 @@ export default function FinishStage({ goToStage }) {
         </>
       )}
       {completedAsset && <FinishedVideo production={production} completedAsset={completedAsset} />}
+      <PostCopy />
       <hr className="m-[24px_0] [border:0] [border-top:1px_solid_var(--line)]" />
       <PublishStage />
     </div>

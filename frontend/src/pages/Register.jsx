@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Search, Mic, User, Video, Check, AlertTriangle, ChevronDown, Minus, Headphones,
-  Flag, Clapperboard, Layers, Building2, ArrowUpDown, X } from 'lucide-react';
+  Flag, Clapperboard, Layers, Building2, ArrowUpDown, X, Sparkles } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { PageHead } from '../components/Section.jsx';
@@ -157,6 +157,15 @@ export default function Register({ go, tabs }) {
   const loadBatch = useCallback(() => api.voiceBatch().then(setBatch).catch(() => {}), []);
   useEffect(() => { loadBatch(); }, [loadBatch]);
   const batchBusy = batch && (batch.running || batch.queued > 0);
+  // The Fit-to-time batch: drafts whose length is off, rewritten one at a time on this Mac.
+  const [fit, setFit] = useState(null);
+  const loadFit = useCallback(() => api.enhanceBatch().then(setFit).catch(() => {}), []);
+  useEffect(() => { loadFit(); }, [loadFit]);
+  useEffect(() => {
+    if (!fit?.running) return undefined;
+    const t = setInterval(loadFit, 5000);
+    return () => clearInterval(t);
+  }, [fit?.running, loadFit]);
   useEffect(() => {
     if (!batchBusy) return undefined;
     const t = setInterval(loadBatch, 5000);
@@ -236,6 +245,13 @@ export default function Register({ go, tabs }) {
     if (!window.confirm(`Make your voice for ${voiceable.length} video${voiceable.length === 1 ? '' : 's'}? It runs on this Mac, free, about twice real time — leave it overnight. You still listen and approve each line.`)) return;
     mutate(() => api.queueVoice(voiceable.map((i) => i.id)), (r) => setBatch(r.data)).catch(() => {});
   };
+  const thin = new Set(fit?.thin ?? []);
+  const fittable = shown.filter((i) => thin.has(i.id));
+  const queueFit = () => {
+    if (!window.confirm(`Fit ${fittable.length} draft${fittable.length === 1 ? '' : 's'} to time? Each is rewritten on this Mac, about a minute a video, and kept as a new draft for you to compare, keep or undo — nothing is approved.`)) return;
+    mutate(() => api.queueEnhance(fittable.map((i) => i.id)), (r) => setFit((f) => ({ ...f, ...r.data })), { silent: true }).catch(() => {});
+  };
+  const fitNow = fit?.items.find((b) => b.state === 'running');
   const now = batch?.items.find((b) => b.state === 'running');
   const t = data.totals;
   const count = (key) => shown.filter((i) => settled(i.marks?.[key])).length;
@@ -284,6 +300,12 @@ export default function Register({ go, tabs }) {
         )}
         <span className="flex items-center gap-[10px] ml-auto">
           <span className="text-faint text-[11.5px] [font-variant-numeric:tabular-nums] whitespace-nowrap">{shown.length} of {data.items.length}</span>
+          {fittable.length > 0 && !fit?.running && (
+            <button className="text-[12px] p-[5px_11px]" onClick={queueFit}
+              title="Drafts shown here whose length is off for their target — rewritten section by section on this Mac, kept as new drafts">
+              <Sparkles size={13} className="text-accent" /> Fit {fittable.length === 1 ? 'this draft' : `${fittable.length} drafts`} to time
+            </button>
+          )}
           {/* An action, not a filter: only offered when there is voice to make. */}
           {voiceable.length > 0 && !batchBusy && (
             <button className="text-[12px] p-[5px_11px]" onClick={queueVoice}
@@ -294,6 +316,19 @@ export default function Register({ go, tabs }) {
         </span>
       </div>
 
+      {fit?.items.length > 0 && (
+        <p className="flex flex-wrap items-center gap-[10px] text-[12px] m-[10px_0_0] text-ink-2">
+          <Sparkles size={13} className="text-accent" />
+          {fit.running ? (
+            <span>Fitting drafts to time: {fit.items.filter((b) => ['done', 'failed', 'skipped'].includes(b.state)).length} of {fit.items.filter((b) => b.state !== 'cancelled').length}
+              {fitNow && <> · now {fitNow.title.split(' — ')[0]}</>}</span>
+          ) : (
+            <span>Fit to time finished: {fit.items.filter((b) => b.state === 'done').length} new drafts to compare and approve in Review
+              {fit.items.some((b) => b.state === 'failed') && <span className="text-warn"> · {fit.items.filter((b) => b.state === 'failed').length} could not reach the length</span>}</span>
+          )}
+          {fit.running && <button className="ghostbtn text-[12px] text-danger p-0" onClick={() => mutate(() => api.stopEnhanceBatch(), (r) => setFit((f) => ({ ...f, ...r.data }))).catch(() => {})}>Stop</button>}
+        </p>
+      )}
       {batch?.items.length > 0 && (
         <p className="flex flex-wrap items-center gap-[10px] text-[12px] m-[10px_0_0] text-ink-2">
           <Headphones size={13} className="text-muted" />

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Lock, Check } from 'lucide-react';
+import { EnhanceButton, Suggestion, modelLabel } from './Enhance.jsx';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import UploadDrop from './UploadDrop.jsx';
@@ -26,11 +27,24 @@ const SHOT_TONE = {
 export default function ShotList() {
   const { production, mutate } = useStudio();
   const [v, setV] = useState(null);
+  const [ideas, setIdeas] = useState(null); // null | 'busy' | { model, rows: { [id]: suggestion } }
   const load = useCallback(() => api.visuals(production.id).then(setV), [production.id]);
   useEffect(() => { load(); }, [load]);
 
   if (!v) return <p className="muted">Loading…</p>;
   const save = (row, patch) => mutate(() => api.updateVisual(production.id, row.id, patch), (r) => setV(r.data), { silent: true }).catch(() => {});
+  const suggestAll = async () => {
+    setIdeas('busy');
+    try {
+      const r = await mutate(() => api.enhanceVisuals(production.id), null, { silent: true });
+      setIdeas({ model: r.data.model, rows: Object.fromEntries(r.data.rows.map((x) => [x.id, x])) });
+    } catch { setIdeas(null); }
+  };
+  const useIdea = (row, idea) => {
+    save(row, { ...(idea.detail ? { detail: idea.detail } : {}), ...(idea.onscreen ? { onscreenText: idea.onscreen } : {}) });
+    setIdeas((m) => ({ ...m, rows: Object.fromEntries(Object.entries(m.rows).filter(([k]) => Number(k) !== row.id)) }));
+  };
+  const ideaRows = ideas && ideas !== 'busy' ? ideas.rows : {};
   const recordable = v.rows.filter((r) => r.shotType === 'screen');
   const captured = recordable.filter((r) => r.captured).length;
 
@@ -41,6 +55,18 @@ export default function ShotList() {
           <h2>Visuals</h2>
           <p>What is on screen while each part of the script plays. Sections follow the outline.</p>
         </div>
+        <span className="flex items-center gap-[12px]">
+        {Object.keys(ideaRows).length > 1 && (
+          <button className="text-[12px] p-[5px_11px]" onClick={() => v.rows.forEach((r) => ideaRows[r.id] && useIdea(r, ideaRows[r.id]))}>
+            Use all {Object.keys(ideaRows).length}
+          </button>
+        )}
+        {!v.approved && (
+          <EnhanceButton label="Suggest visuals" busy={ideas === 'busy'} busyLabel="Planning…" onPick={suggestAll} options={[
+            { id: 'all', label: 'What to show and the on-screen text', detail: 'For every section, from its own lines. Shown under each for you to use or not.' },
+          ]} />
+        )}
+        </span>
         {recordable.length > 0 && (
           <span className={`text-[12px] ${captured === recordable.length ? 'text-ok' : 'text-muted'}`}>
             Screens recorded: <b>{captured} of {recordable.length}</b>
@@ -81,10 +107,17 @@ export default function ShotList() {
               ))}
             </div>
             <textarea className="w-full min-h-[58px] text-[12.5px] leading-[1.5] resize-y" defaultValue={r.detail}
-              key={`${r.id}-${r.shotType}`} placeholder={SHOT_HINT[r.shotType]} aria-label="What is shown"
+              key={`${r.id}-${r.shotType}-${r.detail}`} placeholder={SHOT_HINT[r.shotType]} aria-label="What is shown"
               onBlur={(e) => e.target.value !== r.detail && save(r, { detail: e.target.value })} />
-            <input className="text-[12px]" defaultValue={r.onscreenText} placeholder="On-screen text or caption (optional)"
+            <input key={r.onscreenText} className="text-[12px]" defaultValue={r.onscreenText} placeholder="On-screen text or caption (optional)"
               aria-label="On-screen text" onBlur={(e) => e.target.value !== r.onscreenText && save(r, { onscreenText: e.target.value })} />
+            {ideaRows[r.id] && (
+              <Suggestion
+                text={<>{ideaRows[r.id].detail}{ideaRows[r.id].onscreen && <span className="block mt-[3px] text-[12px] text-ink-2">On screen: <b className="font-[600]">{ideaRows[r.id].onscreen}</b></span>}</>}
+                flags={ideaRows[r.id].flags} meta={modelLabel(ideas.model)}
+                onDismiss={() => setIdeas((m) => ({ ...m, rows: Object.fromEntries(Object.entries(m.rows).filter(([k]) => Number(k) !== r.id)) }))}
+                onUse={() => useIdea(r, ideaRows[r.id])} />
+            )}
             {r.shotType === 'screen' && (
               <div className="flex flex-wrap items-center gap-[10px]">
                 {r.recording ? (

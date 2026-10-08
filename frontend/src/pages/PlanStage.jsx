@@ -3,6 +3,7 @@ import {
   Users, Clock, Video, Upload, FileText, Link, FolderKanban,
   Lock, Check, AlertCircle, Trash2, RefreshCw,
 } from 'lucide-react';
+import { EnhanceButton, Suggestion, modelLabel } from '../components/Enhance.jsx';
 import { useStudio } from '../context/studio-context.jsx';
 import { toSeconds, toClock } from '../utils/format.js';
 import { api } from '../services/api.js';
@@ -79,7 +80,7 @@ const PLUMBING = /^(Template|Type|Primary output|Clip extraction)$/;
 const LONG = 90;
 const STATUS_TONE = (v) => (/complete|approved|verified|published|done/i.test(v) && !/not /i.test(v) ? 'text-ok' : /needs|pending|not /i.test(v) ? 'text-warn' : 'text-ink-2');
 
-function BriefField({ f, onSave }) {
+function BriefField({ f, onSave, suggestion, onDismiss }) {
   const long = (f.value ?? '').length > LONG || /summary|advantage|demonstration|objections|offer|problems/i.test(f.label);
   const Tag = long ? 'textarea' : 'input';
   return (
@@ -90,7 +91,17 @@ function BriefField({ f, onSave }) {
         rows={long ? Math.min(6, Math.ceil((f.value ?? '').length / 110) + 1) : undefined}
         defaultValue={f.value}
         onBlur={(e) => e.target.value !== f.value && onSave(f, e.target.value)}
+        key={f.value}
       />
+      {suggestion?.value && (
+        <span className="font-normal">
+          <Suggestion text={suggestion.value} meta={suggestion.quotes ? modelLabel(suggestion.model) : 'plain rule'}
+            onDismiss={onDismiss} onUse={() => { onSave(f, suggestion.value); onDismiss(); }} />
+          {suggestion.quotes?.map((q) => <small key={q.text} className="block text-[11.5px] text-muted mt-[3px] leading-[1.45]">“{q.text}” <i className="text-faint">— {q.source}</i></small>)}
+          {suggestion.why && !suggestion.quotes && <small className="block text-[11px] text-faint mt-[3px]">{suggestion.why}</small>}
+        </span>
+      )}
+      {suggestion && !suggestion.value && <small className="font-normal text-[11.5px] text-faint">Not filled: {suggestion.why}</small>}
     </label>
   );
 }
@@ -99,6 +110,23 @@ function Brief({ goToStage }) {
   const { production, applyProduction, mutate } = useStudio();
   const [showPlumbing, setShowPlumbing] = useState(false);
   const save = (f, value) => mutate(() => api.updateBrief(production.id, f.id, value), applyProduction).catch(() => {});
+  // Suggestions for empty or still-instruction fields, by label.
+  const [fills, setFills] = useState(null); // null | 'busy' | { label: suggestion }
+  const fillGaps = async () => {
+    setFills('busy');
+    try {
+      const r = await mutate(() => api.enhanceBrief(production.id), null, { silent: true });
+      const map = Object.fromEntries(r.data.fields.map((x) => [x.label, x]));
+      setFills(map);
+      // A field the brief does not have yet is added with the suggestion, then shown like the rest.
+      for (const x of r.data.fields) {
+        if (x.value && !production.brief.some((b) => b.label === x.label)) {
+          await mutate(() => api.upsertBrief(production.id, x.label, ''), applyProduction, { silent: true }).catch(() => {});
+        }
+      }
+    } catch { setFills(null); }
+  };
+  const dismissFill = (label) => setFills((m) => (m && m !== 'busy' ? Object.fromEntries(Object.entries(m).filter(([k]) => k !== label)) : m));
   const byLabel = Object.fromEntries(production.brief.map((f) => [f.label, f]));
   const grouped = new Set(BRIEF_GROUPS.flatMap((g) => g.labels));
   const record = production.brief.filter((f) => RECORD.test(f.label) && f.value);
@@ -115,6 +143,9 @@ function Brief({ goToStage }) {
           <h2>Brief</h2>
           <p>What this video has to say, and to whom. The script is written from this.</p>
         </div>
+        <EnhanceButton label="Fill the gaps" busy={fills === 'busy'} busyLabel="Looking…" onPick={fillGaps} options={[
+          { id: 'fill', label: 'Suggest Audience, Goal and CTA', detail: 'Only where they are empty or still an instruction. The CTA comes from the website; the rest only from what the company has published, with the quote.' },
+        ]} />
         {rec('Register ID') && (
           <span className="flex items-center gap-[8px] text-[12px] text-muted">
             <code className="text-[11.5px] font-semibold text-ink-2 bg-canvas border border-solid border-line rounded-[4px] p-[2px_7px]">{rec('Register ID')}</code>
@@ -140,7 +171,8 @@ function Brief({ goToStage }) {
           <section key={g.key} className="mt-[18px]">
             <h3 className="text-[11px] tracking-[.07em] uppercase text-faint font-semibold m-[0_0_8px]">{g.title}</h3>
             <div className="grid grid-cols-[1fr_1fr] gap-[12px_14px] lte800:grid-cols-[1fr]">
-              {fields.map((f) => <BriefField key={f.id} f={f} onSave={save} />)}
+              {fields.map((f) => <BriefField key={f.id} f={f} onSave={save}
+                suggestion={fills && fills !== 'busy' ? fills[f.label] : null} onDismiss={() => dismissFill(f.label)} />)}
             </div>
           </section>
         );

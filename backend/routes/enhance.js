@@ -1,11 +1,21 @@
 import { Router } from 'express';
-import { reviewScript, applyFixes, startEnhance, enhanceJob, undoEnhance, improveLine, suggestAnswer } from '../lib/enhance.js';
+import { reviewScript, applyFixes, startEnhance, enhanceJob, undoEnhance, improveLine, suggestAnswer, enhanceCopy, suggestVisuals, suggestBrief,
+  enhanceBatch, queueEnhance, stopEnhanceBatch, thinDrafts } from '../lib/enhance.js';
+import { postCopy, savePostCopy, resetPostCopy } from '../lib/post-copy.js';
 import { getDb } from '../db/index.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
 const STATUS = { NO_CHECK: 409, NOT_FOUND: 404, NOT_DRAFT: 409, BAD_MODE: 400, BAD_GOAL: 400, CANNOT_UNDO: 409, LLM_OFFLINE: 503, NO_MODEL: 503, BAD_OUTPUT: 502 };
 const failWith = (res, err) => fail(res, STATUS[err.code] ?? 502, err.code ?? 'ENHANCE_FAILED', err.message);
+
+/** Fit to time across many drafts, one at a time. ids omitted = every draft that is off length. */
+router.get('/enhance/batch', route(async (req, res) => ok(res, { ...enhanceBatch(), thin: thinDrafts() })));
+router.post('/enhance/batch', route(async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Boolean) : null;
+  return ok(res, queueEnhance(ids), 'Queued — runs on this Mac, one video at a time');
+}));
+router.post('/enhance/batch/stop', route(async (req, res) => ok(res, stopEnhanceBatch(), 'Stopping after the current video')));
 
 /** The plain checks — instant, no model. */
 router.get('/:id/script/checks', route(async (req, res) => {
@@ -51,6 +61,30 @@ router.post('/:id/enhance/line/:lineId', route(async (req, res) => {
 /** Suggest an answer to the line's [CONFIRM] check, from the company's own material. */
 router.post('/:id/enhance/answer/:lineId', route(async (req, res) => {
   try { return ok(res, await suggestAnswer(Number(req.params.id), Number(req.params.lineId))); }
+  catch (err) { return failWith(res, err); }
+}));
+
+/** Post copy: worked out from the script and outline until you change it. */
+router.get('/:id/post-copy', route(async (req, res) => {
+  const c = postCopy(Number(req.params.id));
+  return c ? ok(res, c) : fail(res, 404, 'NOT_FOUND', 'Production not found');
+}));
+router.put('/:id/post-copy', route(async (req, res) => {
+  try { return ok(res, savePostCopy(Number(req.params.id), req.body ?? {}), 'Saved'); }
+  catch (err) { return failWith(res, err); }
+}));
+router.delete('/:id/post-copy', route(async (req, res) => ok(res, resetPostCopy(Number(req.params.id)), 'Back to the worked-out version')));
+router.post('/:id/enhance/post-copy', route(async (req, res) => {
+  try { return ok(res, await enhanceCopy(Number(req.params.id))); }
+  catch (err) { return failWith(res, err); }
+}));
+
+router.post('/:id/enhance/visuals', route(async (req, res) => {
+  try { return ok(res, await suggestVisuals(Number(req.params.id))); }
+  catch (err) { return failWith(res, err); }
+}));
+router.post('/:id/enhance/brief', route(async (req, res) => {
+  try { return ok(res, await suggestBrief(Number(req.params.id))); }
   catch (err) { return failWith(res, err); }
 }));
 
