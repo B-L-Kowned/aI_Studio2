@@ -257,7 +257,7 @@ export default function ScriptStage({ goToStage }) {
   return (
     <div className="stagepane">
       {/* One quiet line of facts: what it is, who it is for, how it is made. */}
-      <div className="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] text-[12.5px] text-muted mb-[14px]">
+      <div className="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] text-[12.5px] text-muted mb-[8px]">
         {[
           brief.Priority && <span key="p" className={brief.Priority === 'P1' ? 'text-danger font-semibold' : 'font-[560] text-ink-2'}>{brief.Priority}</span>,
           brief.Format && <span key="f">{brief.Format}</span>,
@@ -269,7 +269,7 @@ export default function ScriptStage({ goToStage }) {
         </button>
       </div>
       {brief['Verify first'] && !details && (
-        <div className="notice warn items-start"><AlertCircle /> <span><b>Verify before recording.</b> {brief['Verify first']}</span></div>
+        <p className="m-[0_0_8px] text-[12.5px] text-warn flex items-center gap-[6px]"><AlertCircle size={13} className="flex-none" /> <span><b className="font-[600]">Verify before recording.</b> {brief['Verify first']}</span></p>
       )}
       {details && <div className="mb-[16px]"><PlanStage goToStage={goToStage} /></div>}
 
@@ -311,13 +311,13 @@ export default function ScriptStage({ goToStage }) {
       )}
 
       {latest && (
-        <section className="mt-[14px] bg-surface border border-solid border-line rounded-lg" aria-label="Script">
+        <section className="mt-[6px] bg-surface border border-solid border-line rounded-lg" aria-label="Script">
           {/* ---- the document's head: one row — what it is, how long it runs, hear it */}
-          <header className="p-[16px_22px] [border-bottom:1px_solid_var(--line)]">
-            <div className="flex flex-wrap items-center gap-x-[28px] gap-y-[12px]">
-              <div className="min-w-0 mr-auto">
-                <h2 className="m-0 text-[16px] tracking-[-0.01em]">Script</h2>
-                <p className="m-[3px_0_0] text-[12px] text-muted flex flex-wrap items-center gap-x-[6px]">
+          <header className="p-[10px_18px] [border-bottom:1px_solid_var(--line)]">
+            <div className="flex flex-wrap items-center gap-x-[16px] gap-y-[8px]">
+              <div className="min-w-0 mr-auto flex flex-wrap items-baseline gap-x-[10px]">
+                <h2 className="m-0 text-[15px] tracking-[-0.01em]">Script</h2>
+                <p className="m-0 text-[12px] text-muted flex flex-wrap items-center gap-x-[6px]">
                   <span className={accepted ? 'text-ok' : 'text-warn'}>{accepted ? `Approved v${latest.version}` : 'Draft'}</span>
                   <span className="text-faint">·</span>
                   {/^https?:\/\//.test(brief['Script source'] ?? '')
@@ -332,21 +332,39 @@ export default function ScriptStage({ goToStage }) {
 
               {published ? (
                 <div className="text-right">
-                  <div className="text-[22px] font-[600] leading-none text-ink [font-variant-numeric:tabular-nums]">{fileSeconds ? clock(fileSeconds) : recordedLength ?? '—'}</div>
-                  <div className="text-[11.5px] text-muted mt-[5px]">{recordedLength || fileSeconds ? 'as published' : 'no length on record'}</div>
+                  <div className="text-[17px] font-[600] leading-none text-ink [font-variant-numeric:tabular-nums]">{fileSeconds ? clock(fileSeconds) : recordedLength ?? '—'}</div>
+                  <div className="text-[11px] text-muted mt-[3px]">{recordedLength || fileSeconds ? 'as published' : 'no length on record'}</div>
                 </div>
               ) : (
-                <div className="w-[230px]" title={`${totalWords} words · ${lines.length} lines`}>
+                <div className="w-[180px]" title={`${totalWords} words · ${lines.length} lines`}>
                   <div className="flex items-baseline gap-[8px] [font-variant-numeric:tabular-nums]">
-                    <span className={`text-[22px] font-[600] leading-none ${tone}`}>{clock(total)}</span>
+                    <span className={`text-[17px] font-[600] leading-none ${tone}`}>{clock(total)}</span>
                     <span className="text-[12px] text-muted">of {clock(target)}</span>
                     {target > 0 && <span className={`ml-auto text-[11.5px] font-semibold ${tone}`}>{within ? 'On length' : signed(delta)}</span>}
                   </div>
-                  <div className="relative h-[3px] rounded-full bg-canvas mt-[8px]" aria-hidden="true">
+                  <div className="relative h-[3px] rounded-full bg-canvas mt-[5px]" aria-hidden="true">
                     <div className={`h-full rounded-full ${within ? 'bg-ok' : 'bg-warn'}`} style={{ width: `${barPct}%` }} />
                     {target > 0 && <div className="absolute top-[-3px] w-[2px] h-[9px] bg-ink rounded-full" style={{ left: `calc(${targetPct}% - 1px)` }} />}
                   </div>
                 </div>
+              )}
+
+              {editable && !published && (
+                <span className="flex items-center gap-[10px] text-[12px]">
+                  {issues.length > 0 ? (
+                    <button className="ghostbtn p-0 text-[12px] text-ink-2" onClick={() => setShowChecks((v) => !v)} aria-expanded={showChecks}>
+                      <AlertTriangle size={12} className="text-warn" /> {issues.length} to look at
+                      <ChevronDown size={12} className={'text-muted ' + (showChecks ? 'rotate-180' : '')} />
+                    </button>
+                  ) : checks && <span className="text-ok inline-flex items-center gap-[4px]" title="Passes the checks"><Check size={12} /> Checks pass</span>}
+                  {fixable > 0 && <button className="text-[12px] p-[3px_9px]" onClick={() => fixChecks()}>Fix {fixable}</button>}
+                  <EnhanceButton busy={enhRunning} busyLabel={enh?.total ? `Section ${Math.max(1, enh.section)} of ${enh.total}…` : 'Enhancing…'} onPick={runEnhance} options={[
+                    { id: 'fit', label: 'Fit to time', disabled: !target,
+                      detail: `Bring it to ${clock(target)} — about ${checks?.targetWords ?? '…'} words — section by section, from the brief. No new facts.` },
+                    { id: 'tighten', label: 'Tighten', detail: 'Cut filler and repetition. Every fact and the call to action stay.' },
+                    { id: 'polish', label: 'Polish for speech', detail: 'Same length and facts, smoother to say aloud.' },
+                  ]} />
+                </span>
               )}
 
               {fullRead?.state === 'running' ? (
@@ -354,7 +372,7 @@ export default function ScriptStage({ goToStage }) {
                   <RefreshCw size={12} className="animate-spin" /> Full read — line {Math.min(fullRead.done + 1, fullRead.total)} of {fullRead.total}
                 </span>
               ) : (
-                <button className="text-[12.5px] p-[7px_13px]" onClick={hearAll} disabled={!lines.length}
+                <button className="text-[12.5px] p-[5px_11px]" onClick={hearAll} disabled={!lines.length}
                   title="Every line in order, in your voice at this speed — free">
                   <Headphones size={13} /> {fullRead?.state === 'done' ? 'Rebuild full read' : 'Hear it all'}
                 </button>
@@ -362,7 +380,7 @@ export default function ScriptStage({ goToStage }) {
             </div>
 
             {!published && (timing.pace === 'own' ? null : (
-              <div className="flex flex-wrap items-center gap-x-[14px] gap-y-[6px] mt-[10px] text-[12px] text-muted">
+              <div className="flex flex-wrap items-center gap-x-[14px] gap-y-[4px] mt-[6px] text-[12px] text-muted">
                 <span>Voice <b className="font-[560] text-ink-2">{timing.voice?.name ?? 'planning pace'}</b> · {timing.naturalWpm} wpm{timing.measured ? '' : ' (estimate)'}</span>
                 <span className="flex items-center gap-[4px]">
                   Speed
@@ -404,26 +422,9 @@ export default function ScriptStage({ goToStage }) {
               </p>
             )}
             {editable && !published && (
-              <div className="mt-[12px] pt-[12px] [border-top:1px_solid_var(--line)]">
-                <div className="flex flex-wrap items-center gap-[8px_14px] text-[12px]">
-                  {issues.length > 0 ? (
-                    <button className="ghostbtn p-0 text-[12px] text-ink-2" onClick={() => setShowChecks((v) => !v)} aria-expanded={showChecks}>
-                      <AlertTriangle size={12} className="text-warn" /> {issues.length} thing{issues.length === 1 ? '' : 's'} to look at
-                      <ChevronDown size={12} className={'text-muted ' + (showChecks ? 'rotate-180' : '')} />
-                    </button>
-                  ) : checks && <span className="text-ok inline-flex items-center gap-[5px]"><Check size={12} /> Passes the checks</span>}
-                  {fixable > 0 && <button className="text-[12px] p-[4px_10px]" onClick={() => fixChecks()}>Fix {fixable} automatically</button>}
-                  <span className="ml-auto" />
-                  {enhRunning && <span className="text-muted">Rewriting on this Mac with {modelLabel(enh.model)}{enh.total ? ` — section ${Math.max(1, enh.section)} of ${enh.total}` : ''}…</span>}
-                  <EnhanceButton busy={enhRunning} busyLabel="Enhancing…" onPick={runEnhance} options={[
-                    { id: 'fit', label: 'Fit to time', disabled: !target,
-                      detail: `Bring it to ${clock(target)} — about ${checks?.targetWords ?? '…'} words — section by section, from the brief. No new facts.` },
-                    { id: 'tighten', label: 'Tighten', detail: 'Cut filler and repetition. Every fact and the call to action stay.' },
-                    { id: 'polish', label: 'Polish for speech', detail: 'Same length and facts, smoother to say aloud.' },
-                  ]} />
-                </div>
+              <div>
                 {showChecks && issues.length > 0 && (
-                  <ul className="m-[10px_0_0] p-0 list-none flex flex-col gap-[5px]">
+                  <ul className="m-[8px_0_0] p-[8px_0_0] [border-top:1px_solid_var(--line)] list-none flex flex-col gap-[5px]">
                     {issues.map((i) => (
                       <li key={i.id} className="flex items-start gap-[8px] text-[12px] text-ink-2">
                         <span className={'mt-[6px] w-[6px] h-[6px] rounded-full flex-none ' + (i.fix ? 'bg-accent' : 'bg-warn')} aria-hidden="true" />
@@ -474,14 +475,14 @@ export default function ScriptStage({ goToStage }) {
           </header>
 
           {/* ---- the lines, by outline section */}
-          <div className="p-[4px_22px_8px]">
+          <div className="p-[0_18px_4px]">
             {grouped.map((g, gi) => {
               const written = secsAt(g.lines.reduce((n, l) => n + l.words, 0));
               const off = g.seconds && (written < g.seconds * 0.7 || written > g.seconds * 1.3);
               return (
                 // The section sits in the margin beside its lines, as in a printed script.
-                <div key={gi} className={'grid grid-cols-[150px_minmax(0,1fr)] gap-x-[22px] p-[14px_0] lte800:grid-cols-[1fr] ' + (gi ? '[border-top:1px_solid_var(--line)]' : '')}>
-                  <div className="pt-[11px]">
+                <div key={gi} className={'grid grid-cols-[124px_minmax(0,1fr)] gap-x-[16px] p-[8px_0] lte800:grid-cols-[1fr] ' + (gi ? '[border-top:1px_solid_var(--line)]' : '')}>
+                  <div className="pt-[7px]">
                     {g.title && <b className="block text-[10.5px] tracking-[.08em] uppercase text-ink-2 font-semibold leading-[1.4]">{g.title}</b>}
                     {g.title && !published && (
                       <span className={`block mt-[3px] text-[11.5px] [font-variant-numeric:tabular-nums] ${off ? 'text-warn' : 'text-faint'}`}
@@ -491,14 +492,14 @@ export default function ScriptStage({ goToStage }) {
                     )}
                   </div>
                   <div className="min-w-0">
-                  {g.lines.length === 0 && <p className="text-faint text-[12.5px] m-[4px_0_6px] italic">Nothing written for this section yet.</p>}
+                  {g.lines.length === 0 && <p className="text-faint text-[12px] m-[8px_0_4px] italic">Nothing written for this section yet.</p>}
                   {g.lines.map((l) => {
                     if (editable) return (
                       <div key={l.id} className={'grid gap-[10px] p-[5px_0] items-start ' + (oneSpeaker ? 'grid-cols-[30px_minmax(0,1fr)_auto]' : 'grid-cols-[30px_84px_minmax(0,1fr)_auto]')}>
                         <button type="button" onClick={() => playDraft(l)} disabled={l.checks > 0}
                           title={l.checks ? 'Resolve the check first' : 'Hear it in your voice — free'}
                           aria-label="Hear this line"
-                          className={'w-[28px] h-[28px] mt-[6px] p-0 rounded-full grid place-items-center border border-solid '
+                          className={'w-[28px] h-[28px] mt-[2px] p-0 rounded-full grid place-items-center border border-solid '
                             + (listening?.id === l.id && listening.url ? 'bg-ink border-ink text-white' : 'bg-surface border-line text-ink hover:border-ink')}>
                           {listening?.id === l.id && listening.busy ? <RefreshCw size={12} className="animate-spin" />
                             : listening?.id === l.id ? <Pause size={12} /> : <Play size={12} className="ml-[1px]" />}
@@ -512,8 +513,8 @@ export default function ScriptStage({ goToStage }) {
                         )}
                         <div className="min-w-0">
                           <textarea key={latest.segments.find((x) => x.id === l.id)?.text} ref={(el) => { lineRefs.current[l.id] = el; }}
-                            className={'w-full min-h-[52px] resize-y text-[14px] leading-[1.6] bg-surface-2 border-transparent hover:border-line focus:bg-surface' + (l.checks ? ' !border-warn-line' : '')}
-                            defaultValue={l.text} aria-label="Script line" rows={2}
+                            className={'w-full min-h-0 resize-y text-[14px] leading-[1.55] p-[4px_8px] bg-transparent border-transparent hover:bg-surface-2 focus:bg-surface focus:border-line' + (l.checks ? ' !border-warn-line' : '')}
+                            defaultValue={l.text} aria-label="Script line" rows={Math.max(1, Math.ceil(l.text.length / 150))}
                             onChange={(e) => setDrafts((d) => ({ ...d, [l.id]: e.target.value }))}
                             onBlur={(e) => e.target.value !== latest.segments.find((x) => x.id === l.id)?.text && saveLine(l, { text: e.target.value })} />
                           {l.checks > 0 && (
