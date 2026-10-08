@@ -93,12 +93,14 @@ export function Tabs({ items, value, onChange }) {
     // shadow, not a border, so the active underline sits inside the scroll box
     // instead of being clipped by it.
     <nav className="subnav mb-0 flex-nowrap overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [border-bottom:0] [box-shadow:inset_0_-1px_0_var(--line)] [&>button]:mb-0 [&>button]:shrink-0 [&>button]:whitespace-nowrap" role="tablist">
-      {items.map((t) => (
+      {items.map((t, i) => (
+        <React.Fragment key={t.id}>
+        {/* A quieter group (setup screens) starts after a rule. */}
+        {t.setup && !items[i - 1]?.setup && i > 0 && <span aria-hidden className="shrink-0 self-center w-px h-[14px] bg-line-2 mx-[8px]" />}
         <button
-          key={t.id}
           role="tab"
           aria-selected={value === t.id}
-          className={value === t.id ? 'on' : t.stale ? '!text-warn' : ''}
+          className={value === t.id ? 'on' : t.stale ? '!text-warn' : t.setup ? '!text-faint' : ''}
           title={t.title ?? ''}
           onClick={() => onChange(t.id)}
         >
@@ -106,6 +108,7 @@ export function Tabs({ items, value, onChange }) {
           {t.count != null && <span className="tabcount">{t.count}</span>}
           {t.stale && <i className="staledot" />}
         </button>
+        </React.Fragment>
       ))}
     </nav>
   );

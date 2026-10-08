@@ -11,14 +11,15 @@ import { PageHead } from '../components/Section.jsx';
 import HeyGen from './HeyGen.jsx';
 
 const SECTIONS = [
-  { id: 'license', label: 'License', icon: KeyRound },
-  { id: 'connections', label: 'Connections', icon: Plug },
-  { id: 'ai', label: 'Model routing', icon: Sparkles },
-  { id: 'generation', label: 'Generation', icon: Video },
+  // What you touch while making videos first; the install's plumbing last.
   { id: 'voice', label: 'Your voice', icon: Mic },
   { id: 'heygen', label: 'HeyGen account', icon: Video },
+  { id: 'generation', label: 'Generation', icon: Video },
   { id: 'storage', label: 'Storage', icon: HardDrive },
   { id: 'publishing', label: 'Publishing', icon: Share2 },
+  { id: 'connections', label: 'Connections', icon: Plug },
+  { id: 'ai', label: 'Model routing', icon: Sparkles },
+  { id: 'license', label: 'License', icon: KeyRound },
 ];
 
 /**
@@ -38,14 +39,14 @@ const TONE_CLASS = { free: 'free text-ok', meter: 'text-accent', bill: 'text-war
 const H2 = 'm-[0_0_4px]';
 
 export default function Setup() {
-  const [section, setSection] = useState('license');
+  const [section, setSection] = useState('voice');
   const { workspace } = useStudio();
 
   return (
     <>
       <PageHead
         title="Settings"
-        lead="Licence, connections, models, generation and storage for this install."
+        lead="Your voice, HeyGen, storage and the rest of this install."
       />
 
       <div className="grid grid-cols-[186px_1fr] bg-surface border border-solid border-line rounded-lg overflow-hidden lte860:grid-cols-[1fr]">

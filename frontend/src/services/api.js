@@ -277,6 +277,8 @@ export const api = {
   // Your own voice, synthesised on this machine (voice/server.py).
   register: () => get('/register'),
   review: (sort = 'release') => get(`/review?sort=${sort}`),
+  manager: () => get('/manager'),
+  setDeadlines: (body) => request('/manager/deadlines', { method: 'PUT', body: JSON.stringify(body) }),
   reopenScript: (productionId, versionId) => post('/review/reopen', { productionId, versionId }),
   checkToNote: (productionId, lineId) => post('/review/note', { productionId, lineId }),
   voiceBatch: () => get('/voice-batch'),

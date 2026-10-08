@@ -20,8 +20,14 @@ const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA
  * Recorded it elsewhere? Upload the whole thing and it is split into lines by
  * what you said.
  */
+/** The recording session you started from Today: the videos to film in this sitting. */
+function readSession() {
+  try { const ids = JSON.parse(sessionStorage.getItem('record-session') ?? 'null'); return Array.isArray(ids) ? ids : null; } catch { return null; }
+}
+
 export default function RecordStage({ goToStage }) {
-  const { production, mutate } = useStudio();
+  const { production, mutate, openProduction, productions } = useStudio();
+  const [session, setSession] = useState(readSession);
   const [data, setData] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [at, setAt] = useState(0);
@@ -53,6 +59,8 @@ export default function RecordStage({ goToStage }) {
     return d;
   }, [production.id]);
   useEffect(() => { load().catch(setLoadError); }, [load]);
+  // A new video (the next one in a session) starts at its first line.
+  useEffect(() => { setAt(0); setLastTake(null); setOpen(null); }, [production.id]);
 
   // While a whole recording is being split, check in every few seconds.
   useEffect(() => {
@@ -113,7 +121,7 @@ export default function RecordStage({ goToStage }) {
   }, [state]);
 
   const lines = data?.lines ?? [];
-  const line = lines[at];
+  const line = lines[Math.min(at, Math.max(0, lines.length - 1))];
 
   const begin = useCallback(() => {
     if (!stream || !line) return;
@@ -178,6 +186,12 @@ export default function RecordStage({ goToStage }) {
   }
 
   const done = lines.filter((l) => l.takes.length).length;
+  const inSession = session?.includes(production.id);
+  const sessionAt = inSession ? session.indexOf(production.id) : -1;
+  const nextId = inSession ? session[sessionAt + 1] : null;
+  const nextTitle = nextId ? (productions ?? []).find((p) => p.id === nextId)?.title?.split(' — ')[0] : null;
+  const goNext = async () => { if (nextId) await openProduction(nextId); };
+  const endSession = () => { try { sessionStorage.removeItem('record-session'); } catch { /* storage blocked */ } setSession(null); };
   const choose = (t) => mutate(() => api.updateLineTake(production.id, t.id, { chosen: true }), null, { silent: true }).then(load).catch(() => {});
   const discard = (t) => window.confirm(`Discard take ${t.version}? Its file moves to Takes/Discarded.`)
     && mutate(() => api.discardLineTake(production.id, t.id), null).then(load).catch(() => {});
@@ -185,6 +199,14 @@ export default function RecordStage({ goToStage }) {
 
   return (
     <div className="stagepane">
+      {inSession && (
+        <div className="flex flex-wrap items-center gap-[10px] mb-[10px] p-[8px_12px] rounded-md bg-surface-2 text-[12.5px]">
+          <b>Recording session</b>
+          <span className="text-muted">video {sessionAt + 1} of {session.length}</span>
+          {nextId && <button className="text-[12px] p-[3px_10px]" onClick={goNext}>Next: {nextTitle ?? 'next video'} <ChevronRight size={12} className="inline" /></button>}
+          <button className="ghostbtn text-[12px] text-muted p-0 ml-auto" onClick={endSession}>End session</button>
+        </div>
+      )}
       {/* The teleprompter: first thing on the page, nearest the camera. */}
       <section aria-label="Teleprompter" className="relative rounded-lg bg-ink p-[18px_56px_20px] text-center">
         <div className="text-[11px] tracking-[.08em] uppercase text-[rgba(255,255,255,.55)] mb-[10px]">
@@ -334,8 +356,11 @@ export default function RecordStage({ goToStage }) {
       </section>
 
       {done === lines.length && (
-        <div className="notice mt-[16px]"><Check /> <span>Every line has a take. Next: Edit, to tighten and assemble them (or take the kit to CapCut).</span>
-          <button className="ml-auto" onClick={() => goToStage?.('Edit')}>Go to Edit</button></div>
+        <div className="notice mt-[16px]"><Check /> <span>Every line has a take.{nextId ? ' On to the next video in your session — edit this one later.' : ' Next: Edit, to tighten and assemble them (or take the kit to CapCut).'}</span>
+          {nextId
+            ? <button className="primary ml-auto" onClick={goNext}>Next video: {nextTitle ?? ''} <ChevronRight size={13} className="inline" /></button>
+            : <button className="ml-auto" onClick={() => goToStage?.('Edit')}>Go to Edit</button>}
+        </div>
       )}
     </div>
   );

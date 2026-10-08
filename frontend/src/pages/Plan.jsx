@@ -21,16 +21,17 @@ import Review from './Review.jsx';
  * built from the server's map, never from a copy of it.
  */
 const VIEWS = [
-  // The lot comes first: it is where work starts, before it is work.
-  { id: 'Ideas', label: 'Parking lot' },
   // The end-to-end register: every Video ID and where it really stands.
   { id: 'Register', label: 'Register' },
   // Reading work across the register: drafts to approve, checks to answer.
   { id: 'Review', label: 'Review' },
-  { id: 'Companies', label: 'Companies' },
-  { id: 'Campaigns', label: 'Campaigns' },
-  { id: 'Calendar', label: 'Calendar' },
-  { id: 'Training', label: 'Training' },
+  // Ideas not yet videos.
+  { id: 'Ideas', label: 'Parking lot' },
+  // Set up once and rarely visited: set apart so the daily three stand out.
+  { id: 'Companies', label: 'Companies', setup: true },
+  { id: 'Campaigns', label: 'Campaigns', setup: true },
+  { id: 'Calendar', label: 'Calendar', setup: true },
+  { id: 'Training', label: 'Training', setup: true },
 ];
 
 export default function Plan({ go, routes, programs }) {

@@ -3,6 +3,7 @@ import { getDb } from '../db/index.js';
 import { madeBy } from '../lib/made-by.js';
 import { ok, fail, route } from '../utils/respond.js';
 import { visualsFor, updateVisualRow } from '../lib/visuals.js';
+import { segmentsFor } from '../lib/segments.js';
 
 /**
  * The register's two queues of reading work, across every video at once:
@@ -48,8 +49,35 @@ function drafts() {
   }).sort((a, b) => order(a.videoId).localeCompare(order(b.videoId)));
 }
 
+/**
+ * Voices made but not yet approved, across the register: each video's lines
+ * with their current take, to listen through and approve in one pass.
+ */
+function voicesToApprove() {
+  const db = getDb();
+  const field = db.prepare('SELECT value FROM brief_fields WHERE production_id = ? AND label = ?');
+  const rows = db.prepare(
+    `SELECT DISTINCT p.id, p.title, co.name AS company FROM productions p
+       JOIN segments s ON s.production_id = p.id
+       JOIN takes t ON t.segment_id = s.id AND t.local_path IS NOT NULL AND t.stale = 0 AND t.heard = 0
+       LEFT JOIN campaigns c ON c.id = p.campaign_id LEFT JOIN companies co ON co.id = c.company_id
+      -- A finished video's voice is history, not work.
+      WHERE NOT EXISTS (SELECT 1 FROM brief_fields b WHERE b.production_id = p.id AND b.label = 'Completed asset' AND b.value != '')`
+  ).all().filter((r) => REGISTER_ID.test(r.title));
+  return rows.map((r) => {
+    const [, videoId, name] = REGISTER_ID.exec(r.title);
+    const lines = segmentsFor(r.id).map((sg) => ({
+      segmentId: sg.id, text: sg.text, heard: sg.heard, takeId: sg.take?.id ?? null,
+      audioUrl: sg.take && !sg.needsAudition ? sg.take.audioUrl : null, duration: sg.take?.duration ?? null,
+    }));
+    return { productionId: r.id, videoId, name, company: r.company, priority: field.get(r.id, 'Priority')?.value || null, madeBy: madeBy(r.id), lines };
+  }).filter((v) => v.lines.some((l) => l.audioUrl && !l.heard))
+    .sort((a, b) => order(a.videoId).localeCompare(order(b.videoId)));
+}
+
 router.get('/review', route(async (req, res) => {
   const all = drafts();
+  const voices = voicesToApprove();
   const ready = all.filter((d) => d.lines.length && d.lines.every((l) => !l.checks.length));
   const withChecks = all.filter((d) => d.lines.some((l) => l.checks.length));
   const byPriority = (a, b) => (PRIORITY[a.priority] ?? 9) - (PRIORITY[b.priority] ?? 9);
@@ -57,7 +85,8 @@ router.get('/review', route(async (req, res) => {
   return ok(res, {
     ready: sort(ready),
     checks: sort(withChecks).map((d) => ({ ...d, lines: d.lines.filter((l) => l.checks.length) })),
-    totals: { ready: ready.length, videosWithChecks: withChecks.length, checks: withChecks.reduce((n, d) => n + d.lines.reduce((m, l) => m + l.checks.length, 0), 0) },
+    voices: sort(voices),
+    totals: { voices: voices.length, ready: ready.length, videosWithChecks: withChecks.length, checks: withChecks.reduce((n, d) => n + d.lines.reduce((m, l) => m + l.checks.length, 0), 0) },
   });
 }));
 

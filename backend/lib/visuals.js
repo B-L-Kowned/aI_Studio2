@@ -7,7 +7,7 @@ import { getDb } from '../db/index.js';
  * section is renamed or retimed here, never copied once and left behind.
  */
 export const SHOTS = [
-  { id: 'camera', label: 'PJB on camera' },
+  { id: 'camera', label: 'You on camera' },
   { id: 'screen', label: 'Screen recording' },
   { id: 'diagram', label: 'Diagram / graphic' },
   { id: 'broll', label: 'B-roll / lifestyle' },

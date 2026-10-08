@@ -214,10 +214,11 @@ const ROW_META = 'flex items-center gap-[5px] text-[12px] text-muted lte800:hidd
 // camera, the voice over a screen recording, or filmed by you; the label is
 // what the script's speaker ("Pat") is cast from, so it is chosen, never typed.
 const WHO = [
-  ['Pat', 'PJB — on camera'],
-  ['Pat (voice only)', 'PJB — voice only'],
-  [SELF_RECORDED, 'PJB — recorded myself'],
-  ['Pat + Guest', 'PJB + guest'],
+  // The same words as How it's made, so one choice never reads as two.
+  ['Pat', 'You — HeyGen avatar'],
+  ['Pat (voice only)', 'You — voice-over'],
+  [SELF_RECORDED, 'You — recorded yourself'],
+  ['Pat + Guest', 'You + a guest'],
   ['Avatar', 'Avatar presenter'],
   ['Avatar + Avatar', 'Two avatar presenters'],
   ['Visuals only', 'No one — visuals only'],

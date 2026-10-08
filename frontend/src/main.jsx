@@ -23,6 +23,8 @@ import './style.css';
  * A header is a map of the work, not an index of every screen that exists.
  */
 const PAGES = ['Home', 'Plan', 'Create', 'Cast', 'Library', 'Settings'];
+// Home is the day's work, so the header names it that; the route stays /home.
+const NAV_LABEL = { Home: 'Today' };
 
 // Which program owns a page, for the ones the header itself can hide. Plan's
 // own sub-tabs are gated the same way, from the same server map.
@@ -149,7 +151,7 @@ function App() {
           <b className="text-[14px] font-[640] tracking-[-0.01em] whitespace-nowrap justify-self-start lte880:col-[1] lte880:row-[1]">◉ AI Video Studio</b>
           <nav className="justify-center lte880:col-[1/-1] lte880:row-[2]">
             {allowed.map((n) => (
-              <button key={n} className={current === n ? 'on' : ''} onClick={() => setPage(n)}>{n}</button>
+              <button key={n} className={current === n ? 'on' : ''} onClick={() => setPage(n)}>{NAV_LABEL[n] ?? n}</button>
             ))}
           </nav>
           <ProgramBadge go={setPage} />

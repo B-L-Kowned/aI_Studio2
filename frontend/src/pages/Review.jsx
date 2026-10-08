@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Check, SkipForward, ExternalLink, Pencil, RefreshCw, ClipboardList, AlertCircle, Undo2, ChevronLeft } from 'lucide-react';
+import { Check, SkipForward, ExternalLink, Pencil, RefreshCw, ClipboardList, AlertCircle, Undo2, ChevronLeft, Play, Square, Headphones, RotateCcw } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { PageHead } from '../components/Section.jsx';
@@ -48,6 +48,79 @@ function BriefPanel({ item }) {
 }
 
 /**
+ * One video's voice, to hear and approve in one pass. Approve all opens once
+ * every made line has been played — by Listen through or one at a time.
+ */
+function VoiceItem({ item, onApproveAll, onApproveLine, onRemake, busy }) {
+  const audio = React.useRef(null);
+  const [playing, setPlaying] = useState(null);
+  const [heard, setHeard] = useState(() => new Set());
+  const [through, setThrough] = useState(false);
+  useEffect(() => { setHeard(new Set()); setThrough(false); audio.current?.pause(); setPlaying(null); }, [item.productionId]);
+  useEffect(() => () => audio.current?.pause(), []);
+  const made = item.lines.filter((l) => l.audioUrl);
+  const play = (l, onEnd) => {
+    audio.current?.pause();
+    const a = new Audio(l.audioUrl);
+    audio.current = a;
+    setPlaying(l.segmentId);
+    a.onended = () => { setPlaying(null); setHeard((h) => new Set(h).add(l.segmentId)); onEnd?.(); };
+    a.play().catch(() => setPlaying(null));
+  };
+  const listen = (i = 0) => {
+    if (i >= made.length) { setThrough(false); return; }
+    setThrough(true);
+    play(made[i], () => listen(i + 1));
+  };
+  const stop = () => { audio.current?.pause(); setPlaying(null); setThrough(false); };
+  const unapproved = made.filter((l) => !l.heard);
+  const allHeard = unapproved.every((l) => heard.has(l.segmentId));
+  const missing = item.lines.filter((l) => !l.audioUrl).length;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (typing(e.target) || e.metaKey || e.ctrlKey) return;
+      if (e.key.toLowerCase() === 'a' && allHeard && unapproved.length) { e.preventDefault(); onApproveAll(item, unapproved); }
+      if (e.code === 'Space') { e.preventDefault(); through || playing ? stop() : listen(0); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+  return (
+    <div className="flex flex-col gap-[8px] min-w-0">
+      <div className="flex flex-wrap items-center gap-[8px]">
+        {through || playing
+          ? <button onClick={stop}><Square size={13} /> Stop</button>
+          : <button className={allHeard ? '' : 'primary'} onClick={() => listen(0)}><Headphones size={14} /> Listen through <kbd className="opacity-60 text-[10.5px]">Space</kbd></button>}
+        <span className="text-[12.5px] text-muted">{heard.size} of {made.length} heard{missing ? ` · ${missing} not made yet` : ''}</span>
+      </div>
+      {item.lines.map((l) => {
+        const now = playing === l.segmentId;
+        return (
+          <div key={l.segmentId} className={'grid grid-cols-[28px_minmax(0,1fr)_auto] gap-[10px] items-start p-[9px_12px] rounded-lg border border-solid ' + (now ? 'border-accent bg-accent-soft' : 'border-line')}>
+            <button type="button" disabled={!l.audioUrl} aria-label={now ? 'Stop' : 'Play'} onClick={() => (now ? stop() : play(l))}
+              className={'w-[28px] h-[28px] p-0 grid place-items-center rounded-full ' + (now ? 'bg-accent text-[#fff] border-accent' : '') + (l.audioUrl ? '' : ' opacity-40')}>
+              {now ? <Square size={11} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+            </button>
+            <p className="m-0 text-[14.5px] leading-[1.6] text-ink max-w-[66ch]">{l.text}</p>
+            <span className="flex items-center gap-[6px] whitespace-nowrap text-[12px]">
+              {l.heard ? <span className="text-ok"><Check size={13} className="inline" /> Approved</span>
+                : l.audioUrl ? <button className="text-[12px] p-[3px_9px]" disabled={busy} onClick={() => onApproveLine(item, l)}><Check size={12} /> Approve</button>
+                : <span className="text-faint">Not made</span>}
+              <button className="ghostbtn p-[4px] text-faint hover:text-ink" title="Make this line again" disabled={busy} onClick={() => onRemake(item, l)}><RotateCcw size={13} /></button>
+            </span>
+          </div>
+        );
+      })}
+      {unapproved.length > 0 && (
+        <button className="primary self-start" disabled={!allHeard || busy} title={allHeard ? '' : 'Listen to every line first'} onClick={() => onApproveAll(item, unapproved)}>
+          <Check size={14} /> Approve all {unapproved.length} <kbd className="opacity-60 text-[10.5px]">A</kbd>
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * Reading work across the whole register, one video at a time: drafts that
  * only need your yes, and the [CONFIRM] checks that need you to look at the
  * real product. Keyboard: A approves, S skips, ← goes back.
@@ -55,7 +128,8 @@ function BriefPanel({ item }) {
 export default function Review({ go, tabs }) {
   const { openProduction, mutate } = useStudio();
   const [data, setData] = useState(null);
-  const [mode, setMode] = useState('ready');
+  // Home can send you straight to the checks.
+  const [mode, setMode] = useState(() => { try { const m = sessionStorage.getItem('review-mode'); sessionStorage.removeItem('review-mode'); return m === 'checks' ? 'checks' : 'ready'; } catch { return 'ready'; } });
   const [sort, setSort] = useState('priority');
   const [at, setAt] = useState(0);
   const [editing, setEditing] = useState(null); // line id
@@ -68,7 +142,7 @@ export default function Review({ go, tabs }) {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setAt(0); setEditing(null); }, [mode, sort]);
 
-  const list = data ? (mode === 'ready' ? data.ready : data.checks) : [];
+  const list = data ? (mode === 'ready' ? data.ready : mode === 'voice' ? data.voices : data.checks) : [];
   const item = list[Math.min(at, Math.max(0, list.length - 1))];
 
   const approve = useCallback(async () => {
@@ -77,7 +151,7 @@ export default function Review({ go, tabs }) {
     try {
       await mutate(() => api.acceptScript(item.productionId, item.versionId), null, { silent: true });
       await mutate(() => api.buildSegments(item.productionId), null, { silent: true });
-      setUndo({ productionId: item.productionId, versionId: item.versionId, videoId: item.videoId });
+      setUndo({ productionId: item.productionId, versionId: item.versionId, videoId: item.videoId, madeBy: item.madeBy, queued: false });
       setApprovedHere((n) => n + 1);
       await load(); // the approved draft leaves the list; the next one moves up
     } catch { /* mutate reports it */ } finally { setBusy(false); }
@@ -138,6 +212,7 @@ export default function Review({ go, tabs }) {
       <div className="flex flex-wrap items-center gap-[8px] mt-[4px]">
         {tab('ready', 'Ready to approve', t.ready)}
         {tab('checks', 'Checks to answer', `${t.checks} in ${t.videosWithChecks} videos`)}
+        {tab('voice', 'Voices to approve', t.voices ?? 0)}
         {approvedHere > 0 && <span className="text-[12.5px] text-ok ml-[6px]"><Check size={13} className="inline -mt-[2px]" /> {approvedHere} approved this session</span>}
         <label className="text-[12px] text-muted flex items-center gap-[6px] ml-auto">
           Order
@@ -151,6 +226,11 @@ export default function Review({ go, tabs }) {
       {undo && (
         <div className="flex items-center gap-[10px] mt-[12px] p-[8px_12px] rounded-md bg-ok-soft text-ok text-[12.5px]">
           <Check size={14} /> Approved {undo.videoId} — its lines are ready for Voice.
+          {undo.madeBy !== 'self' && (undo.queued
+            ? <span className="text-ink-2">Voice queued for tonight.</span>
+            : <button className="text-[12px] p-[3px_10px]" onClick={async () => { await mutate(() => api.queueVoice([undo.productionId]), null).catch(() => {}); setUndo((u) => u && { ...u, queued: true }); }}>
+                <Headphones size={12} /> Make its voice tonight
+              </button>)}
           <button className="ghostbtn text-[12.5px] text-ink-2 p-0 underline" onClick={takeBack}><Undo2 size={12} className="inline" /> Undo</button>
           <button className="ghostbtn text-[12px] text-muted p-0 ml-auto" onClick={() => setUndo(null)}>Dismiss</button>
         </div>
@@ -159,8 +239,8 @@ export default function Review({ go, tabs }) {
       {!item ? (
         <div className="mt-[28px] text-center p-[32px] border border-dashed border-line-2 rounded-lg">
           <Check size={22} className="block mx-auto text-ok mb-[6px]" />
-          <b className="text-[14px]">{mode === 'ready' ? 'No drafts waiting' : 'No checks left'}</b>
-          <p className="text-muted text-[13px] m-[4px_0_0]">{mode === 'ready' ? 'Every draft is approved or still has checks to answer.' : 'Every check is answered.'}</p>
+          <b className="text-[14px]">{{ ready: 'No drafts waiting', checks: 'No checks left', voice: 'No voices waiting' }[mode]}</b>
+          <p className="text-muted text-[13px] m-[4px_0_0]">{{ ready: 'Every draft is approved or still has checks to answer.', checks: 'Every check is answered.', voice: 'Every made voice is approved. Voices to make run overnight from Today or the Register.' }[mode]}</p>
         </div>
       ) : (
         <section className="mt-[14px] border border-solid border-line rounded-lg bg-surface [box-shadow:var(--shadow)]" aria-label="Review item">
@@ -174,8 +254,17 @@ export default function Review({ go, tabs }) {
             </span>
           </header>
 
-          <div className="grid grid-cols-[minmax(0,1fr)_280px] gap-[22px] p-[18px] lte960:grid-cols-[1fr]">
-            {mode === 'ready' ? (
+          <div className={'grid gap-[22px] p-[18px] lte960:grid-cols-[1fr] ' + (mode === 'voice' ? 'grid-cols-[1fr]' : 'grid-cols-[minmax(0,1fr)_280px]')}>
+            {mode === 'voice' ? (
+              <VoiceItem item={item} busy={busy}
+                onApproveAll={async (it, ls) => {
+                  setBusy(true);
+                  try { for (const l of ls) await mutate(() => api.markHeard(it.productionId, l.segmentId, l.takeId, true), null, { silent: true }); await load(); }
+                  catch { /* reported */ } finally { setBusy(false); }
+                }}
+                onApproveLine={async (it, l) => { setBusy(true); try { await mutate(() => api.markHeard(it.productionId, l.segmentId, l.takeId, true), null, { silent: true }); await load(); } catch { /* reported */ } finally { setBusy(false); } }}
+                onRemake={async (it, l) => { setBusy(true); try { await mutate(() => api.auditionSegment(it.productionId, l.segmentId, {}), null); await load(); } catch { /* reported */ } finally { setBusy(false); } }} />
+            ) : mode === 'ready' ? (
               <article className="max-w-[66ch] flex flex-col gap-[12px]">
                 {item.lines.map((l) => (editing === l.id ? (
                   <div key={l.id}>
@@ -222,7 +311,7 @@ export default function Review({ go, tabs }) {
                 ))}
               </div>
             )}
-            <BriefPanel item={item} />
+            {mode !== 'voice' && <BriefPanel item={item} />}
           </div>
 
           {/* Stays in view on a long script, so Approve is always one key or click away. */}

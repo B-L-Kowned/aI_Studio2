@@ -143,6 +143,9 @@ const ADDED_COLUMNS = [
   ['productions', 'edit_settings', 'TEXT'],
   // A finished HeyGen render, saved into the video's folder: its link expires.
   ['render_versions', 'local_path', 'TEXT'],
+  // The three dates your register is worked to: { P1, P2, P3 } as YYYY-MM-DD.
+  // A video is due by its priority's date unless it carries its own due_at.
+  ['workspace', 'deadlines', 'TEXT'],
 ];
 
 function migrate(db) {

@@ -26,6 +26,9 @@ export default function HeyGenLook() {
   const [form, setForm] = useState(null);
   const [showMotion, setShowMotion] = useState(false);
   const [defaultNote, setDefaultNote] = useState(null);
+  // The 20-look grid is for choosing; once a look is approved (or a starting
+  // look is set for every video) it folds to one line until you change it.
+  const [picking, setPicking] = useState(null);
 
   const load = useCallback(async () => {
     const [o, flow] = await Promise.all([api.appearanceOptions(production.id), api.workflow(production.id)]);
@@ -48,7 +51,7 @@ export default function HeyGenLook() {
       motionPrompt: base?.motionPrompt ?? d?.motionPrompt ?? o.settings.motionPrompt,
     });
   }, [production.id]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); setPicking(null); }, [load]);
 
   if (!opts || !workflow) return <p className="muted">Loading…</p>;
   const performer = opts.performers[0];
@@ -67,6 +70,8 @@ export default function HeyGenLook() {
   const template = opts.template?.name;
   const templateId = opts.template?.id;
   const chosen = performer.looks.find((l) => l.id === form.avatarAssetId);
+  const startingLook = !approved && opts.default ? performer.looks.find((l) => l.id === opts.default.avatarAssetId) : null;
+  const showPicker = picking ?? !(approved || startingLook);
 
   const saveLook = async (approve) => {
     try {
@@ -74,6 +79,7 @@ export default function HeyGenLook() {
       if (approve) {
         const newest = res.data.appearances.find((a) => a.presenterId === performer.id && a.status === 'draft');
         if (newest) await mutate(() => api.updateAppearance(production.id, newest.id, { status: 'approved' }), (r) => setWorkflow(r.data));
+        setPicking(false);
       }
     } catch { /* mutate reports it */ }
   };
@@ -101,10 +107,31 @@ export default function HeyGenLook() {
         {approved ? <Check /> : <AlertCircle />}
         <span>
           <b>{performer.name.replace(/ \(your likeness\)/, '')} — PJB</b> · voice: your local voice ·{' '}
-          {approved ? `approved look: ${approved.look?.name ?? approved.outfit}` : 'no approved look yet — choose one below and approve it'}
+          {approved ? `approved look: ${approved.look?.name ?? approved.outfit}` : showPicker ? 'no approved look yet — choose one below and approve it' : 'no approved look yet — approve the one below'}
         </span>
       </div>
 
+      {!showPicker && (() => {
+        const look = approved ? (performer.looks.find((l) => l.id === approved.look?.id) ?? approved.look) : chosen;
+        return (
+          <div className="flex items-center gap-[14px] mt-[12px] p-[10px] border border-solid border-line rounded-lg bg-surface">
+            {look?.previewUrl
+              ? <img src={look.previewUrl} alt="" className="w-[72px] h-[72px] object-cover rounded" />
+              : <div className="w-[72px] h-[72px] grid place-items-center bg-canvas rounded text-faint"><ImageIcon /></div>}
+            <div className="flex flex-col gap-[2px] min-w-0">
+              <span className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold">{approved ? 'Approved look' : 'Ready to approve'}</span>
+              <b className="text-[13.5px] truncate">{look?.name ?? approved?.outfit ?? 'Look'}</b>
+              <small className="text-muted text-[12px]">{form.aspect} · {form.resolution}{approved ? '' : ' · your starting look — approve it for this video'}</small>
+            </div>
+            <div className="ml-auto flex gap-[8px] shrink-0">
+              {!approved && <button className="primary" onClick={() => saveLook(true)}><Check size={13} /> Approve for this video</button>}
+              <button onClick={() => setPicking(true)}>Change look</button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showPicker && <>
       <div className={SUBHEAD_PLAN}>Look — outfit and setting ({performer.looks.length})</div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(118px,1fr))] gap-[8px]">
         {performer.looks.map((l) => (
@@ -166,9 +193,10 @@ export default function HeyGenLook() {
         {templateId && <button onClick={() => makeDefault(`template:${templateId}`)}>All {template} videos</button>}
         <button onClick={() => makeDefault('all')}>Every video</button>
       </div>
+      </>}
       {defaultNote && <p className="text-[12px] text-muted m-[8px_0_0]">{defaultNote} — each still needs its own approval.</p>}
 
-      {proofs.length > 0 && (
+      {showPicker && proofs.length > 0 && (
         <>
           <div className={SUBHEAD_PLAN}>Looks for this video</div>
           <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-[10px] lte800:grid-cols-[1fr]">
