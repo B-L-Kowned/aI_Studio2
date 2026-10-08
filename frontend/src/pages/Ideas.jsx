@@ -3,6 +3,7 @@ import { Plus, Flame, Archive, Trash2, ArrowUpRight, Check, Lightbulb } from 'lu
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { Section, PageHead, Empty } from '../components/Section.jsx';
+import { EnhanceButton, Suggestion, modelLabel } from '../components/Enhance.jsx';
 import NewProductionFlow from '../components/NewProductionFlow.jsx';
 
 /**
@@ -38,6 +39,7 @@ export default function Ideas({ go, tabs }) {
   const [campaignId, setCampaignId] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [promoting, setPromoting] = useState(null);
+  const [shape, setShape] = useState(null); // { ideaId, busy } | suggestion | { ideaId, error }
 
   const load = useCallback(
     () => api.ideas(showArchived).then(setData),
@@ -61,6 +63,14 @@ export default function Ideas({ go, tabs }) {
   if (!data) return <><PageHead title="Parking lot" tabs={tabs} /><p className="muted">Loading…</p></>;
   const { ideas, counts } = data;
   const live = ideas.filter((i) => !i.archivedAt);
+
+  const shapeIt = async (idea) => {
+    setShape({ ideaId: idea.id, busy: true });
+    try {
+      const r = await api.shapeIdea(idea.id);
+      setShape(r.data);
+    } catch (err) { setShape({ ideaId: idea.id, error: err.message }); }
+  };
 
   return (
     <>
@@ -108,7 +118,7 @@ export default function Ideas({ go, tabs }) {
           <div className="flex flex-col">
             {ideas.map((i) => (
               <div
-                className={'flex items-center gap-[10px] p-[10px_14px] [border-top:1px_solid_var(--line)] first:[border-top:0]'
+                className={'flex flex-wrap items-center gap-[10px] p-[10px_14px] [border-top:1px_solid_var(--line)] first:[border-top:0]'
                   + (i.archivedAt ? ' opacity-[.55]' : '')}
                 key={i.id}
               >
@@ -125,6 +135,7 @@ export default function Ideas({ go, tabs }) {
 
                 <span className="flex-1 min-w-0 flex flex-col gap-[1px]">
                   <b className="text-[13.5px] font-[550]">{i.text}</b>
+                  {i.note && <span className="text-[12px] text-muted whitespace-pre-line">{i.note}</span>}
                   <i className="not-italic text-[11px] text-faint">
                     {i.campaign ?? 'No company'} · parked {i.ageDays === 0 ? 'today' : `${i.ageDays}d ago`}
                     {i.promotedTitle && ` · became "${i.promotedTitle}"`}
@@ -139,6 +150,9 @@ export default function Ideas({ go, tabs }) {
                   </button>
                 ) : (
                   <>
+                    <EnhanceButton compact label="Shape it" busy={shape?.ideaId === i.id && shape.busy}
+                      onPick={() => shapeIt(i)} options={[{ id: 'shape', label: 'Shape it',
+                        detail: 'A working title, who it is for and its one point — from the idea and what the company has already published.' }]} />
                     <button
                       className="primary"
                       title="Turn this into a production"
@@ -154,12 +168,21 @@ export default function Ideas({ go, tabs }) {
                       <Archive size={13} />
                     </button>
                     <button
-                      className="ghostbtn danger"
+                      className="ghostbtn text-faint hover:text-danger"
                       title="Delete for good"
                       onClick={() => run(() => api.deleteIdea(i.id))}
                     >
                       <Trash2 size={13} />
                     </button>
+                    {shape?.ideaId === i.id && shape.error && <span className="basis-full text-[12px] text-warn">{shape.error}</span>}
+                    {shape?.ideaId === i.id && shape.title && (
+                      <span className="basis-full">
+                        <Suggestion text={<><b className="block font-[600]">{shape.title}</b><span className="whitespace-pre-line text-[12.5px] text-ink-2">{shape.note}</span></>}
+                          flags={shape.flags} meta={modelLabel(shape.model)}
+                          onDismiss={() => setShape(null)}
+                          onUse={() => { run(() => api.updateIdea(i.id, { text: shape.title, note: shape.note })); setShape(null); }} />
+                      </span>
+                    )}
                   </>
                 )}
               </div>

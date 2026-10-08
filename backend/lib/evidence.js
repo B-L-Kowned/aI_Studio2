@@ -78,7 +78,7 @@ export async function corpusFor(productionId) {
 }
 
 /** The sentences most likely to answer a check, best first. Plain word overlap. */
-export function relevant(items, check, line, limit = 6) {
+export function relevant(items, check, line, limit = 6, min = 3) {
   const want = new Set(wordsOf(check).map(stem));
   const context = new Set(wordsOf(line).map(stem));
   const scored = items.map((it) => {
@@ -87,7 +87,7 @@ export function relevant(items, check, line, limit = 6) {
     for (const x of want) if (w.has(x)) score += 2;
     for (const x of context) if (w.has(x) && !want.has(x)) score += 0.5;
     return { ...it, score: score * it.weight };
-  }).filter((it) => it.score >= 3);
+  }).filter((it) => it.score >= min);
   const seen = new Set();
   return scored.sort((a, b) => b.score - a.score).filter((it) => {
     const k = it.text.toLowerCase();

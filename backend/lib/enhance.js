@@ -714,3 +714,49 @@ async function runBatch() {
   }
   batch.running = false;
 }
+
+// ------------------------------------------------------------------ parking lot
+
+/** A parked thought, shaped into a working title, who it is for and its one point — from its own words. */
+export async function shapeIdea(ideaId) {
+  const db = getDb();
+  const idea = db.prepare(`SELECT i.*, c.name AS campaign FROM ideas i LEFT JOIN campaigns c ON c.id = i.campaign_id WHERE i.id = ?`).get(ideaId);
+  if (!idea) throw Object.assign(new Error('Idea not found.'), { code: 'NOT_FOUND' });
+  // What the company has already said about itself grounds a two-word idea;
+  // without it, a model fills the gap with a guess about what the brand does.
+  const { corpusFor, relevant } = await import('./evidence.js');
+  const anyProduction = idea.campaign_id
+    ? db.prepare('SELECT id FROM productions WHERE campaign_id = ? LIMIT 1').get(idea.campaign_id)?.id : null;
+  const brand = idea.text.split(/\s+/)[0];
+  const fallback = anyProduction ? null
+    : db.prepare(`SELECT p.id FROM productions p JOIN campaigns c ON c.id = p.campaign_id JOIN companies co ON co.id = c.company_id
+        WHERE lower(co.name) = lower(?) LIMIT 1`).get(brand)?.id ?? null;
+  const pid = anyProduction ?? fallback;
+  const evidence = pid ? relevant((await corpusFor(pid)).items, `${idea.text} ${idea.note}`, idea.text, 6, 2) : [];
+  const said = `${idea.text} ${idea.note}`.trim().split(/\s+/).length;
+  if (said < 6 && !evidence.length) {
+    throw Object.assign(new Error('Too little to go on — add a sentence about what this video would say, then Shape it.'), { code: 'NOT_DRAFT' });
+  }
+  const source = `${idea.text}\n${idea.note}\n${idea.campaign ?? ''}\n${evidence.map((e) => e.text).join('\n')}`;
+  const model = await writingModel();
+  const out = await generateStructured('ollama', {
+    model, systemPrompt: SYSTEM, temperature: 0.4, maxTokens: 300,
+    prompt: [
+      'Shape a rough video idea into a working brief. Use only what the idea says; do not add facts.',
+      `IDEA: ${idea.text}`,
+      idea.note ? `NOTE: ${idea.note}` : '',
+      idea.campaign ? `CAMPAIGN: ${idea.campaign}` : '',
+      evidence.length ? `WHAT THE COMPANY HAS ALREADY SAID (the only facts about it you may use):\n${evidence.map((e) => `- ${e.text}`).join('\n')}` : '',
+      'Return JSON: {"title":"<working title, at most 60 characters>","audience":"<who it is for, at most 12 words>","point":"<the one thing a viewer should take away, one sentence>"}',
+    ].filter(Boolean).join('\n\n'),
+  });
+  const title = tidy(String(out.data?.title ?? '')).replace(/^["']|["']$/g, '').slice(0, 80);
+  const audience = tidy(String(out.data?.audience ?? ''));
+  const point = tidy(String(out.data?.point ?? ''));
+  if (!title) throw Object.assign(new Error('The model returned nothing usable. Try again.'), { code: 'BAD_OUTPUT' });
+  return {
+    ideaId, title, audience, point, model,
+    note: [audience && `For: ${audience}`, point && `Point: ${point}`, idea.note].filter(Boolean).join('\n'),
+    flags: unsupportedClaims(`${title} ${audience} ${point}`, source).map((c) => `"${c}" is not in the idea.`),
+  };
+}

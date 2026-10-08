@@ -147,6 +147,7 @@ export const api = {
   addIdea: (body) => post('/ideas', body),
   updateIdea: (id, body) => patch(`/ideas/${id}`, body),
   deleteIdea: (id) => del(`/ideas/${id}`),
+  shapeIdea: (id) => post(`/productions/enhance/idea/${id}`),
   markIdeaPromoted: (id, productionId) => post(`/ideas/${id}/promoted`, { productionId }),
 
   // the production schedule — what is blocked on you, and what is due

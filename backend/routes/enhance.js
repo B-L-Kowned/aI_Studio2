@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { reviewScript, applyFixes, startEnhance, enhanceJob, undoEnhance, improveLine, suggestAnswer, enhanceCopy, suggestVisuals, suggestBrief,
-  enhanceBatch, queueEnhance, stopEnhanceBatch, thinDrafts } from '../lib/enhance.js';
+  enhanceBatch, queueEnhance, stopEnhanceBatch, thinDrafts, shapeIdea } from '../lib/enhance.js';
 import { postCopy, savePostCopy, resetPostCopy } from '../lib/post-copy.js';
 import { getDb } from '../db/index.js';
 import { ok, fail, route } from '../utils/respond.js';
@@ -16,6 +16,12 @@ router.post('/enhance/batch', route(async (req, res) => {
   return ok(res, queueEnhance(ids), 'Queued — runs on this Mac, one video at a time');
 }));
 router.post('/enhance/batch/stop', route(async (req, res) => ok(res, stopEnhanceBatch(), 'Stopping after the current video')));
+
+/** Shape a parked idea: a working title, who it is for, its one point. A suggestion. */
+router.post('/enhance/idea/:ideaId', route(async (req, res) => {
+  try { return ok(res, await shapeIdea(Number(req.params.ideaId))); }
+  catch (err) { return failWith(res, err); }
+}));
 
 /** The plain checks — instant, no model. */
 router.get('/:id/script/checks', route(async (req, res) => {

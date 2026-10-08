@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Check, SkipForward, ExternalLink, Pencil, RefreshCw, ClipboardList, AlertCircle, Undo2, ChevronLeft, Square, Headphones, RotateCcw } from 'lucide-react';
+import { Check, SkipForward, ExternalLink, Pencil, RefreshCw, ClipboardList, AlertCircle, Undo2, ChevronLeft, Square, Headphones, RotateCcw, Sparkles } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LineVoice from '../components/LineVoice.jsx';
@@ -17,14 +17,21 @@ const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA
 const HOST = (url) => { try { return new URL(/^https?:/.test(url) ? url : `https://${url}`).host.replace(/^www\./, ''); } catch { return url; } };
 
 /** The facts to judge a script against, beside it. */
-function BriefPanel({ item }) {
+// A brief value that is still the template's instruction is not a fact.
+const INSTRUCTION = /^(confirm|verify|one verified|one audience|match the|tbd|to be confirmed)\b/i;
+
+function BriefPanel({ item, onFit, fitting }) {
   const words = wordCount(item.lines);
   const est = Math.round((words / 150) * 60);
   const target = secsOf(item.target);
   const off = target ? est / target : null;
   const fit = off == null ? null : off < 0.8 ? 'short' : off > 1.2 ? 'long' : 'fits';
   const fact = (label, value) => value && (
-    <div><dt className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold">{label}</dt><dd className="m-[2px_0_0] text-[13px] text-ink-2 leading-[1.45]">{value}</dd></div>
+    <div><dt className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold">{label}</dt>
+      {INSTRUCTION.test(value.trim())
+        ? <dd className="m-[2px_0_0] text-[12.5px] text-faint italic leading-[1.45]" title={value}>Not set yet — Fill the gaps in the video’s brief</dd>
+        : <dd className="m-[2px_0_0] text-[13px] text-ink-2 leading-[1.45]">{value}</dd>}
+    </div>
   );
   return (
     <aside className="flex flex-col gap-[12px] p-[14px_16px] rounded-lg bg-surface-2 self-start lte960:order-first">
@@ -38,6 +45,15 @@ function BriefPanel({ item }) {
           <dd className="m-[2px_0_0] text-[13px] text-ink-2">
             about {clock(est)} at a typical pace{target ? <> · target {item.target} · <b className={fit === 'fits' ? 'text-ok' : 'text-warn'}>{fit === 'fits' ? 'fits' : fit === 'long' ? 'runs long' : 'runs short'}</b></> : ''}
           </dd>
+          {onFit && fit && fit !== 'fits' && (
+            fitting ? (
+              <p className="m-[6px_0_0] text-[12px] text-muted"><RefreshCw size={11} className="inline animate-spin -mt-[2px]" /> Fitting to time on this Mac{fitting.total ? ` — section ${Math.max(1, fitting.section)} of ${fitting.total}` : ''}…</p>
+            ) : (
+              <button className="text-[12px] p-[4px_10px] mt-[6px]" onClick={() => onFit(item)} title="Rewrite it to the target length, section by section, from the brief — a new draft, nothing approved">
+                <Sparkles size={12} className="text-accent" /> Fit to time first
+              </button>
+            )
+          )}
         </div>
       </dl>
       {item.brief?.website && (
@@ -147,8 +163,10 @@ export default function Review({ go, tabs }) {
   const list = data ? (mode === 'ready' ? data.ready : mode === 'voice' ? data.voices : data.checks) : [];
   const item = list[Math.min(at, Math.max(0, list.length - 1))];
 
+  // Fit a draft to time without leaving the queue: { productionId, section, total } while running.
+  const [fitting, setFitting] = useState(null); // { productionId, section, total } while running
   const approve = useCallback(async () => {
-    if (!item || busy || editing) return;
+    if (!item || busy || editing || fitting?.productionId === item?.productionId) return;
     setBusy(true);
     try {
       await mutate(() => api.acceptScript(item.productionId, item.versionId), null, { silent: true });
@@ -157,7 +175,7 @@ export default function Review({ go, tabs }) {
       setApprovedHere((n) => n + 1);
       await load(); // the approved draft leaves the list; the next one moves up
     } catch { /* mutate reports it */ } finally { setBusy(false); }
-  }, [item, busy, editing, mutate, load]);
+  }, [item, busy, editing, fitting, mutate, load]);
   const skip = useCallback(() => setAt((i) => Math.min(i + 1, list.length - 1)), [list.length]);
   const takeBack = async () => {
     if (!undo) return;
@@ -176,6 +194,22 @@ export default function Review({ go, tabs }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [mode, approve, skip]);
+
+  const fitItem = async (it) => {
+    try {
+      const r = await mutate(() => api.enhanceScript(it.productionId, 'fit'), null, { silent: true });
+      setFitting({ productionId: it.productionId, ...r.data });
+    } catch { /* reported */ }
+  };
+  useEffect(() => {
+    if (!fitting) return undefined;
+    const t = setInterval(async () => {
+      const j = await api.enhanceState(fitting.productionId).catch(() => null);
+      if (!j || j.state !== 'running') { setFitting(null); await load(); if (j?.state === 'failed') window.alert(j.error); }
+      else setFitting({ productionId: fitting.productionId, ...j });
+    }, 2500);
+    return () => clearInterval(t);
+  }, [fitting, load]);
 
   // A suggested answer to one line's check, from the company's own material.
   const [answer, setAnswer] = useState(null); // { lineId, busy } | result
@@ -354,12 +388,13 @@ export default function Review({ go, tabs }) {
                 ))}
               </div>
             )}
-            {mode !== 'voice' && <BriefPanel item={item} />}
+            {mode !== 'voice' && <BriefPanel item={item} onFit={mode === 'ready' ? fitItem : null}
+              fitting={fitting?.productionId === item.productionId ? fitting : null} />}
           </div>
 
           {/* Stays in view on a long script, so Approve is always one key or click away. */}
           <footer className="sticky bottom-0 z-[2] flex flex-wrap items-center gap-[8px] p-[12px_18px] [border-top:1px_solid_var(--line)] bg-surface-2 rounded-b-lg [box-shadow:0_-6px_14px_-10px_rgba(0,0,0,.25)]">
-            {mode === 'ready' && <button className="primary" disabled={busy || !!editing} onClick={approve}><Check size={14} /> Approve <kbd className="opacity-60 text-[10.5px] ml-[2px]">A</kbd></button>}
+            {mode === 'ready' && <button className="primary" disabled={busy || !!editing || fitting?.productionId === item.productionId} onClick={approve}><Check size={14} /> Approve <kbd className="opacity-60 text-[10.5px] ml-[2px]">A</kbd></button>}
             {mode === 'checks' && item.lines.length > 1 && <button disabled={busy} onClick={() => confirmAll(item)}><Check size={14} /> Confirm all {item.lines.length} as written</button>}
             <button disabled={busy || at >= list.length - 1} onClick={skip}><SkipForward size={14} /> Skip <kbd className="opacity-60 text-[10.5px] ml-[2px]">S</kbd></button>
             {busy && <RefreshCw size={13} className="animate-spin text-muted" />}
