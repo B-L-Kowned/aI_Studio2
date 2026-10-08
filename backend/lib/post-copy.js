@@ -1,5 +1,5 @@
 import { getDb } from '../db/index.js';
-import { scriptTiming } from './script-timing.js';
+import { reviewScript } from './enhance.js';
 
 /*
  * The words posted with a finished video: title, description, chapters,
@@ -28,15 +28,19 @@ function context(productionId) {
   return { p, brief, lines, approved: version?.status === 'accepted', company, duration: file?.duration ?? null };
 }
 
-/** Section starts, scaled to the finished file when there is one. */
+/**
+ * Section starts from where the words actually fall — a section's share of
+ * the spoken words — scaled to the finished file when there is one. A section
+ * with no lines gets no chapter.
+ */
 function chaptersFor(ctx) {
-  const timing = scriptTiming(ctx.p.id);
-  const sections = timing.sections.filter((s) => s.title && s.seconds);
-  if (sections.length < 3 || !ctx.lines.length) return '';
-  const planned = sections.reduce((n, s) => n + s.seconds, 0);
-  const spoken = ctx.duration ?? (ctx.lines.reduce((n, l) => n + words(l), 0) / timing.wpm) * 60;
+  const review = reviewScript(ctx.p.id);
+  const sections = (review?.sections ?? []).filter((s) => s.title && s.words > 0);
+  const total = sections.reduce((n, s) => n + s.words, 0);
+  if (sections.length < 3 || !total) return '';
+  const spoken = ctx.duration ?? (total / review.wpm) * 60;
   let at = 0;
-  return sections.map((s) => { const line = `${clock(at)} ${s.title}`; at += (s.seconds / planned) * spoken; return line; }).join('\n');
+  return sections.map((s) => { const line = `${clock(at)} ${s.title}`; at += (s.words / total) * spoken; return line; }).join('\n');
 }
 
 export function draftCopy(productionId) {

@@ -323,6 +323,14 @@ export default function Review({ go, tabs }) {
                         {answer?.lineId === l.id && answer.found === false && (
                           <div className="mt-[8px] text-[12.5px] text-ink-2 bg-surface-2 rounded-md p-[8px_11px]">
                             <b className="font-[560]">Not found — yours to answer.</b> Searched {answer.searched.join(', ')}.{answer.why ? ` ${answer.why}` : ''}
+                            {/\b(current|route|workflow|navigation|fields?|screen|step|action|state|view|process|flow|setting|button)\b/i.test(answer.question) && (
+                              <span className="block mt-[5px]">
+                                It reads like a check of the product’s screens — confirm it while you record that screen.
+                                <button className="text-[12px] p-[3px_9px] ml-[8px]" disabled={busy} onClick={() => { toNote(item, l); setAnswer(null); }}>
+                                  <ClipboardList size={12} /> Make it a recording note
+                                </button>
+                              </span>
+                            )}
                             {answer.nearest?.length > 0 && (
                               <span className="block mt-[4px] text-muted">Closest: “{answer.nearest[0].text}” <i>({answer.nearest[0].source})</i></span>
                             )}

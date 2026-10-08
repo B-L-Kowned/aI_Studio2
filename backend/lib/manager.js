@@ -1,4 +1,5 @@
 import { getDb } from '../db/index.js';
+import { thinDrafts } from './enhance.js';
 import { buildRegister } from '../routes/register.js';
 
 /**
@@ -100,6 +101,8 @@ export function manager() {
   const queues = {
     approve: q((v) => v.stage === 'draft-ready'),
     checks: q((v) => v.stage === 'draft-checks'),
+    // Drafts whose length is off for their target: Fit to time can run on them tonight.
+    fit: (() => { const off = new Set(thinDrafts()); return videos.filter((v) => off.has(v.id)); })(),
     makeVoice: q((v) => v.madeBy !== 'self' && v.lines > 0 && takesMade.get(v.id).n < v.lines),
     approveVoice: q((v) => v.madeBy !== 'self' && v.lines > 0 && takesMade.get(v.id).n === v.lines && v.heard < v.lines),
     record: q((v) => v.madeBy === 'self' && v.lines > 0 && recorded.get(v.id).n < v.lines),
@@ -118,7 +121,7 @@ export function manager() {
   const next = [...open].sort((a, b) =>
     (a.daysLeft ?? 1e4) - (b.daysLeft ?? 1e4)
     || rank.indexOf(a.stage) - rank.indexOf(b.stage)
-    || (a.priority ?? 'P9').localeCompare(b.priority ?? 'P9')).slice(0, 6);
+    || (a.priority ?? 'P9').localeCompare(b.priority ?? 'P9')).slice(0, 12);
 
   return {
     today: now, deadlines: dl, groups, pacePerWeek: Math.round(pace * 10) / 10, projected,

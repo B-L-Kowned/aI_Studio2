@@ -17,23 +17,28 @@ export function EnhanceButton({ options, onPick, busy = false, busyLabel = 'Work
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
   }, [open]);
 
+  // One thing to do needs no menu: the button does it, the tooltip explains it.
+  const single = options.length === 1 ? options[0] : null;
+  const press = () => (single ? onPick(single.id) : setOpen((o) => !o));
+  const tip = title ?? (single ? `${single.detail ?? single.label} Runs on this Mac — free.` : undefined);
+
   return (
     <span ref={box} className="relative inline-flex">
       {compact ? (
-        <button type="button" disabled={busy || disabled} aria-label={label} aria-expanded={open} title={title ?? label}
-          onClick={() => setOpen((o) => !o)}
+        <button type="button" disabled={busy || disabled} aria-label={label} aria-expanded={single ? undefined : open} title={tip ?? label}
+          onClick={press}
           className="w-[28px] h-[28px] p-0 rounded-full grid place-items-center border border-solid bg-surface border-line text-accent hover:border-accent disabled:opacity-50">
           {busy ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
         </button>
       ) : (
-        <button type="button" disabled={busy || disabled} aria-expanded={open} title={title} onClick={() => setOpen((o) => !o)}
+        <button type="button" disabled={busy || disabled} aria-expanded={single ? undefined : open} title={tip} onClick={press}
           className="text-[12.5px] p-[6px_12px] inline-flex items-center gap-[6px]">
           {busy ? <RefreshCw size={13} className="animate-spin" /> : <Sparkles size={13} className="text-accent" />}
           {busy ? busyLabel : label}
-          {!busy && <ChevronDown size={12} className="text-muted" />}
+          {!busy && !single && <ChevronDown size={12} className="text-muted" />}
         </button>
       )}
-      {open && (
+      {open && !single && (
         <div role="menu" className="absolute right-0 top-[calc(100%+6px)] z-30 w-[270px] bg-surface border border-solid border-line rounded-lg p-[5px] [box-shadow:var(--shadow-lg,0_10px_30px_rgba(0,0,0,.12))]">
           {options.map((o) => (
             <button key={o.id} role="menuitem" type="button" disabled={o.disabled}

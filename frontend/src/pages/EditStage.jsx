@@ -405,9 +405,26 @@ export default function EditStage({ goToStage }) {
   const apply = (res) => setState(res.data);
   const ready = latest?.status === 'complete';
 
+  // Nothing rendered yet: say what this step is for and where to go, not an
+  // empty player above a timeline and tools that cannot be used.
+  if (!latest) {
+    return (
+      <div className="stagepane">
+        <h2>Edit</h2>
+        <p>Clean-up, captions, music and export happen here once the render is back. Until then, the editor kit takes your script and approved audio to CapCut or Descript.</p>
+        <EditorKit production={production} />
+        <div className="empty">
+          <Play size={26} />
+          <p>No render yet — this step opens when your avatar video comes back from HeyGen.</p>
+          {goToStage && <button className="primary" onClick={() => goToStage('Make')}>Go to Render</button>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="stagepane">
-      <h2>Post-render Editor</h2>
+      <h2>Edit</h2>
       <p>
         Render is an intermediate asset. Edits are non-destructive — each one is recorded as a
         decision and the render itself is never modified.

@@ -99,6 +99,11 @@ export default function Home({ go }) {
   };
   const hasDates = Object.keys(m.deadlines ?? {}).length > 0;
   const Q = m.queues;
+  const fitDrafts = async () => {
+    const n = Q.fit.count;
+    if (!window.confirm(`Fit ${n} draft${n === 1 ? '' : 's'} to time? Each is rewritten on this Mac (about a minute a video) and kept as a new draft to compare, keep or undo — nothing is approved. Leave it running overnight.`)) return;
+    await mutate(() => api.queueEnhance(Q.fit.ids), null).catch(() => {});
+  };
   const queue = (key, label, hint, action) => (Q[key]?.count > 0) && (
     <button key={key} type="button" onClick={action}
       className="text-left p-[12px_14px] rounded-lg border border-solid border-line bg-surface hover:border-line-2 hover:[box-shadow:var(--shadow)] flex flex-col gap-[3px]">
@@ -169,6 +174,7 @@ export default function Home({ go }) {
             <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-[10px]">
               {queue('approve', 'Scripts to approve', 'Review', () => toReview('ready'))}
               {queue('checks', 'Scripts with checks', 'Answer them', () => toReview('checks'))}
+              {queue('fit', 'Drafts off length', 'Fit to time tonight', fitDrafts)}
               {queue('makeVoice', 'Voices to make', 'Make overnight', makeVoice)}
               {queue('approveVoice', 'Voices to approve', 'Listen', () => toReview('voice'))}
               {queue('record', 'To record', Q.record?.count > 1 ? 'Recording session' : 'Record', () => {
@@ -268,7 +274,7 @@ export default function Home({ go }) {
                         <span className="flex items-baseline gap-[8px]">
                           <b className="text-[12.5px] font-[540] text-ink truncate flex-1">{c.name}</b>
                           <span className="text-[11px] text-faint whitespace-nowrap [font-variant-numeric:tabular-nums]">{c.stages.done}/{c.productions}</span>
-                          {c.blocked > 0 && <em className="not-italic text-[11px] text-danger whitespace-nowrap">{c.blocked} stuck</em>}
+                          {c.blocked > 0 && <em className="not-italic text-[11px] text-warn whitespace-nowrap" title="The next step on these is yours — an approval or an answer">{c.blocked} need you</em>}
                         </span>
                         <span className="flex h-[4px] rounded-full overflow-hidden bg-line mt-[6px]">
                           <i className="block h-full bg-line-2" style={{ width: seg(c.stages.planning) }} />

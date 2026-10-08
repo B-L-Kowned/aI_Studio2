@@ -75,6 +75,9 @@ button {
   transition: background .12s, border-color .12s;
 }
 button:hover:not(:disabled) { background: var(--surface-2); border-color: #bfbeb9; }
+/* A selected chip or tab is dark; the hover above would turn it light while its
+   text stays white — invisible exactly when you have just clicked it. */
+button.bg-ink:hover:not(:disabled) { background: var(--ink); border-color: var(--ink); }
 button:disabled { opacity: .42; cursor: not-allowed; }
 
 .primary {

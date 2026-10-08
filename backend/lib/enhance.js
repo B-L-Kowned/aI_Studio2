@@ -224,7 +224,7 @@ export const enhanceJob = (productionId) => {
 // Brief fields that are instructions to the producer ("Confirm intended
 // learner…", "One verified signup…") are not facts; a model given them writes
 // them into the script as if they were. Only fields that state something go in.
-const INSTRUCTION_RE = /^(confirm|verify|one verified|match the|tbd|to be confirmed|check)\b/i;
+const INSTRUCTION_RE = /^(confirm|verify|one verified|one audience|match the|tbd|to be confirmed|check)\b/i;
 function factsOf(brief) {
   const keep = ['Company', 'Audience', 'Goal', 'CTA', 'Website', 'Source summary', 'Visual plan', 'Format'];
   return keep.filter((k) => brief[k] && !INSTRUCTION_RE.test(brief[k].trim())).map((k) => `${k}: ${brief[k]}`).join('\n');

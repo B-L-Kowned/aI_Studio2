@@ -160,7 +160,7 @@ function LocalVoice({ data, optional, castable, run, production, busy, reload })
   );
 }
 
-export default function SegmentsStage({ optional = false }) {
+export default function SegmentsStage({ optional = false, goToStage }) {
   const { production, mutate } = useStudio();
   const [data, setData] = useState(null);
   const [castable, setCastable] = useState([]);
@@ -176,10 +176,12 @@ export default function SegmentsStage({ optional = false }) {
   // `paying` is its visible twin that disables every paid button.
   const payLock = useRef(false);
   const [paying, setPaying] = useState(null);
+  const [scriptApproved, setScriptApproved] = useState(true);
 
   const load = useCallback(async () => {
-    const [d, c] = await Promise.all([api.segments(production.id), api.castablePresenters()]);
+    const [d, c, sc] = await Promise.all([api.segments(production.id), api.castablePresenters(), api.script(production.id).catch(() => null)]);
     setData(d);
+    setScriptApproved(!!sc?.versions?.some((v) => v.status === 'accepted'));
     setCastable(c);
     setLoadError(null);
   }, [production.id]);
@@ -267,10 +269,10 @@ export default function SegmentsStage({ optional = false }) {
               <Headphones size={14} /> {busy === 'read' ? 'Reading…' : 'Read aloud — free'}
             </button>
           )}
-          <button onClick={() => run('build', () => api.buildSegments(production.id))}
+          {(scriptApproved || segments.length > 0) && <button onClick={() => run('build', () => api.buildSegments(production.id))}
             disabled={busy === 'build'}>
             <RefreshCw size={14} /> {segments.length ? 'Rebuild from script' : 'Build from script'}
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -347,9 +349,15 @@ export default function SegmentsStage({ optional = false }) {
         </>
       )}
 
-      {segments.length === 0 ? (
+      {segments.length === 0 && !scriptApproved ? (
+        <div className="empty">
+          <Film size={26} />
+          <p>The voice is made from the approved script. Approve it first — every line then appears here to hear and approve.</p>
+          {goToStage && <button className="primary" onClick={() => goToStage('Script')}>Go to the script</button>}
+        </div>
+      ) : segments.length === 0 ? (
         <p className="sectionempty">
-          <Film size={15} /> No segments yet. Build them from the accepted script.
+          <Film size={15} /> No lines yet. Build them from the approved script.
         </p>
       ) : (
         <>

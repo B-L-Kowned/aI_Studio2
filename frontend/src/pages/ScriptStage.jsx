@@ -239,12 +239,16 @@ export default function ScriptStage({ goToStage }) {
     goToStage?.(madeByOf(production) === 'self' ? 'Make' : 'Voice');
   };
 
-  const issues = checks?.issues ?? [];
+  // Length is shown, with its fix, in the header; the list is for everything else.
+  const issues = (checks?.issues ?? []).filter((i) => i.kind !== 'length');
   const fixable = issues.filter((i) => i.fix).length;
   const lineIssues = (id) => issues.filter((i) => i.lineId === id && i.kind !== 'website');
   const enhRunning = enh?.state === 'running';
   const enhDone = enh?.state === 'done' && enh.result?.versionId === latest?.id;
   const tone = !target ? 'text-muted' : within ? 'text-ok' : 'text-warn';
+  const fitLink = editable && !published && !enhRunning
+    ? <> <button className="ghostbtn p-0 text-accent text-[12px]" onClick={() => runEnhance('fit')}><Sparkles size={11} className="inline -mt-[2px]" /> Fit to time</button></>
+    : null;
   // One voice throughout: naming the speaker on every line says nothing.
   const oneSpeaker = new Set(lines.map((l) => l.speaker)).size <= 1;
   const barPct = target ? Math.min(100, (total / Math.max(total, target)) * 100) : 0;
@@ -257,14 +261,14 @@ export default function ScriptStage({ goToStage }) {
         {[
           brief.Priority && <span key="p" className={brief.Priority === 'P1' ? 'text-danger font-semibold' : 'font-[560] text-ink-2'}>{brief.Priority}</span>,
           brief.Format && <span key="f">{brief.Format}</span>,
-          brief.Audience && <span key="a" className="truncate max-w-[340px]" title={`For: ${brief.Audience}`}>For {brief.Audience.charAt(0).toLowerCase()}{brief.Audience.slice(1)}</span>,
+          brief.Audience && !/^(confirm|verify|one verified|one audience|tbd)\b/i.test(brief.Audience) && <span key="a" className="truncate max-w-[340px]" title={`For: ${brief.Audience}`}>For {brief.Audience.charAt(0).toLowerCase()}{brief.Audience.slice(1)}</span>,
           <MadeByChooser key="m" inline />,
         ].filter(Boolean).flatMap((x, i) => (i ? [<span key={`s${i}`} className="text-line-2" aria-hidden="true">·</span>, x] : [x]))}
         <button className="ghostbtn text-[12.5px] text-muted hover:text-ink p-[1px_4px] ml-auto" onClick={() => setDetails((d) => !d)} aria-expanded={details}>
           Plan details <ChevronDown size={12} className={details ? 'rotate-180' : ''} />
         </button>
       </div>
-      {brief['Verify first'] && (
+      {brief['Verify first'] && !details && (
         <div className="notice warn items-start"><AlertCircle /> <span><b>Verify before recording.</b> {brief['Verify first']}</span></div>
       )}
       {details && <div className="mb-[16px]"><PlanStage goToStage={goToStage} /></div>}
@@ -375,9 +379,9 @@ export default function ScriptStage({ goToStage }) {
                     {fitSpeed >= NATURAL_SPEED[0] && fitSpeed <= NATURAL_SPEED[1] ? (
                       <>At {fitSpeed.toFixed(2)}× it lands on {clock(target)}. <button className="ghostbtn p-0 text-accent text-[12px]" onClick={() => setSpeed(fitSpeed)}>Use {fitSpeed.toFixed(2)}×</button></>
                     ) : delta < 0 ? (
-                      <>Short by about <b className="font-[560]">{Math.round((target - total) / 60 * wpm)} words</b> at a natural pace.</>
+                      <>Short by about <b className="font-[560]">{Math.round((target - total) / 60 * wpm)} words</b> at a natural pace.{fitLink}</>
                     ) : (
-                      <>Long by about <b className="font-[560]">{Math.round((total - target) / 60 * wpm)} words</b> at a natural pace.</>
+                      <>Long by about <b className="font-[560]">{Math.round((total - target) / 60 * wpm)} words</b> at a natural pace.{fitLink}</>
                     )}
                   </span>
                 )}

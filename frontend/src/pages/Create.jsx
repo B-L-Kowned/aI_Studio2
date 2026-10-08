@@ -89,7 +89,7 @@ export default function Create({ go }) {
       />
 
       {stage === 'Script' && <ScriptStage goToStage={setStage} />}
-      {stage === 'Voice' && <SegmentsStage optional={made === 'self'} />}
+      {stage === 'Voice' && <SegmentsStage optional={made === 'self'} goToStage={setStage} />}
       {stage === 'Make' && made === 'self' && <RecordStage goToStage={setStage} />}
       {stage === 'Make' && made === 'voice' && (
         <div className="stagepane">
@@ -97,7 +97,7 @@ export default function Create({ go }) {
           <ShotList />
         </div>
       )}
-      {stage === 'Make' && made !== 'self' && made !== 'voice' && <RenderStage />}
+      {stage === 'Make' && made !== 'self' && made !== 'voice' && <RenderStage goToStage={setStage} />}
       {stage === 'Edit' && <EditStage goToStage={setStage} />}
       {stage === 'Finish' && <FinishStage goToStage={setStage} />}
 
