@@ -240,6 +240,11 @@ async function ollama({ prompt, systemPrompt, maxTokens, temperature, fetchImpl,
       // Ollama's default window is 4096 tokens; a long script with its brief
       // overflowed it silently, and the model saw only part of the draft.
       options: { temperature, num_predict: maxTokens, num_ctx: 8192 },
+      // Ollama keeps a model loaded for 5 minutes after use. A 14B writing
+      // model is ~9.5 GB; left beside the voice model it pushed that to swap.
+      // One minute still spans the back-to-back calls of a section-by-section
+      // rewrite or a batch, then the memory goes back.
+      keep_alive: '1m',
     }),
   }, { provider, model, timeout: LOCAL_TIMEOUT_MS, fetchImpl });
 

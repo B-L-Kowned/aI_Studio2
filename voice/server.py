@@ -37,6 +37,9 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("VOICE_PORT", "3533"))
 ROOT = Path(os.environ.get("VOICE_ROOT", Path.home() / "Library/Application Support/AIVideoStudio/voices")).resolve()
 MAX_CHARS = 1200  # one script line; longer text drifts and should be split upstream
+# Turbo (chosen 2026-10-08 by ear): ~3-4s a line against ~12s, same cloned voice.
+# It has no expressiveness or CFG controls; "standard" keeps the original model.
+MODEL_KIND = os.environ.get("VOICE_MODEL", "turbo")
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 model = None
@@ -51,11 +54,14 @@ ALIGN_MODEL = os.environ.get("ALIGN_MODEL", "small")
 def load() -> None:
     global model, load_error
     try:
-        from chatterbox.tts import ChatterboxTTS
-
         started = time.time()
-        model = ChatterboxTTS.from_pretrained(device=device)
-        print(f"[voice] model loaded on {device} in {time.time() - started:.1f}s", flush=True)
+        if MODEL_KIND == "turbo":
+            from chatterbox.tts_turbo import ChatterboxTurboTTS
+            model = ChatterboxTurboTTS.from_pretrained(device=device)
+        else:
+            from chatterbox.tts import ChatterboxTTS
+            model = ChatterboxTTS.from_pretrained(device=device)
+        print(f"[voice] {MODEL_KIND} model loaded on {device} in {time.time() - started:.1f}s", flush=True)
     except Exception as exc:  # reported on /health rather than crashing the process
         load_error = f"{type(exc).__name__}: {exc}"
         print(f"[voice] model failed to load: {load_error}", flush=True)
@@ -95,7 +101,7 @@ def speak(body: dict) -> dict:
         if seed is not None:
             torch.manual_seed(int(seed))
         started = time.time()
-        wav = model.generate(text, exaggeration=exaggeration, cfg_weight=cfg_weight)
+        wav = model.generate(text) if MODEL_KIND == "turbo" else model.generate(text, exaggeration=exaggeration, cfg_weight=cfg_weight)
         out.parent.mkdir(parents=True, exist_ok=True)
         torchaudio.save(str(out), wav, model.sr)
         taken = time.time() - started
@@ -145,7 +151,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/health":
             return self.reply(404, {"error": "not found"})
         self.reply(200, {
-            "ok": model is not None, "device": device, "loaded": model is not None,
+            "ok": model is not None, "device": device, "loaded": model is not None, "model": MODEL_KIND,
             "busy": lock.locked(), "error": load_error, "root": str(ROOT),
         })
 
