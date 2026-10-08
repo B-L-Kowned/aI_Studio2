@@ -5,12 +5,14 @@ import { castingFor, setCasting } from '../lib/casting.js';
 import { localAssets } from '../lib/providers/index.js';
 import { month } from '../lib/calendar.js';
 import { ok, fail, route } from '../utils/respond.js';
+import { invite, syncConsent, withdrawInvite, consentReady, roleWord } from '../lib/consent.js';
 
 const router = Router();
 
 const person = (r) => ({
   id: r.id, name: r.name, role: r.role, representation: r.representation,
   consentScope: r.consent_scope, status: r.status, inviteToken: r.invite_token,
+  email: r.email ?? null, inviteUrl: r.invite_url ?? null, inviteStatus: r.invite_status ?? null, inviteRole: roleWord(r.invite_role),
   casting: castingFor(r.id),
 });
 
@@ -42,10 +44,29 @@ router.patch(
 
 router.get(
   '/people',
-  route(async (_req, res) =>
-    ok(res, getDb().prepare('SELECT * FROM people ORDER BY position, id').all().map(person))
-  )
+  route(async (req, res) => {
+    // Answers arrive on the consent service; bring them in before listing.
+    try { await syncConsent({ force: req.query.sync === '1' }); } catch { /* unreachable: list what is known */ }
+    return ok(res, getDb().prepare('SELECT * FROM people ORDER BY position, id').all().map(person));
+  })
 );
+
+router.get('/people/consent-status', route(async (_req, res) => ok(res, { ready: consentReady() })));
+
+/** Invite a collaborator by email: they answer on their own consent page. */
+router.post('/people/invites', route(async (req, res) => {
+  try {
+    const r = await invite(req.body ?? {});
+    return ok(res, { ...r, person: person(getDb().prepare('SELECT * FROM people WHERE id = ?').get(r.id)) },
+      r.emailed ? `Invite emailed to ${req.body.email}` : 'Invite created — copy the link to send it');
+  } catch (err) {
+    return fail(res, { NOT_CONFIGURED: 409, UNREACHABLE: 502, NAME_REQUIRED: 400 }[err.code] ?? 400, err.code ?? 'INVITE_FAILED', err.message);
+  }
+}));
+router.post('/people/:id/withdraw-invite', route(async (req, res) => {
+  try { await withdrawInvite(Number(req.params.id)); return ok(res, null, 'Invite withdrawn'); }
+  catch (err) { return fail(res, err.code === 'NOT_FOUND' ? 404 : 502, err.code ?? 'FAILED', err.message); }
+}));
 
 router.post(
   '/people/invite',

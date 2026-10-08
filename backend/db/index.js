@@ -126,6 +126,12 @@ const ADDED_COLUMNS = [
   ['presenters', 'speed', 'REAL'],
   // Which videos a persona presents by default: {workstreams: [], companies: []}.
   ['presenters', 'use_for', 'TEXT'],
+  // A collaborator's invite lives on the consent service; these tie the two.
+  ['people', 'email', 'TEXT'],
+  ['people', 'invite_id', 'TEXT'],
+  ['people', 'invite_url', 'TEXT'],
+  ['people', 'invite_role', 'TEXT'],
+  ['people', 'invite_status', 'TEXT'],
   // Which of your personas presents this video; null = your likeness.
   ['productions', 'persona_id', 'INTEGER'],
   // A scene is a row of the shot list: what is on screen while a section of
