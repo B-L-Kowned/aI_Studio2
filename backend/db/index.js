@@ -135,6 +135,12 @@ const ADDED_COLUMNS = [
   // indistinguishable from the deterministic offline fixture after the fact.
   ['script_versions', 'generator_provider', "TEXT NOT NULL DEFAULT 'included'"],
   ['script_versions', 'generator_model', 'TEXT'],
+  // Clean-up of a take you recorded: the words heard in it (with times) and the
+  // cuts proposed from them — fillers, long gaps, dead air — each one switchable.
+  ['line_takes', 'words', 'TEXT'],
+  ['line_takes', 'cuts', 'TEXT'],
+  // How this video is finished in the app: clean audio, look, frame, captions.
+  ['productions', 'edit_settings', 'TEXT'],
 ];
 
 function migrate(db) {

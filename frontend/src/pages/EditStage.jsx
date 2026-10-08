@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Play, Scissors, Lock, AlertCircle, Check, Download, FolderOpen } from 'lucide-react';
+import { Play, Scissors, Lock, AlertCircle, Check, Download, FolderOpen, Wand2, RefreshCw, Film } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { toSeconds, toClock } from '../utils/format.js';
 import { api } from '../services/api.js';
 import { useResource } from '../hooks/use-resource.js';
 import LoadState from '../components/LoadState.jsx';
 import { madeByOf, needsRender } from '../utils/made-by.js';
+import HeyGenLook from '../components/HeyGenLook.jsx';
+import PaidConfirm from '../components/PaidConfirm.jsx';
 
 const SUPPORTED = new Set(['Trim / Cut', 'Create Short Clip']);
 const KIT_LINK = 'inline-flex items-center gap-[6px] text-[12.5px] p-[6px_11px] rounded-md border border-solid border-line bg-surface text-ink no-underline hover:border-line-2';
@@ -88,7 +90,231 @@ function EditorKit({ production }) {
   );
 }
 
-export default function EditStage() {
+const CHIP_ON = 'text-[11.5px] p-[2px_8px] rounded-full border border-solid cursor-pointer bg-warn-soft text-warn border-warn-line line-through decoration-[1.5px]';
+const CHIP_OFF = 'text-[11.5px] p-[2px_8px] rounded-full border border-solid cursor-pointer bg-surface text-muted border-line';
+const KIND = { filler: 'filler', gap: 'pause', head: 'start', tail: 'end' };
+const secs = (n) => `${n.toFixed(1)}s`;
+
+/**
+ * Your recording, re-performed by your HeyGen avatar: the cleaned-up sound of
+ * your takes (fillers cut, pauses tightened) drives the avatar you choose. It
+ * renders on your HeyGen plan, so it asks before spending.
+ */
+function AvatarFromRecording({ production, onFinished }) {
+  const { mutate } = useStudio();
+  const [path, setPath] = useState(null);
+  const [render, setRender] = useState(null);
+  const [showLook, setShowLook] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const load = useCallback(() => api.render(production.id).then(setRender).catch(() => {}), [production.id]);
+  useEffect(() => { load(); api.heygenStatus().then((h) => setPath(h.renderPath)).catch(() => setPath(null)); }, [load]);
+  const latest = render?.latest;
+  const moving = latest && ['queued', 'processing'].includes(latest.status);
+  useEffect(() => {
+    if (!moving) return undefined;
+    const t = setTimeout(load, 1500);
+    return () => clearTimeout(t);
+  }, [moving, render, load]);
+
+  const start = async () => {
+    setStarting(true); setConfirming(false);
+    try { await mutate(() => api.startRender(production.id, true, { fromRecording: true }), (r) => setRender(r.data)); }
+    catch { /* mutate reports it */ } finally { setStarting(false); }
+  };
+  const playable = latest?.videoUrl && /^https?:|^\/api\//.test(latest.videoUrl);
+
+  return (
+    <section className="border border-solid border-line rounded-lg bg-surface p-[14px_16px] mt-[12px]" aria-label="Avatar from your recording">
+      <div className="flex flex-wrap items-baseline gap-x-[12px]">
+        <b className="text-[13.5px]">Turn it into an avatar video</b>
+        <span className="text-muted text-[12px]">Your avatar, speaking with your recorded voice — cleaned up as above. Renders on HeyGen.</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-[10px] mt-[10px]">
+        <button onClick={() => setShowLook((v) => !v)}>{showLook ? 'Hide' : 'Choose'} the avatar look</button>
+        <button className="primary" disabled={starting || moving || path?.path === 'none'} title={path?.reason ?? ''}
+          onClick={() => (path && !path.free ? setConfirming(true) : start())}>
+          {starting ? 'Starting…' : 'Render with my avatar'}
+        </button>
+        {path && <span className="text-[12px] text-muted">{path.free ? 'Free here — ' : 'Charged to your plan — '}{path.reason}</span>}
+      </div>
+      {confirming && (
+        <PaidConfirm title="This render is charged to your HeyGen plan." detail={path.reason}
+          confirmLabel="Yes — render and charge my plan" busy={starting} onCancel={() => setConfirming(false)} onConfirm={start} />
+      )}
+      {showLook && <div className="mt-[14px]"><HeyGenLook /></div>}
+      {latest && (
+        <div className="mt-[12px] text-[12.5px]">
+          <span className={latest.status === 'complete' ? 'text-ok' : latest.status === 'failed' ? 'text-danger' : 'text-warn'}>
+            Render v{latest.version}: {latest.status}{moving ? ` ${latest.progress ?? 0}%` : ''}{latest.error ? ` — ${latest.error}` : ''}
+          </span>
+          {latest.status === 'complete' && (
+            <div className="flex flex-wrap items-center gap-[10px] mt-[8px]">
+              {playable ? <video className="w-[280px] rounded-md bg-ink" src={latest.videoUrl} controls preload="metadata" />
+                : <span className="text-muted">Simulated render (fixtures mode) — a stand-in file is used.</span>}
+              <button onClick={() => mutate(() => api.useRender(production.id), null).then(onFinished).catch(() => {})}>
+                <Check size={14} /> Use as the finished video
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Finish a video you recorded (or narrated over screen recordings) without
+ * leaving the app: listen for fillers and pauses, choose the take and the in
+ * and out of each line, decide how it looks and sounds, preview, export. The
+ * export is the finished video: it marks the video done and can be published.
+ */
+function FinishInApp({ production, goToStage }) {
+  const { mutate } = useStudio();
+  const [st, setSt] = useState(null);
+  const [open, setOpen] = useState(null);
+  const player = React.useRef({});
+  const load = useCallback(() => api.editState(production.id).then(setSt).catch(() => {}), [production.id]);
+  useEffect(() => { load(); }, [load]);
+  const busy = st?.analysis?.state === 'running' || st?.job?.state === 'running';
+  useEffect(() => {
+    if (!busy) return undefined;
+    const t = setInterval(load, 2000);
+    return () => clearInterval(t);
+  }, [busy, load]);
+  if (!st) return null;
+
+  const self = st.madeBy === 'self';
+  const s = st.settings;
+  const set = (patch) => mutate(() => api.saveEditSettings(production.id, patch), (r) => setSt(r.data), { silent: true }).catch(() => {});
+  const act = (fn) => mutate(fn, (r) => setSt(r.data)).catch(() => {});
+  const lines = st.lines ?? [];
+  const chosen = (l) => l.takes.find((t) => t.chosen);
+  const recorded = lines.filter(chosen).length;
+  const cutsOn = lines.flatMap((l) => chosen(l)?.cuts ?? []).filter((c) => c.on);
+  const saving = cutsOn.reduce((n, c) => n + (c.end - c.start), 0);
+  const analyzed = lines.some((l) => chosen(l)?.analyzed);
+  const toggle = (t, i, on) => mutate(() => api.toggleCut(production.id, t.id, i, on), (r) => setSt(r.data), { silent: true }).catch(() => {});
+  const setPoint = (t, which) => {
+    const v = player.current[t.id];
+    if (!v) return;
+    mutate(() => api.updateLineTake(production.id, t.id, { [which]: Number(v.currentTime.toFixed(2)) }), null, { silent: true }).then(load).catch(() => {});
+  };
+  // Most settings are on/off; look and reframe are stored by name.
+  const NAMED = { look: ['auto', 'off'], reframe: ['face', 'center'] };
+  const check = (key, label, title) => (
+    <label className="flex items-center gap-[5px] text-[12.5px] cursor-pointer" title={title}>
+      <input type="checkbox" checked={NAMED[key] ? s[key] === NAMED[key][0] : !!s[key]}
+        onChange={(e) => set({ [key]: NAMED[key] ? NAMED[key][e.target.checked ? 0 : 1] : e.target.checked })} /> {label}
+    </label>
+  );
+
+  return (
+    <section className="border border-solid border-line rounded-lg bg-surface p-[14px_16px]" aria-label="Finish in the app">
+      <div className="flex flex-wrap items-baseline gap-x-[12px]">
+        <b className="text-[13.5px]">Finish it here</b>
+        <span className="text-muted text-[12px]">
+          {self ? `${recorded} of ${lines.length} lines recorded` : 'Your approved audio, with each section\'s recording or a title card'}
+        </span>
+      </div>
+
+      {self && (
+        <div className="flex flex-wrap items-center gap-[10px] mt-[12px]">
+          <button onClick={() => act(() => api.analyzeTakes(production.id))} disabled={busy || !recorded}>
+            <Wand2 size={14} /> {analyzed ? 'Listen again' : 'Listen for fillers and pauses'}
+          </button>
+          {st.analysis?.state === 'running' && <span className="text-warn text-[12.5px]"><RefreshCw size={12} className="inline animate-spin" /> Listening to {st.analysis.total} takes…</span>}
+          {st.analysis?.state === 'failed' && <span className="text-danger text-[12.5px]">{st.analysis.error}</span>}
+          {analyzed && st.analysis?.state !== 'running' && (
+            <span className="text-[12.5px] text-ink-2">{cutsOn.length} cuts on — saves {secs(saving)}. Click a cut to keep that bit.</span>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-x-[16px] gap-y-[8px] mt-[12px] p-[10px_12px] rounded-md bg-surface-2">
+        {self && check('removeFillers', 'Cut fillers', 'um, uh, hmm…')}
+        {self && check('tightenGaps', 'Shorten long pauses')}
+        {self && check('trimEnds', 'Trim dead air at each end')}
+        {check('cleanAudio', 'Clean audio', 'Noise reduction and broadcast loudness (−14 LUFS)')}
+        {self && check('look', 'Auto light and colour')}
+        {check('captions', 'Burn in captions')}
+        <span className="flex items-center gap-[5px] text-[12.5px]">
+          Frame
+          {['16:9', '9:16', '1:1'].map((a) => (
+            <button key={a} type="button" onClick={() => set({ aspect: a })}
+              className={'text-[11.5px] p-[2px_9px] rounded-full ' + (s.aspect === a ? 'bg-ink text-[#fff] border-ink' : '')}>{a}</button>
+          ))}
+        </span>
+        {self && check('reframe', 'Keep my face centred', 'Crop around your face when the frame changes shape')}
+      </div>
+
+      {self && (
+        <ol className="list-none p-0 m-[12px_0_0] border border-solid border-line rounded-md">
+          {lines.map((l) => {
+            const t = chosen(l);
+            return (
+              <li key={l.segmentId} className="[&+&]:[border-top:1px_solid_var(--line)] p-[7px_10px]">
+                <div className="grid grid-cols-[24px_1fr_auto] gap-[8px] items-start">
+                  <code className="text-[11px] text-faint pt-[2px]">{String(l.n).padStart(2, '0')}</code>
+                  <div className="min-w-0">
+                    <button type="button" className="ghostbtn text-left text-[12.5px] leading-[1.4] p-0 text-ink line-clamp-2" onClick={() => setOpen(open === l.segmentId ? null : l.segmentId)}>{l.text}</button>
+                    {t && t.cuts.length > 0 && (
+                      <div className="flex flex-wrap gap-[4px] mt-[4px]">
+                        {t.cuts.map((c, i) => (
+                          <button key={i} type="button" className={c.on ? CHIP_ON : CHIP_OFF} title={`${secs(c.start)}–${secs(c.end)} · ${c.on ? 'cut — click to keep' : 'kept — click to cut'}`}
+                            onClick={() => toggle(t, i, !c.on)}>{KIND[c.kind]}: {c.label}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {t ? (
+                    <select className="text-[12px]" value={t.id} aria-label={`Take for line ${l.n}`}
+                      onChange={(e) => mutate(() => api.updateLineTake(production.id, Number(e.target.value), { chosen: true }), null, { silent: true }).then(load).catch(() => {})}>
+                      {l.takes.map((x) => <option key={x.id} value={x.id}>Take {x.version}{x.analyzed ? '' : ' ·'}</option>)}
+                    </select>
+                  ) : <span className="text-[12px] text-warn">not recorded</span>}
+                </div>
+                {open === l.segmentId && t && (
+                  <div className="p-[8px_0_2px_32px] flex flex-wrap items-center gap-[8px]">
+                    <video ref={(el) => { player.current[t.id] = el; }} className="w-[260px] rounded-md bg-ink" controls preload="metadata"
+                      src={`${t.url}#t=${t.inPoint.toFixed(2)}`} />
+                    <div className="flex flex-col gap-[6px] text-[12px]">
+                      <span className="text-muted">In {secs(t.inPoint)} · Out {secs(t.outPoint)} of {secs(t.duration ?? t.outPoint)}</span>
+                      <span className="flex gap-[6px]">
+                        <button className="text-[12px] p-[3px_9px]" onClick={() => setPoint(t, 'inPoint')}>Set in here</button>
+                        <button className="text-[12px] p-[3px_9px]" onClick={() => setPoint(t, 'outPoint')}>Set out here</button>
+                      </span>
+                      <span className="text-faint">Play to the spot, then set it.</span>
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      <div className="flex flex-wrap items-center gap-[10px] mt-[14px]">
+        <button onClick={() => act(() => api.previewEdit(production.id))} disabled={busy}><Film size={14} /> Preview</button>
+        <button className="primary" onClick={() => act(() => api.exportEdit(production.id))} disabled={busy}><Check size={14} /> Export the finished video</button>
+        {st.job?.state === 'running' && <span className="text-warn text-[12.5px]"><RefreshCw size={12} className="inline animate-spin" /> {st.job.preview ? 'Building a preview…' : 'Exporting at full size…'}</span>}
+        {st.job?.state === 'failed' && <span className="text-danger text-[12.5px]">{st.job.error}</span>}
+        {st.job?.state === 'done' && !st.job.preview && (
+          <span className="text-ok text-[12.5px]"><Check size={13} className="inline" /> Exported "{st.job.name}" ({secs(st.job.duration ?? 0)}) — marked done.
+            {' '}<button className="ghostbtn text-[12.5px] text-accent p-0 underline" onClick={() => goToStage?.('Finish')}>Publish it</button></span>
+        )}
+      </div>
+      {st.preview && (
+        <video key={st.preview.url} className="w-full max-w-[560px] mt-[10px] rounded-md bg-ink" src={st.preview.url} controls preload="metadata" />
+      )}
+      {st.job?.state === 'done' && st.job.preview && (
+        <p className="text-faint text-[11.5px] m-[6px_0_0]">Preview: {secs(st.job.duration ?? 0)}, {st.job.pieces} pieces{st.job.captions ? `, ${st.job.captions} captions` : ''}{st.job.missing?.length ? ` — line ${st.job.missing.join(', ')} not recorded yet` : ''}.</p>
+      )}
+    </section>
+  );
+}
+
+export default function EditStage({ goToStage }) {
   const { production, meta, mutate } = useStudio();
   const [editingTool, setEditingTool] = useState(null);
   const [range, setRange] = useState({ from: '', to: '', note: '' });
@@ -100,8 +326,9 @@ export default function EditStage() {
     return (
       <div className="stagepane">
         <h2>Edit</h2>
-        <p>{madeByOf(production) === 'self' ? 'You record and cut this video yourself.' : 'Your voice over your screen recordings.'}
-          {' '}Everything the edit needs is here; the finished file goes up in Plan → Brief, which marks it done.</p>
+        <p>Finish it here, or take the kit to CapCut and upload the result in Finish — either way marks it done.</p>
+        <FinishInApp production={production} goToStage={goToStage} />
+        {madeByOf(production) === 'self' && <AvatarFromRecording production={production} onFinished={() => goToStage?.('Finish')} />}
         <EditorKit production={production} />
       </div>
     );

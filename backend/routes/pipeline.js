@@ -16,6 +16,8 @@ import { isDryRun, providerMode, canGenerateLive } from '../lib/providers/mode.j
 import { castingReadiness } from '../lib/casting.js';
 import { renderGate } from '../lib/segments.js';
 import { productionLock } from '../lib/production-lock.js';
+import { madeBy } from '../lib/made-by.js';
+import { cleanRecordingAudio } from '../lib/assemble.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -423,13 +425,19 @@ router.post(
       .prepare("SELECT * FROM script_versions WHERE production_id = ? AND status = 'accepted' ORDER BY version DESC")
       .get(id);
     if (!accepted) return fail(res, 409, 'NO_ACCEPTED_SCRIPT', 'Accept a script version before rendering');
+    // Your own recording, re-performed by your avatar: the cleaned audio of
+    // your takes drives it, so the AI voice and its approvals do not apply.
+    const fromRecording = req.body?.fromRecording === true;
+    if (fromRecording && madeBy(id) !== 'self') {
+      return fail(res, 409, 'NOT_SELF_RECORDED', 'Only a video you recorded yourself can be turned into an avatar video.');
+    }
 
     // Fixtures remains an explicit sandbox for exercising downstream export
     // and publication code. Any path that can reach HeyGen — including Test's
     // free, watermarked API-key route — must pass the whole approval chain.
     const lock = productionLock(id);
-    if (providerMode() !== 'fixtures' && !lock?.ready) {
-      const blockers = lock?.blockers ?? [];
+    const blockers = (lock?.blockers ?? []).filter((b) => !(fromRecording && b.key === 'voice'));
+    if (providerMode() !== 'fixtures' && blockers.length) {
       return fail(
         res,
         409,
@@ -444,7 +452,7 @@ router.post(
     // one of them must be cast and heard. Rendering the whole thing must not be a
     // way around a gate that stops you rendering one line of it.
     const gate = renderGate(id);
-    if (gate.total > 0 && !gate.ready) {
+    if (!fromRecording && gate.total > 0 && !gate.ready) {
       return fail(res, 409, 'UNHEARD',
         `${gate.blocked.length} of ${gate.total} segments are not ready: ` +
         gate.blocked.slice(0, 3).map((b) => `#${b.position + 1} (${b.reason})`).join(', ') +
@@ -457,10 +465,16 @@ router.post(
       return fail(res, 402, 'CONFIRMATION_REQUIRED', 'A paid render requires explicit confirmation');
     }
 
+    let audio = null;
+    if (fromRecording) {
+      try { audio = await cleanRecordingAudio(id); } catch (err) { return fail(res, 409, err.code ?? 'NO_TAKES', err.message); }
+    }
     const segments = db
       .prepare('SELECT text FROM script_segments WHERE script_version_id = ?')
       .all(accepted.id);
-    const duration = estimateRuntime(segments);
+    const duration = audio
+      ? `${Math.floor(audio.seconds / 60)}:${String(Math.round(audio.seconds % 60)).padStart(2, '0')}`
+      : estimateRuntime(segments);
     const minutes = duration.split(':').reduce((m, s, i) => (i === 0 ? Number(m) : Number(m) + Number(s) / 60), 0);
     const cost = Math.round(minutes * 1.4 * 100) / 100;
 
@@ -486,6 +500,7 @@ router.post(
         renderVersionId,
         segments: fullSegments,
         title: db.prepare('SELECT title FROM productions WHERE id = ?').get(id).title,
+        audioFile: audio?.file,
       });
     } catch (err) {
       // Failed, not queued: a queued row with no provider job is what the
@@ -611,8 +626,10 @@ router.get(
     const id = Number(req.params.id);
     const rows = db.prepare('SELECT * FROM publications WHERE production_id = ?').all(id);
     const realConnections = { artificialFunny: await artificialFunny.isConnected() };
+    // Only an export with a file can be published: a finished render files a
+    // placeholder export row before its file is built.
     const latestExport = db
-      .prepare('SELECT * FROM exports WHERE production_id = ? ORDER BY version DESC')
+      .prepare('SELECT * FROM exports WHERE production_id = ? AND file_path IS NOT NULL ORDER BY version DESC')
       .get(id);
 
     return ok(res, {
@@ -665,7 +682,7 @@ router.post(
       return fail(res, 400, 'BAD_MODE', 'Mode must be prepare, schedule or publish');
 
     const latestExport = db
-      .prepare('SELECT * FROM exports WHERE production_id = ? ORDER BY version DESC')
+      .prepare('SELECT * FROM exports WHERE production_id = ? AND file_path IS NOT NULL ORDER BY version DESC')
       .get(id);
     if (!latestExport) return fail(res, 409, 'NO_EXPORT', 'Create an export before preparing a publication');
 

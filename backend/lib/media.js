@@ -21,7 +21,7 @@ export const MAX_UPLOAD = 4 * 1024 ** 3;
 const jobs = new Map();
 export const transcriptionFor = (productionId) => jobs.get(productionId) ?? null;
 
-const brief = (productionId, label, value) => {
+export const brief = (productionId, label, value) => {
   const db = getDb();
   const row = db.prepare('SELECT id FROM brief_fields WHERE production_id = ? AND label = ?').get(productionId, label);
   if (row) db.prepare('UPDATE brief_fields SET value = ? WHERE id = ?').run(String(value).slice(0, 500), row.id);
@@ -101,20 +101,36 @@ export function transcribeInBackground(productionId, file, name) {
   return job;
 }
 
+/**
+ * The finished video, on record: in the library, marked done in the brief, and
+ * an export row — Publish prepares packages from exports, and until this an
+ * export could only come from a HeyGen render, so a video you recorded or
+ * uploaded could never be published.
+ */
+export async function recordFinal(productionId, file, name, { editsApplied = 0, note = null } = {}) {
+  const db = getDb();
+  const r = await importLocalVideo({ path: file, productionId, name });
+  if (!db.prepare("SELECT value FROM brief_fields WHERE production_id = ? AND label = 'Completed asset'").get(productionId)?.value) {
+    brief(productionId, 'Completed asset', r.name);
+  }
+  brief(productionId, 'Completed confirmed', `Finished video ${note ?? 'saved'} ${new Date().toISOString().slice(0, 10)}`);
+  brief(productionId, 'Final file', r.path);
+  const version = (db.prepare('SELECT MAX(version) m FROM exports WHERE production_id = ?').get(productionId).m ?? 0) + 1;
+  db.prepare(
+    `INSERT INTO exports (production_id, render_version_id, version, status, file_path, bytes, duration_seconds, edits_applied, note)
+     VALUES (?, NULL, ?, 'ready', ?, ?, ?, ?, ?)`
+  ).run(productionId, version, r.path, r.bytes, r.duration, editsApplied, note);
+  return { ...r, exportVersion: version };
+}
+
 /** A finished video uploaded for a production: file it, mark the video done, recover its words. */
 export async function acceptFinishedVideo(productionId, tmp, name) {
   // A video already on record (its HeyGen entry) keeps its name, so the upload
   // lands on that record instead of creating a second one for the same video.
   const known = getDb().prepare("SELECT value FROM brief_fields WHERE production_id = ? AND label = 'Completed asset'").get(productionId)?.value;
   const recordName = known ? known.replace(/\s*\([^)]*\)\s*$/, '').trim() : null;
-  const r = await importLocalVideo({ path: tmp, productionId, name: recordName || name });
+  const r = await recordFinal(productionId, tmp, recordName || name, { note: 'uploaded' });
   rmSync(tmp, { force: true });
-  const today = new Date().toISOString().slice(0, 10);
-  if (!getDb().prepare("SELECT value FROM brief_fields WHERE production_id = ? AND label = 'Completed asset'").get(productionId)?.value) {
-    brief(productionId, 'Completed asset', r.name);
-  }
-  brief(productionId, 'Completed confirmed', `Finished video uploaded ${today}`);
-  brief(productionId, 'Final file', r.path);
   return { ...r, transcription: transcribeInBackground(productionId, r.path, r.name) };
 }
 

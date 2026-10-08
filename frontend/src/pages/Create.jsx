@@ -97,7 +97,7 @@ export default function Create({ go }) {
         </div>
       )}
       {stage === 'Make' && made !== 'self' && made !== 'voice' && <RenderStage />}
-      {stage === 'Edit' && <EditStage />}
+      {stage === 'Edit' && <EditStage goToStage={setStage} />}
       {stage === 'Finish' && <FinishStage />}
 
       {nextStep && nextStep !== stage && (

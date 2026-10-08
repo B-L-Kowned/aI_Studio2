@@ -67,6 +67,7 @@ export const takeView = (t) => t && ({
   id: t.id, segmentId: t.segment_id, version: t.version, source: t.source,
   inPoint: t.in_point, outPoint: t.out_point ?? t.duration, duration: t.duration,
   text: t.text, said: t.said, chosen: !!t.chosen, createdAt: t.created_at,
+  analyzed: t.words != null, cuts: JSON.parse(t.cuts ?? '[]'),
   url: `/api/productions/${t.production_id}/line-takes/${t.id}/video`,
   missing: !existsSync(t.path),
 });

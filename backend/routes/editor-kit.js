@@ -37,7 +37,7 @@ const pad = (n) => String(n).padStart(2, '0');
 const safe = (s) => String(s ?? '').replace(/[/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 60);
 
 /** The kit's lines with their place on the clock, and the sections they fall in. */
-function kitFor(id) {
+export function kitFor(id) {
   const db = getDb();
   const p = db.prepare('SELECT id, title, voice_speed FROM productions WHERE id = ?').get(id);
   if (!p) return null;
@@ -122,6 +122,10 @@ function shotListOf(kit) {
 // ------------------------------------------------------------------- files
 const cacheDir = (kit) => join(voicesDir(), 'samples', 'editor-kit', String(kit.p.id));
 
+export async function fullReadFile(kit) {
+  return fullRead(kit);
+}
+
 async function fullRead(kit) {
   const dir = cacheDir(kit);
   const out = join(dir, 'full.wav');
@@ -130,7 +134,7 @@ async function fullRead(kit) {
 }
 
 /** The finished render on disk: downloaded from HeyGen, or in Fixtures a stand-in carrying the real audio. */
-async function renderFile(kit) {
+export async function renderFile(kit) {
   const dir = cacheDir(kit);
   mkdirSync(dir, { recursive: true });
   const out = join(dir, `render-v${kit.render.version}${kit.render.standIn ? '-stand-in' : ''}.mp4`);

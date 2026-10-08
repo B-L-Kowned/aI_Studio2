@@ -53,9 +53,18 @@ finished video (Whisper `medium.en` via faster-whisper, MIT; on this machine,
 ~40 s for a one-minute video). Setup: `.venv/bin/pip install faster-whisper`;
 the model downloads on first use.
 
-## Not built yet
+## Editing your own recordings
 
-Rendering a HeyGen avatar video **from** approved local audio. Until it is, a
-HeyGen render of a line cast with a local voice is refused with
-`LOCAL_VOICE_RENDER` — it never falls back to a different voice. Voice-only videos
-(screen recording + narration) need only the approved audio.
+`media_tools.py` backs the Edit step for videos you record yourself:
+`analyze` finds filler words, long gaps and dead air in each take (Whisper word
+timings, prompted to keep "um"/"uh"), and `frames` measures where your face sits
+in the frame and how bright the footage is, for reframing and the auto look.
+Setup: `.venv/bin/pip install "opencv-python-headless==4.10.0.84"` — pinned,
+because newer OpenCV pulls numpy 2, which Chatterbox's torch build does not take.
+
+## HeyGen from your audio
+
+A HeyGen render of a line cast with your local voice uploads the approved audio
+to HeyGen and lip-syncs the avatar to it (`backend/lib/providers/heygen-audio.js`);
+it never falls back to a HeyGen voice. Voice-only videos (screen recording +
+narration) need only the approved audio.

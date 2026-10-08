@@ -165,7 +165,7 @@ export function localAssets(providerId, kind) {
 }
 
 /** PUSH: hand a render to the routed provider and record the job locally. */
-export async function pushRenderJob({ productionId, renderVersionId, segments, title }) {
+export async function pushRenderJob({ productionId, renderVersionId, segments, title, audioFile }) {
   const db = getDb();
   const provider = routeCapability('render');
   const id = provider.meta.id;
@@ -239,7 +239,19 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
   // hands out. Only the plan path's studio tool takes uploaded audio per scene.
   const localVoiced = readiness.speakers.filter((s) => s.voice?.provider === 'local').map((s) => s.speaker);
   let audioScenes = null;
-  if (localVoiced.length) {
+  if (audioFile) {
+    // A recording you made, re-performed by the avatar: one scene, your audio.
+    if (route.path === 'key') {
+      throw Object.assign(new Error('An avatar video from your recording renders through your HeyGen plan connection (Settings → HeyGen), not the API key — nothing was sent.'),
+        { code: 'LOCAL_VOICE_RENDER' });
+    }
+    const [id] = await uploadAudio([audioFile], { title, simulate: route.path === 'fixtures' });
+    const speaker = castSegments[0]?.speaker ?? 'Pat';
+    audioScenes = [{
+      speaker, text: castSegments.map((c) => c.text).join(' '),
+      avatarId: looks.get(speaker)?.remoteId ?? castSegments[0]?.avatarId ?? fallbackAvatar?.remote_id, audioAssetId: id,
+    }];
+  } else if (localVoiced.length) {
     if (route.path === 'key') {
       throw Object.assign(
         new Error(`${localVoiced.join(', ')} ${localVoiced.length === 1 ? 'uses' : 'use'} your local voice, which renders through your HeyGen plan connection (Settings → HeyGen), not the API key — nothing was sent.`),

@@ -47,22 +47,24 @@ export function productionLock(productionId) {
   const gates = [];
 
   if (!research.length) {
-    gates.push(gate('research', 'Source research', 'pass', 'No website source is attached; nothing to review.', 'Plan · Sources'));
+    gates.push(gate('research', 'Source research', 'pass', 'No website source is attached; nothing to review.', 'Script · Plan details · Sources'));
   } else if (researchFailed.length) {
-    gates.push(gate('research', 'Source research', 'block', `${researchFailed.length} website source${researchFailed.length === 1 ? '' : 's'} could not be researched.`, 'Plan · Sources'));
+    gates.push(gate('research', 'Source research', 'block', `${researchFailed.length} website source${researchFailed.length === 1 ? '' : 's'} could not be researched.`, 'Script · Plan details · Sources'));
   } else if (researchUnreviewed.length) {
-    gates.push(gate('research', 'Source research', 'block', 'The website evidence has not been reviewed by you.', 'Plan · Sources'));
+    gates.push(gate('research', 'Source research', 'block', 'The website evidence has not been reviewed by you.', 'Script · Plan details · Sources'));
   } else {
-    gates.push(gate('research', 'Source research', 'pass', 'Website evidence reviewed.', 'Plan · Sources'));
+    gates.push(gate('research', 'Source research', 'pass', 'Website evidence reviewed.', 'Script · Plan details · Sources'));
   }
 
   gates.push(gate(
     'outline', 'Outline', production.outline_approved ? 'pass' : 'block',
-    production.outline_approved ? 'Approved.' : 'Approve the outline.', 'Plan · Outline'
+    production.outline_approved ? 'Approved.' : 'Approve the outline.', 'Script · Plan details · Outline'
   ));
+  // The shot list guides the edit; an avatar render does not need it. As a
+  // block it stopped every HeyGen render — none of the register had one.
   gates.push(gate(
-    'scenes', 'Visuals', production.scenes_approved ? 'pass' : 'block',
-    production.scenes_approved ? 'Shot list approved.' : 'Plan what is on screen for each section and approve it.', 'Plan · Visuals'
+    'scenes', 'Visuals', production.scenes_approved ? 'pass' : 'warn',
+    production.scenes_approved ? 'Shot list approved.' : 'No approved shot list — the edit has nothing to say what goes on screen.', 'Script · Plan details · Visuals'
   ));
   gates.push(gate(
     'script', 'Script', accepted && !accepted.stale ? 'pass' : 'block',
@@ -72,7 +74,7 @@ export function productionLock(productionId) {
   gates.push(gate(
     'segments', 'Production segments', segments.length ? 'pass' : 'block',
     segments.length ? `${segments.length} production line${segments.length === 1 ? '' : 's'} built.` : 'Build segments from the accepted script.',
-    'Segments'
+    'Voice'
   ));
   gates.push(gate(
     'voice', 'Shipping voice', voice.total > 0 && voice.ready ? 'pass' : 'block',
@@ -81,7 +83,7 @@ export function productionLock(productionId) {
       : voice.ready
         ? `All ${voice.total} takes were auditioned and approved.`
         : `${voice.blocked.length} of ${voice.total} line${voice.total === 1 ? '' : 's'} still need casting, an audition or approval.`,
-    'Segments'
+    'Voice'
   ));
   gates.push(gate(
     'appearance', 'Appearance', !appearanceMissing.length && segments.length ? 'pass' : 'block',
@@ -90,12 +92,12 @@ export function productionLock(productionId) {
       : appearanceMissing.length
         ? `Approve an appearance proof for ${appearanceMissing.join(', ')}.`
         : 'Every personal or fictional performer has an approved proof; stock avatars use their selected provider appearance.',
-    'Plan · People & look'
+    'Render · HeyGen look'
   ));
   gates.push(gate(
     'decisions', 'Open decisions', unresolved ? 'warn' : 'pass',
     unresolved ? `${unresolved} planning decision${unresolved === 1 ? '' : 's'} remain open.` : 'No open planning decisions.',
-    'Plan · Decisions'
+    "Script · How it's made"
   ));
 
   const blockers = gates.filter((g) => g.status === 'block');

@@ -234,6 +234,14 @@ export const api = {
   saveEditorKit: (id) => post(`/productions/${id}/editor-kit/folder`),
   revealEditorKit: (id) => post(`/productions/${id}/editor-kit/reveal`),
   steps: (id) => get(`/productions/${id}/steps`),
+  // Finishing it in the app: clean-up, settings, preview, export.
+  editState: (id) => get(`/productions/${id}/edit`),
+  saveEditSettings: (id, body) => request(`/productions/${id}/edit/settings`, { method: 'PUT', body: JSON.stringify(body) }),
+  analyzeTakes: (id, takeIds) => post(`/productions/${id}/edit/analyze`, takeIds ? { takeIds } : {}),
+  toggleCut: (id, takeId, index, on) => patch(`/productions/${id}/line-takes/${takeId}/cuts/${index}`, { on }),
+  previewEdit: (id) => post(`/productions/${id}/edit/preview`),
+  exportEdit: (id) => post(`/productions/${id}/edit/export`),
+  useRender: (id) => post(`/productions/${id}/edit/use-render`),
   // Recording it yourself: a take per line, or a whole recording split into lines.
   lineTakes: (id) => get(`/productions/${id}/line-takes`),
   uploadLineTake: (id, segmentId, file, onProgress, source = 'teleprompter') =>
@@ -254,7 +262,7 @@ export const api = {
   acceptScript: (id, versionId) => post(`/productions/${id}/script/${versionId}/accept`),
   rejectScript: (id, versionId) => post(`/productions/${id}/script/${versionId}/reject`),
   render: (id) => get(`/productions/${id}/render`),
-  startRender: (id, confirmPaid) => post(`/productions/${id}/render`, { confirmPaid }),
+  startRender: (id, confirmPaid, opts = {}) => post(`/productions/${id}/render`, { confirmPaid, ...opts }),
   cancelRender: (id, renderId) => post(`/productions/${id}/render/${renderId}/cancel`),
   applyEdit: (id, renderId, body) => post(`/productions/${id}/render/${renderId}/edit`, body),
   createExport: (id) => post(`/productions/${id}/export`),
