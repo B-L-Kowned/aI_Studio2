@@ -121,6 +121,11 @@ const ADDED_COLUMNS = [
   // How fast this video's narration runs, relative to the clone's natural
   // pace (1 = natural). Set to fit the words to the target length.
   ['productions', 'voice_speed', 'REAL'],
+  // A persona's own pace (1 = the clone's natural), used by every video it
+  // presents unless that video sets its own speed.
+  ['presenters', 'speed', 'REAL'],
+  // Which of your personas presents this video; null = your likeness.
+  ['productions', 'persona_id', 'INTEGER'],
   // A scene is a row of the shot list: what is on screen while a section of
   // the script plays. `purpose` holds the shot detail.
   ['scenes', 'shot_type', 'TEXT'],

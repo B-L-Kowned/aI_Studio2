@@ -112,7 +112,8 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
       {list.map((p) => (
         <PresenterRow key={p.id} presenter={p} options={data.options}
           onSave={(body) => run(() => api.castPresenter(p.id, body))}
-          onRetire={() => run(() => api.retirePresenter(p.id, !p.isActive))} />
+          onRetire={() => run(() => api.retirePresenter(p.id, !p.isActive))}
+          onChanged={load} />
       ))}
     </div>
   );
@@ -420,15 +421,70 @@ function HeyGenBrowser({ onUse }) {
   );
 }
 
+/**
+ * A persona's outfits and pace. Tick the looks it wears — the first ticked is
+ * its default, the one a new video starts with — and set how fast it speaks.
+ */
+function PersonaStyle({ presenter, onSaved }) {
+  const [data, setData] = useState(null);
+  const [picked, setPicked] = useState([]);
+  const [speed, setSpeed] = useState(presenter.speed ?? 1);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    api.presenterPersona(presenter.id).then((d) => { setData(d); setPicked(d.looks.map((l) => l.id)); setSpeed(d.speed ?? 1); }).catch(() => {});
+  }, [presenter.id]);
+  if (!data) return <p className="m-0 p-[0_14px_12px_72px] text-[12px] text-muted">Loading looks…</p>;
+  const toggle = (id) => setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  const changed = picked.join() !== data.looks.map((l) => l.id).join() || speed !== (data.speed ?? 1);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.savePresenterPersona(presenter.id, { assetIds: picked, speed: Math.abs(speed - 1) < 0.005 ? null : speed });
+      onSaved?.();
+    } finally { setSaving(false); }
+  };
+  return (
+    <div className="p-[2px_14px_14px_72px] lte960:p-[2px_14px_14px]">
+      <p className="m-[0_0_8px] text-[12px] text-muted">Tick the outfits {presenter.name} wears. The first one ticked is the default for new videos; any of them can be chosen per video in Render.</p>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-[8px]">
+        {data.wearable.map((l) => {
+          const n = picked.indexOf(l.id);
+          return (
+            <button key={l.id} type="button" onClick={() => toggle(l.id)} title={l.name}
+              className={'relative p-0 rounded-md overflow-hidden border-[2px] border-solid bg-surface ' + (n >= 0 ? 'border-accent' : 'border-transparent opacity-80 hover:opacity-100')}>
+              <img className="block w-full aspect-square object-cover object-[center_22%] bg-surface-2" src={l.previewUrl} alt={l.name} loading="lazy" />
+              {n >= 0 && (
+                <span className="absolute top-[4px] left-[4px] text-[10px] font-semibold rounded-full p-[1px_6px] bg-accent text-white">{n === 0 ? 'Default' : n + 1}</span>
+              )}
+              <span className="block p-[3px_4px] text-[10.5px] text-ink-2 truncate">{l.name}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-center gap-[10px] mt-[12px] text-[12px]">
+        <span className="text-muted">Pace</span>
+        <input type="range" min="0.85" max="1.15" step="0.01" value={speed} onChange={(e) => setSpeed(Number(e.target.value))}
+          className="w-[160px] accent-[var(--ink)]" aria-label={`${presenter.name}'s pace`} />
+        <code className="text-ink-2">{speed.toFixed(2)}×</code>
+        <span className="text-faint">{Math.abs(speed - 1) < 0.005 ? 'natural' : speed < 1 ? 'more measured' : 'brisker'} — the starting speed of every video {presenter.name} presents</span>
+        <span className="ml-auto flex gap-[8px]">
+          <button className="primary text-[12px] p-[4px_12px]" disabled={!changed || saving || !picked.length} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** One person in the cast, on one line: portrait, who, look and voice, ready. */
-function PresenterRow({ presenter: p, options, onSave, onRetire }) {
+function PresenterRow({ presenter: p, options, onSave, onRetire, onChanged }) {
   const [open, setOpen] = useState(false);
+  const [styling, setStyling] = useState(false); // the Looks & pace panel
   const [imageFailed, setImageFailed] = useState(false);
   const image = (p.artworkUrl || p.avatar?.previewUrl) && !imageFailed ? (p.artworkUrl || p.avatar?.previewUrl) : null;
   const persona = p.persona && (p.persona.voice || p.persona.signatureOpening) ? p.persona : null;
   return (
     <div className={'[&+&]:[border-top:1px_solid_var(--line)] ' + (p.isActive ? '' : 'opacity-50')}>
-      <div className="grid grid-cols-[44px_minmax(200px,1.2fr)_minmax(360px,1.4fr)_150px] gap-[14px] items-center p-[10px_14px] lte960:grid-cols-[44px_1fr]">
+      <div className="grid grid-cols-[44px_minmax(200px,1.2fr)_minmax(340px,1.4fr)_240px] gap-[14px] items-center p-[10px_14px] lte960:grid-cols-[44px_1fr]">
         {image ? (
           <img className="w-[44px] h-[44px] rounded-[8px] object-cover object-[center_22%] bg-surface-2" src={image} alt="" loading="lazy" onError={() => setImageFailed(true)} />
         ) : (
@@ -445,6 +501,12 @@ function PresenterRow({ presenter: p, options, onSave, onRetire }) {
         </div>
         <div className="min-w-0 lte960:col-span-2"><CastRow presenter={p} options={options} onSave={onSave} /></div>
         <span className="flex items-center justify-end gap-[2px] lte960:col-span-2">
+          {p.kind === 'personal' && (
+            <button type="button" className={'ghostbtn text-[12px] p-[4px_8px] ' + (styling ? 'text-ink' : 'text-muted')} aria-expanded={styling}
+              onClick={() => setStyling((o) => !o)} title="The outfits this persona wears and how fast they speak">
+              {p.looks?.length || 0} look{p.looks?.length === 1 ? '' : 's'}{p.speed ? ` · ${p.speed.toFixed(2)}×` : ''} <ChevronDown size={12} className={styling ? 'rotate-180' : ''} />
+            </button>
+          )}
           {persona && (
             <button type="button" className={'ghostbtn text-[12px] p-[4px_8px] ' + (open ? 'text-ink' : 'text-muted')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
               How they speak <ChevronDown size={12} className={open ? 'rotate-180' : ''} />
@@ -455,6 +517,7 @@ function PresenterRow({ presenter: p, options, onSave, onRetire }) {
           </button>
         </span>
       </div>
+      {styling && <PersonaStyle presenter={p} onSaved={onChanged} />}
       {open && persona && (
         <dl className="m-0 p-[0_14px_12px_72px] grid grid-cols-[auto_1fr] gap-[3px_10px] text-[12px] lte960:p-[0_14px_12px]">
           {persona.voice && <><dt className={PERSONA_DT + ' text-faint'}>Voice</dt><dd className={PERSONA_DD + ' text-ink-2'}>{persona.voice}</dd></>}

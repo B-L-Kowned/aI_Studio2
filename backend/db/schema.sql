@@ -548,3 +548,12 @@ CREATE TABLE IF NOT EXISTS post_copy (
   hashtags      TEXT NOT NULL DEFAULT '',
   updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- A persona's outfits: the looks (from your HeyGen avatar group) it wears.
+-- The first is its default. A video picks one of them in Render.
+CREATE TABLE IF NOT EXISTS presenter_looks (
+  presenter_id INTEGER NOT NULL REFERENCES presenters(id) ON DELETE CASCADE,
+  asset_id     INTEGER NOT NULL REFERENCES provider_assets(id) ON DELETE CASCADE,
+  position     INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (presenter_id, asset_id)
+);

@@ -8,6 +8,7 @@ import PlanStage from './PlanStage.jsx';
 import LineVoice from '../components/LineVoice.jsx';
 import { madeByOf } from '../utils/made-by.js';
 import { EnhanceButton, Suggestion, modelLabel } from '../components/Enhance.jsx';
+import PersonaChooser from '../components/PersonaChooser.jsx';
 
 const GENERATOR_LABELS = {
   included: 'Built-in deterministic',
@@ -262,6 +263,7 @@ export default function ScriptStage({ goToStage }) {
           brief.Priority && <span key="p" className={brief.Priority === 'P1' ? 'text-danger font-semibold' : 'font-[560] text-ink-2'}>{brief.Priority}</span>,
           brief.Format && <span key="f">{brief.Format}</span>,
           brief.Audience && !/^(confirm|verify|one verified|one audience|tbd)\b/i.test(brief.Audience) && <span key="a" className="truncate max-w-[340px]" title={`For: ${brief.Audience}`}>For {brief.Audience.charAt(0).toLowerCase()}{brief.Audience.slice(1)}</span>,
+          <PersonaChooser key="pe" onChange={() => api.scriptTiming(production.id).then(setTiming).catch(() => {})} />,
           <MadeByChooser key="m" inline />,
         ].filter(Boolean).flatMap((x, i) => (i ? [<span key={`s${i}`} className="text-line-2" aria-hidden="true">·</span>, x] : [x]))}
         <button className="ghostbtn text-[12.5px] text-muted hover:text-ink p-[1px_4px] ml-auto" onClick={() => setDetails((d) => !d)} aria-expanded={details}>

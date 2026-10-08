@@ -1,6 +1,7 @@
 import { getDb } from '../db/index.js';
 import { generateStructured, ollamaStatus, LlmRuntimeError } from './llm-runtime.js';
 import { scriptTiming } from './script-timing.js';
+import { personaFor } from './personas.js';
 
 /*
  * Two kinds of help with a script, kept apart on purpose:
@@ -225,6 +226,20 @@ export const enhanceJob = (productionId) => {
 // learner…", "One verified signup…") are not facts; a model given them writes
 // them into the script as if they were. Only fields that state something go in.
 const INSTRUCTION_RE = /^(confirm|verify|one verified|one audience|match the|tbd|to be confirmed|check)\b/i;
+/** How the persona presenting this video speaks: style to follow, limits to keep. */
+function voiceOf(productionId) {
+  const p = personaFor(productionId);
+  const v = p?.persona;
+  if (!v) return '';
+  return [
+    `SPEAKER: ${p.name}.`,
+    v.voice && `How they speak: ${v.voice}`,
+    v.signatureOpening && `How they open: ${v.signatureOpening}`,
+    v.signOff && `How they close: ${v.signOff}`,
+    v.neverClaim && `They never: ${v.neverClaim}`,
+  ].filter(Boolean).join('\n');
+}
+
 function factsOf(brief) {
   const keep = ['Company', 'Audience', 'Goal', 'CTA', 'Website', 'Source summary', 'Visual plan', 'Format'];
   return keep.filter((k) => brief[k] && !INSTRUCTION_RE.test(brief[k].trim())).map((k) => `${k}: ${brief[k]}`).join('\n');
@@ -313,6 +328,7 @@ async function runEnhance(job, productionId, mode) {
       `VIDEO: ${title}`,
       `SECTION ${gi + 1} of ${groups.length}: ${g.title}`,
       SECTION_TASK[mode](want),
+      voiceOf(productionId),
       `FACTS (the only facts you may use besides the draft):\n${facts || '(none)'}`,
       `THE WHOLE DRAFT, for context:\n${draft}`,
       written.length ? `ALREADY WRITTEN (sections before this one — do not repeat them):\n${written.flatMap((w) => w.lines).join('\n')}` : '',

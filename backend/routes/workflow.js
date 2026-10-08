@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { personaFor } from '../lib/personas.js';
 import { getDb } from '../db/index.js';
 import { researchForProduction, researchSource, reviewResearch } from '../lib/research.js';
 import { productionLock } from '../lib/production-lock.js';
@@ -250,8 +251,11 @@ router.get(
         return true;
       });
     const tid = templateIdOf(id);
+    const persona = personaFor(id);
     return ok(res, {
       performers,
+      // Who presents this video, and the looks that persona wears — shown first.
+      persona: persona && { id: persona.id, name: persona.name, lookIds: persona.looks.map((l) => l.id) },
       template: tid ? { id: tid, name: templateById(tid)?.name } : null,
       default: defaultFor(id),
       settings: { ...DEFAULT_LOOK, motionPrompt: DEFAULT_MOTION, aspects: ASPECTS, resolutions: RESOLUTIONS },

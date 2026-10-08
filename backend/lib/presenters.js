@@ -1,4 +1,5 @@
 import { previewSrc } from './preview-cache.js';
+import { personaLooks } from './personas.js';
 import { getDb } from '../db/index.js';
 import { presenterTabsFor, PRESENTER_TAB_INFO, hasProgram } from './programs.js';
 
@@ -37,6 +38,9 @@ function serialize(r) {
     voice: v ? { id: v.id, remoteId: v.remote_id, name: v.name } : null,
     // Castable only once a real avatar and voice back it.
     ready: !!a && !!v,
+    // A persona's outfits and pace (your own personas only).
+    looks: r.kind === 'personal' ? personaLooks(r.id) : [],
+    speed: r.speed ?? null,
   };
 }
 
