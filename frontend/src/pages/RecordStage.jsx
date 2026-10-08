@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Circle, Square, ChevronLeft, ChevronRight, Headphones, Check, Trash2, Play, AlertCircle, RefreshCw, RotateCcw, Upload } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
+import { useDialog } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import UploadDrop from '../components/UploadDrop.jsx';
@@ -27,6 +28,7 @@ function readSession() {
 
 export default function RecordStage({ goToStage }) {
   const { production, mutate, openProduction, productions } = useStudio();
+  const dialog = useDialog();
   const [session, setSession] = useState(readSession);
   const [data, setData] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -193,8 +195,10 @@ export default function RecordStage({ goToStage }) {
   const goNext = async () => { if (nextId) await openProduction(nextId); };
   const endSession = () => { try { sessionStorage.removeItem('record-session'); } catch { /* storage blocked */ } setSession(null); };
   const choose = (t) => mutate(() => api.updateLineTake(production.id, t.id, { chosen: true }), null, { silent: true }).then(load).catch(() => {});
-  const discard = (t) => window.confirm(`Discard take ${t.version}? Its file moves to Takes/Discarded.`)
-    && mutate(() => api.discardLineTake(production.id, t.id), null).then(load).catch(() => {});
+  const discard = async (t) => {
+    if (!await dialog.confirm({ title: `Discard take ${t.version}?`, body: 'Its file moves to Takes/Discarded — kept, out of the way.', confirmLabel: 'Discard take', tone: 'danger' })) return;
+    mutate(() => api.discardLineTake(production.id, t.id), null).then(load).catch(() => {});
+  };
   const split = data.split;
 
   return (

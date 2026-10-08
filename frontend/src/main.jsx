@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { DialogProvider } from './components/Dialog.jsx';
 import { createRoot } from 'react-dom/client';
 import { Lock, AlertCircle, Check, X, KeyRound } from 'lucide-react';
 import { StudioProvider, useStudio } from './context/studio-context.jsx';
@@ -251,6 +252,8 @@ function Toast({ toast }) {
 
 createRoot(document.getElementById('root')).render(
   <StudioProvider>
-    <App />
+    <DialogProvider>
+      <App />
+    </DialogProvider>
   </StudioProvider>
 );

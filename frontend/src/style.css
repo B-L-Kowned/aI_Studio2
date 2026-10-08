@@ -687,7 +687,7 @@ main { max-width: 1520px; margin: 14px auto 40px; padding: 0 28px; }
 }
 
 /* ------------------------------------------------- production switching -- */
-.scrim { position: fixed; inset: 0; z-index: 25; }
+.scrim { position: fixed; inset: 0; z-index: 25; background: rgba(17,18,20,.32); animation: dlgfade .12s ease-out; }
 /* One header row: the title is the switcher. */
 /* The title takes only what it needs; the stages take the middle. This
    replaces the identical rule that was on `.switcher`, removed with the
@@ -704,10 +704,11 @@ main { max-width: 1520px; margin: 14px auto 40px; padding: 0 28px; }
   position: fixed; top: 12vh; left: 50%; transform: translateX(-50%);
   z-index: 30; width: min(460px, calc(100vw - 40px));
   background: var(--surface); border: 1px solid var(--line-2);
-  border-radius: var(--r-lg); box-shadow: var(--shadow-pop); padding: 20px;
+  border-radius: 12px; box-shadow: var(--shadow-pop); padding: 18px;
+  max-height: 76vh; overflow-y: auto; animation: dlgpop .14s ease-out;
 }
 .modalhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-.modalhead b { font-size: 15px; }
+.modalhead b, .modalhead h2 { font-size: 15px; font-weight: 620; margin: 0; }
 .modalhead button { border: 0; background: transparent; padding: 3px; color: var(--muted); }
 .modal .oblabel:first-of-type { margin-top: 0; }
 .modal .actions { margin-top: 20px; }
@@ -1026,3 +1027,8 @@ button.danger:hover:not(:disabled) { background: #9d2019; border-color: #9d2019;
 
 /* One colour for every slider and checkbox, not the browser blue. */
 input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--ink); }
+
+/* Dialogs (components/Dialog.jsx): one quiet entrance for every one of them. */
+@keyframes dlgfade { from { opacity: 0; } }
+@keyframes dlgpop { from { opacity: 0; transform: translate(-50%, 6px) scale(.985); } }
+@keyframes dlgslide { from { transform: translateX(24px); opacity: .6; } }

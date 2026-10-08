@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Sparkles, Check, X, Lock, AlertCircle, FileText, Play, Pause, Minus, Plus, ChevronDown, Headphones, RefreshCw, MousePointerClick, AlertTriangle } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
+import { useDialog } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import MadeByChooser from '../components/MadeByChooser.jsx';
@@ -36,6 +37,7 @@ const signed = (s) => `${s >= 0 ? '+' : '−'}${clock(Math.abs(s))}`;
 
 export default function ScriptStage({ goToStage }) {
   const { production, mutate } = useStudio();
+  const dialog = useDialog();
   const [state, setState] = useState(null);
   const [workflow, setWorkflow] = useState(null);
   const [timing, setTiming] = useState(null);
@@ -233,7 +235,8 @@ export default function ScriptStage({ goToStage }) {
     el?.focus();
   };
   const accept = async () => {
-    if (openChecks && !window.confirm(`${openChecks} [CONFIRM] check${openChecks === 1 ? ' is' : 's are'} still open. Those lines can't be voiced until resolved. Accept anyway?`)) return;
+    if (openChecks && !await dialog.confirm({ title: 'Approve with open checks?', tone: 'warn', confirmLabel: 'Approve anyway',
+      body: `${openChecks} [CONFIRM] check${openChecks === 1 ? ' is' : 's are'} still open. Those lines cannot be voiced until they are answered.` })) return;
     await mutate(() => api.acceptScript(production.id, latest.id), apply);
     await mutate(() => api.buildSegments(production.id), null, { silent: true });
     // Your own recording does not need the AI voice first; everything else does.
@@ -596,7 +599,8 @@ export default function ScriptStage({ goToStage }) {
             ))}
             {latest && ready && (
               <button className="ghostbtn text-[12px] text-muted p-[3px_0]" title="Writes a new draft from the plan; this one is kept as a version"
-                onClick={() => window.confirm('Write a new draft from the plan? This script is kept as a version, but the new draft becomes the one you edit.')
+                onClick={async () => (await dialog.confirm({ title: 'Write a new draft from the plan?', confirmLabel: 'Write new draft',
+                  body: 'This script is kept as a version; the new draft becomes the one you edit.' }))
                   && mutate(() => api.generateScript(production.id), apply).catch(() => {})}>
                 <Sparkles size={12} /> New draft from plan
               </button>

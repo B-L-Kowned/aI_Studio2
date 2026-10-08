@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserPlus, Check, Clock, Lock, Copy, X, AlertCircle } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
+import { useDialog } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import { Section, PageHead, Empty } from './Section.jsx';
 
@@ -16,6 +17,7 @@ const SCOPES = [
 
 export default function PeoplePage({ compact, tabs, section = false }) {
   const { collections, refreshPeople, mutate } = useStudio();
+  const dialog = useDialog();
   const [inviting, setInviting] = useState(false);
   const [name, setName] = useState('');
   const [invite, setInvite] = useState(null);
@@ -98,7 +100,8 @@ export default function PeoplePage({ compact, tabs, section = false }) {
                   )}
                   {!/owner/i.test(p.role) && (
                     <button className="text-[12px] p-[6px_9px] m-0 text-danger" onClick={async () => {
-                      if (!window.confirm(`Remove ${p.name}? Their consent record is deleted; productions are not affected.`)) return;
+                      if (!await dialog.confirm({ title: `Remove ${p.name}?`, tone: 'danger', confirmLabel: 'Remove',
+                        body: 'Their consent record is deleted. Videos they already appear in are not affected.' })) return;
                       try { await mutate(() => api.removePerson(p.id), null); } catch { return; }
                       await refreshPeople(); setManaging(null);
                     }}>Remove {p.name}</button>
@@ -154,7 +157,8 @@ export default function PeoplePage({ compact, tabs, section = false }) {
                   ))}
                   {!/owner/i.test(p.role) && (
                     <button className="text-[12px] p-[4px_10px] text-danger" onClick={async () => {
-                      if (!window.confirm(`Remove ${p.name}? Their consent record is deleted; productions are not affected.`)) return;
+                      if (!await dialog.confirm({ title: `Remove ${p.name}?`, tone: 'danger', confirmLabel: 'Remove',
+                        body: 'Their consent record is deleted. Videos they already appear in are not affected.' })) return;
                       try { await mutate(() => api.removePerson(p.id), null); } catch { return; }
                       await refreshPeople(); setManaging(null);
                     }}>Remove</button>

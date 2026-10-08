@@ -4,6 +4,7 @@ import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { toClock } from '../utils/format.js';
 import { Section, PageHead, Empty } from '../components/Section.jsx';
+import { Modal } from '../components/Dialog.jsx';
 
 // A library row should say what the thing IS. The old tiles were a 100px empty
 // box containing one letter, six to a screen — mostly whitespace, and the kind
@@ -158,14 +159,8 @@ export default function Library({ go }) {
       </Section>
 
       {open && (
-        <>
-          <div className="fixed inset-0 z-30 bg-[rgba(0,0,0,.18)]" onClick={() => setOpen(null)} />
-          <aside className="fixed z-40 top-0 right-0 bottom-0 w-[min(440px,100vw)] bg-surface [border-left:1px_solid_var(--line)] [box-shadow:-12px_0_30px_rgba(0,0,0,.08)] overflow-y-auto p-[18px_20px]" aria-label="Asset details">
-            <div className="flex items-start gap-[10px]">
-              <b className="flex-1 text-[15px] leading-[1.35]">{open.name}</b>
-              <button className="ghostbtn p-[4px]" aria-label="Close" onClick={() => setOpen(null)}><X size={15} /></button>
-            </div>
-            <div className="mt-[12px] rounded-md overflow-hidden bg-canvas border border-solid border-line">
+        <Modal side width={440} title={open.name} onClose={() => setOpen(null)}>
+            <div className="rounded-md overflow-hidden bg-canvas border border-solid border-line">
               {open.fileUrl ? (
                 <video className="block w-full max-h-[260px] bg-ink" src={open.fileUrl} controls preload="metadata" />
               ) : open.thumbnailUrl ? (
@@ -207,26 +202,14 @@ export default function Library({ go }) {
               )}
               {open.fileUrl && <a className="text-[12.5px] self-center text-accent" href={open.fileUrl} target="_blank" rel="noreferrer">Open the file</a>}
             </div>
-          </aside>
-        </>
+        </Modal>
       )}
 
       {watching && (
-        <>
-          <div className="scrim" onClick={() => setWatching(null)} />
-          <div className="modal wide">
-            <div className="modalhead">
-              <b>{watching.name}</b>
-              <button onClick={() => setWatching(null)}><X size={15} /></button>
-            </div>
-            <video className="renderplayer" controls autoPlay src={watching.url} />
-            <div className="actions">
-              <a className="postlink" href={watching.url} target="_blank" rel="noreferrer">
-                Open in a new tab
-              </a>
-            </div>
-          </div>
-        </>
+        <Modal width={720} title={watching.name} onClose={() => setWatching(null)}
+          footer={<a className="text-[12.5px] text-accent" href={watching.url} target="_blank" rel="noreferrer">Open in a new tab</a>}>
+          <video className="block w-full rounded-md bg-ink" controls autoPlay src={watching.url} />
+        </Modal>
       )}
     </>
   );

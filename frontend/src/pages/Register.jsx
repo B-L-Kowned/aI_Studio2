@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Search, Mic, User, Video, Check, AlertTriangle, ChevronDown, Minus, Headphones,
   Flag, Clapperboard, Layers, Building2, ArrowUpDown, X, Sparkles } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
+import { useDialog } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import { PageHead } from '../components/Section.jsx';
 
@@ -142,6 +143,7 @@ function SearchPill({ value, onChange }) {
  */
 export default function Register({ go, tabs }) {
   const { openProduction, mutate } = useStudio();
+  const dialog = useDialog();
   const [batch, setBatch] = useState(null);
   const [data, setData] = useState(null);
   const [view, setView] = useState(initialView);
@@ -241,14 +243,16 @@ export default function Register({ go, tabs }) {
   if (!data) return <><PageHead title="Register" tabs={tabs} /><p className="muted">Loading…</p></>;
   // Approved script, voice not finished, and the AI voice is part of how it is made.
   const voiceable = shown.filter((i) => ['script', 'audio'].includes(i.stage) && i.madeBy !== 'self');
-  const queueVoice = () => {
-    if (!window.confirm(`Make your voice for ${voiceable.length} video${voiceable.length === 1 ? '' : 's'}? It runs on this Mac, free, about twice real time — leave it overnight. You still listen and approve each line.`)) return;
+  const queueVoice = async () => {
+    if (!await dialog.confirm({ title: `Make the voice for ${voiceable.length} video${voiceable.length === 1 ? '' : 's'}?`,
+      body: 'It is made on this Mac, free, a few seconds a line. You still listen to and approve every line.', confirmLabel: 'Make the voice' })) return;
     mutate(() => api.queueVoice(voiceable.map((i) => i.id)), (r) => setBatch(r.data)).catch(() => {});
   };
   const thin = new Set(fit?.thin ?? []);
   const fittable = shown.filter((i) => thin.has(i.id));
-  const queueFit = () => {
-    if (!window.confirm(`Fit ${fittable.length} draft${fittable.length === 1 ? '' : 's'} to time? Each is rewritten on this Mac, about a minute a video, and kept as a new draft for you to compare, keep or undo — nothing is approved.`)) return;
+  const queueFit = async () => {
+    if (!await dialog.confirm({ title: `Fit ${fittable.length} draft${fittable.length === 1 ? '' : 's'} to time?`,
+      body: 'Each is rewritten on this Mac, about a minute a video, and kept as a new draft you can compare, keep or undo. Nothing is approved.', confirmLabel: 'Fit to time' })) return;
     mutate(() => api.queueEnhance(fittable.map((i) => i.id)), (r) => setFit((f) => ({ ...f, ...r.data })), { silent: true }).catch(() => {});
   };
   const fitNow = fit?.items.find((b) => b.state === 'running');

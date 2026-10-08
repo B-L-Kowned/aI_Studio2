@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, ArrowRight, Check, Clock, Headphones, Lightbulb, RefreshCw, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
+import { useDialog } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import { PageHead } from '../components/Section.jsx';
@@ -64,6 +65,7 @@ const H = 'text-[11.5px] tracking-[.06em] uppercase text-faint font-semibold m-[
 
 export default function Home({ go }) {
   const { openProduction, setPendingStage, setPendingView, setPendingDate, mutate, scopeMode, notify } = useStudio();
+  const dialog = useDialog();
   const [m, setM] = useState(null);
   const [week, setWeek] = useState(null);           // the calendar strip and campaigns (the schedule)
   const [weekStart, setWeekStart] = useState(null);
@@ -87,7 +89,8 @@ export default function Home({ go }) {
   };
   const makeVoice = async () => {
     const ids = m.queues.makeVoice.ids;
-    if (!window.confirm(`Make your voice for ${ids.length} video${ids.length === 1 ? '' : 's'}? It runs free on this Mac — leave it overnight. You still listen and approve.`)) return;
+    if (!await dialog.confirm({ title: `Make the voice for ${ids.length} video${ids.length === 1 ? '' : 's'}?`,
+      body: 'Made on this Mac, free, a few seconds a line. You still listen to and approve every line.', confirmLabel: 'Make the voice' })) return;
     try { await mutate(() => api.queueVoice(ids), null); } catch { /* reported */ }
   };
   const park = async (e) => {
@@ -104,7 +107,8 @@ export default function Home({ go }) {
   const renderAll = async () => {
     const n = Q.render.count;
     if (n === 1) { openAt(Q.render.first, 'Make'); return; }
-    if (!window.confirm(`Start ${n} renders on HeyGen? Each one uses your HeyGen credits. Videos without an approved look are skipped and listed.`)) return;
+    if (!await dialog.confirm({ title: `Start ${n} renders on HeyGen?`, tone: 'warn', confirmLabel: `Render ${n}`,
+      body: 'Each render uses your HeyGen credits. Videos without an approved look are skipped and named afterwards.' })) return;
     const skipped = [];
     let started = 0;
     for (const id of Q.render.ids) {
@@ -114,7 +118,8 @@ export default function Home({ go }) {
   };
   const fitDrafts = async () => {
     const n = Q.fit.count;
-    if (!window.confirm(`Fit ${n} draft${n === 1 ? '' : 's'} to time? Each is rewritten on this Mac (about a minute a video) and kept as a new draft to compare, keep or undo — nothing is approved. Leave it running overnight.`)) return;
+    if (!await dialog.confirm({ title: `Fit ${n} draft${n === 1 ? '' : 's'} to time?`, confirmLabel: 'Fit to time',
+      body: 'Each is rewritten on this Mac, about a minute a video, and kept as a new draft you can compare, keep or undo. Nothing is approved — leave it running overnight.' })) return;
     await mutate(() => api.queueEnhance(Q.fit.ids), null).catch(() => {});
   };
   const queue = (key, label, hint, action) => (Q[key]?.count > 0) && (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Check, AlertCircle, Plus, X, Archive, RotateCcw, ChevronDown, Search } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
+import { useDialog } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import { Section, PageHead } from '../components/Section.jsx';
 
@@ -53,6 +54,7 @@ function initials(name = '') {
  */
 export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, onePage = false, after = null, show = null }) {
   const { mutate, scopeMode } = useStudio();
+  const dialog = useDialog();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState(null);
   const [showRetired, setShowRetired] = useState(false);
@@ -146,7 +148,9 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
           return (
             <Section title="Personas" meta={`${personas.length} — who you play, and which videos each presents`}
               actions={<button onClick={async () => {
-                const name = window.prompt('Name the persona (for example "Pat the Coach")');
+                const name = await dialog.prompt({ title: 'New persona', label: 'Name', placeholder: 'Pat the Coach',
+                  body: 'A persona is you in a role. Give it a name now; its personality, outfits, pace and the videos it presents are set next.',
+                  confirmLabel: 'Create persona' });
                 if (!name?.trim()) return;
                 await run(async () => {
                   const r = await api.createPresenter({ kind: 'personal', name: name.trim(), description: '' });
