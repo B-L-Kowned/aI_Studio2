@@ -25,12 +25,13 @@ const VIEWS = [
   { id: 'Register', label: 'Register' },
   // Reading work across the register: drafts to approve, checks to answer.
   { id: 'Review', label: 'Review' },
+  // What is due when — daily work, not setup.
+  { id: 'Calendar', label: 'Calendar' },
   // Ideas not yet videos.
   { id: 'Ideas', label: 'Parking lot' },
   // Set up once and rarely visited: set apart so the daily three stand out.
   { id: 'Companies', label: 'Companies', setup: true },
   { id: 'Campaigns', label: 'Campaigns', setup: true },
-  { id: 'Calendar', label: 'Calendar', setup: true },
   { id: 'Training', label: 'Training', setup: true },
 ];
 

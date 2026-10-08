@@ -130,7 +130,7 @@ export default function Review({ go, tabs }) {
   const { openProduction, mutate } = useStudio();
   const [data, setData] = useState(null);
   // Home can send you straight to the checks.
-  const [mode, setMode] = useState(() => { try { const m = sessionStorage.getItem('review-mode'); sessionStorage.removeItem('review-mode'); return m === 'checks' ? 'checks' : 'ready'; } catch { return 'ready'; } });
+  const [mode, setMode] = useState(() => { try { const m = sessionStorage.getItem('review-mode'); sessionStorage.removeItem('review-mode'); return m === 'checks' || m === 'voice' ? m : 'ready'; } catch { return 'ready'; } });
   const [sort, setSort] = useState('priority');
   const [at, setAt] = useState(0);
   const [editing, setEditing] = useState(null); // line id

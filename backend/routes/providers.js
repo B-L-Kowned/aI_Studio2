@@ -4,6 +4,8 @@ import {
   listProviders, syncProvider, localAssets, getProvider, pollJob, serializeJob,
 } from '../lib/providers/index.js';
 import { ok, fail, route } from '../utils/respond.js';
+import { createReadStream } from 'node:fs';
+import { cachedFile, cachePreview } from '../lib/preview-cache.js';
 
 const router = Router();
 
@@ -34,6 +36,17 @@ router.post(
     }
   })
 );
+
+/** An asset's picture, from this Mac — fetched and kept the first time while its link works. */
+router.get('/provider-assets/:id/preview', route(async (req, res) => {
+  const row = getDb().prepare('SELECT * FROM provider_assets WHERE id = ?').get(Number(req.params.id));
+  if (!row) return fail(res, 404, 'NOT_FOUND', 'No such asset');
+  const hit = cachedFile(row.id) ?? await cachePreview(row);
+  if (!hit) return fail(res, 404, 'NO_PREVIEW', 'The preview link has expired — sync HeyGen to refresh it');
+  res.type(hit.type ?? 'image/jpeg');
+  res.set('Cache-Control', 'private, max-age=86400');
+  return createReadStream(hit.file).pipe(res);
+}));
 
 router.get(
   '/providers/:id/assets',

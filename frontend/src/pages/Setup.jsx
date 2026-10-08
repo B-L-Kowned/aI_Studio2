@@ -46,7 +46,7 @@ export default function Setup() {
     <>
       <PageHead
         title="Settings"
-        lead="Your voice, HeyGen, storage and the rest of this install."
+        lead="Voice, HeyGen, storage and connections."
       />
 
       <div className="grid grid-cols-[186px_1fr] bg-surface border border-solid border-line rounded-lg overflow-hidden lte860:grid-cols-[1fr]">
@@ -77,7 +77,7 @@ export default function Setup() {
           {section === 'license' && <LicenseSection />}
           {section === 'connections' && <ConnectionsSection />}
           {section === 'ai' && <AiSection />}
-          {section === 'generation' && <GenerationSection />}
+          {section === 'generation' && <GenerationSection onHeyGen={() => setSection('heygen')} />}
           {section === 'voice' && <VoiceSection />}
           {section === 'heygen' && <HeyGen embedded />}
           {section === 'storage' && <StorageSection />}
@@ -249,15 +249,23 @@ function AiSection() {
 }
 
 // --------------------------------------------------------------- generation
-function GenerationSection() {
+function GenerationSection({ onHeyGen }) {
   const { workspace, setWorkspace, mutate, reload } = useStudio();
   const pm = workspace.providerMode;
   const [providers, setProviders] = useState([]);
   const [confirmLive, setConfirmLive] = useState(false);
   const [err, setErr] = useState(null);
 
-  const load = useCallback(async () => setProviders(await api.providers()), []);
+  const [hg, setHg] = useState(null);
+  const load = useCallback(async () => {
+    setProviders(await api.providers());
+    setHg(await api.heygenStatus().catch(() => null));
+  }, []);
   useEffect(() => { load(); }, [load]);
+  // The account row only records the last sync that worked. Whether HeyGen can
+  // be reached NOW is the sign-in (or API key) — the same answer the HeyGen
+  // account page gives, so the two pages never disagree.
+  const live = (p) => (p.id === 'heygen' ? !!hg && (hg.mcp?.connected || hg.pocket === 'key') : p.status === 'connected');
 
   const pickMode = async (mode) => {
     setErr(null);
@@ -315,22 +323,20 @@ function GenerationSection() {
       <h3 className={SUBHEAD}>Catalogue</h3>
       {providers.map((p) => (
         <React.Fragment key={p.id}>
-          <Row label={p.label} hint={p.status === 'connected' ? 'synced from your account' : 'connect it under Connections'}>
-            <span className={p.status === 'connected' ? 'okv' : 'text-muted'}>
-              {p.status === 'connected' ? <><Check size={13} /> connected</> : 'not connected'}
+          <Row label={p.label} hint={live(p) ? 'signed in — catalogue syncs from your account' : p.lastSyncAt ? `not signed in · last synced ${p.lastSyncAt.slice(0, 10)}` : 'not signed in'}>
+            <span className={live(p) ? 'okv' : 'text-warn'}>
+              {live(p) ? <><Check size={13} /> connected</> : <><AlertCircle size={13} className="inline -mt-[2px]" /> not connected</>}
             </span>
-            {p.status === 'connected' && (
-              <button onClick={() => mutate(() => api.syncProvider(p.id), null).then(load)}>
-                <RefreshCw size={13} /> Sync now
-              </button>
-            )}
+            {live(p)
+              ? <button onClick={() => mutate(() => api.syncProvider(p.id), null).then(load)}><RefreshCw size={13} /> Sync now</button>
+              : p.id === 'heygen' && <button onClick={() => onHeyGen?.()}>Sign in…</button>}
           </Row>
-          {p.status === 'connected' && (
+          {p.lastSyncAt && (
             <Row label="" hint="">
               <div className="flex gap-[16px] flex-wrap text-[12px] text-muted">
                 <span>quota <b className="text-ink [font-variant-numeric:tabular-nums]">{p.quotaRemaining ?? '—'}</b></span>
                 {Object.entries(p.assets).map(([k, n]) => <span key={k}>{k}s <b className="text-ink [font-variant-numeric:tabular-nums]">{n}</b></span>)}
-                <span>synced <b className="text-ink [font-variant-numeric:tabular-nums]">{p.lastSyncAt ?? 'never'}</b></span>
+                <span>synced <b className="text-ink [font-variant-numeric:tabular-nums]">{p.lastSyncAt}</b></span>
               </div>
             </Row>
           )}

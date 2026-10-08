@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Search, Mic, User, Video, Check, AlertTriangle, ChevronDown, Minus, Headphones } from 'lucide-react';
+import { Search, Mic, User, Video, Check, AlertTriangle, ChevronDown, Minus, Headphones,
+  Flag, Clapperboard, Layers, Building2, ArrowUpDown, X } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { PageHead } from '../components/Section.jsx';
@@ -67,8 +68,6 @@ function initialView() {
 
 const ROW = 'grid grid-cols-[86px_minmax(220px,1.7fr)_minmax(110px,.7fr)_34px_132px_repeat(4,46px)] gap-[10px] items-center p-[9px_14px] lte860:grid-cols-[64px_1fr_auto]';
 const TAG = 'text-[10px] tracking-[.04em] uppercase font-semibold p-[3px_7px] rounded-[3px] whitespace-nowrap border border-solid text-center';
-const CHIP = 'text-[12px] p-[5px_11px] rounded-full border border-solid cursor-pointer whitespace-nowrap [transition:background_.12s]';
-const chipTone = (on) => (on ? 'bg-ink text-[#fff] border-ink' : 'bg-surface text-ink-2 border-line hover:border-line-2');
 
 function Mark({ state, title }) {
   const base = 'mx-auto grid place-items-center w-[20px] h-[20px] rounded-full';
@@ -80,15 +79,32 @@ function Mark({ state, title }) {
   return <span className={`${base} border-[1.5px] border-solid border-line-2`} title={title} />;
 }
 
-/** One group of mutually exclusive options as chips — quicker than a dropdown for 2–4 choices. */
-function ChipGroup({ label, value, options, onChange }) {
+/**
+ * A compact filter: icon and current value in a pill, its name floating on the
+ * top border. Set to anything but its neutral value, it darkens so an active
+ * filter is visible from across the page.
+ */
+function FilterPill({ label, icon: Icon, value, onChange, options, groups = [], neutral = '' }) {
+  const on = value !== neutral && value !== '';
   return (
-    <div className="flex items-center gap-[5px]" role="group" aria-label={label}>
-      <span className="text-[11px] text-faint uppercase tracking-[.05em] mr-[2px]">{label}</span>
-      {options.map(([v, l]) => (
-        <button key={v || 'all'} type="button" className={`${CHIP} ${chipTone(value === v)}`} onClick={() => onChange(v)}>{l}</button>
-      ))}
-    </div>
+    <label className="relative inline-flex items-center">
+      <span className={'absolute left-[12px] top-[-6px] z-[1] px-[4px] text-[9px] leading-[11px] font-semibold tracking-[.07em] uppercase pointer-events-none rounded-[3px] '
+        + (on ? 'bg-ink text-[#fff]' : 'text-faint [background:linear-gradient(var(--canvas)_50%,var(--surface)_50%)]')}>
+        {label}
+      </span>
+      <Icon size={13} className={`absolute left-[11px] pointer-events-none ${on ? 'text-[#fff]' : 'text-muted'}`} aria-hidden="true" />
+      <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}
+        className={'appearance-none h-[32px] text-[12.5px] rounded-full p-[0_28px_0_30px] cursor-pointer border border-solid max-w-[210px] '
+          + (on ? 'bg-ink text-[#fff] border-ink' : 'bg-surface text-ink-2 border-line hover:border-line-2')}>
+        {options.map(([v, l]) => <option key={v || 'all'} value={v}>{l}</option>)}
+        {groups.map(([g, names]) => (
+          <optgroup key={g} label={g}>
+            {names.map((n) => <option key={n} value={n}>{n}</option>)}
+          </optgroup>
+        ))}
+      </select>
+      <ChevronDown size={12} className={`absolute right-[10px] pointer-events-none ${on ? 'text-[#fff]' : 'text-muted'}`} aria-hidden="true" />
+    </label>
   );
 }
 
@@ -197,76 +213,64 @@ export default function Register({ go, tabs }) {
   const t = data.totals;
   const count = (key) => shown.filter((i) => settled(i.marks?.[key])).length;
   const stageCount = (id) => base.filter((i) => i.stage === id).length;
-  const SELECT = (on) => 'appearance-none text-[12px] rounded-full p-[5px_30px_5px_12px] cursor-pointer border border-solid max-w-[220px] '
-    + (on ? 'bg-ink text-[#fff] border-ink' : 'bg-surface text-ink-2 border-line');
 
   return (
     <>
       <PageHead
         title="Register"
         tabs={tabs}
-        lead="Every video in the register and the script pack, where each really stands, in release order."
+        lead="Every video and where it really stands."
       />
 
-      {t && (
-        <div className="flex flex-wrap gap-[6px] mt-[4px]" role="group" aria-label="Filter by stage">
-          <button className={`${CHIP} ${chipTone(!stage)}`} onClick={() => setStage('')}>All {base.length}</button>
-          {STAGES.filter((s) => t.stages[s.id] || stage === s.id).map((s) => (
-            <button key={s.id} className={`${CHIP} ${chipTone(stage === s.id)}`} onClick={() => setStage(stage === s.id ? '' : s.id)}>
-              {s.label} <span className={stage === s.id ? 'opacity-80' : 'text-muted'}>{stageCount(s.id)}</span>
-            </button>
-          ))}
+      {/* One toolbar: the stage as a segmented queue, then compact filters whose
+          names float on their borders — the value is what you read, the name is
+          there when you need it. */}
+      <div className="flex flex-wrap items-center gap-[8px_12px] mt-[2px]">
+        {t && (
+          <div className="inline-flex flex-wrap rounded-full border border-solid border-line bg-surface p-[2px]" role="group" aria-label="Filter by stage">
+            {[{ id: '', label: 'All', n: base.length }, ...STAGES.filter((s) => t.stages[s.id] || stage === s.id).map((s) => ({ ...s, n: stageCount(s.id) }))].map((s) => (
+              <button key={s.id || 'all'} type="button" aria-pressed={stage === s.id}
+                onClick={() => setStage(stage === s.id || !s.id ? '' : s.id)}
+                className={'text-[12px] leading-none p-[6px_10px] rounded-full [border:0] cursor-pointer whitespace-nowrap [transition:background_.12s] '
+                  + (stage === s.id ? 'bg-ink text-[#fff]' : 'bg-transparent text-ink-2 hover:bg-surface-2')}>
+                {s.label} <span className={'[font-variant-numeric:tabular-nums] ' + (stage === s.id ? 'opacity-75' : 'text-faint')}>{s.n}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <span className="flex items-center gap-[10px] ml-auto">
+          <span className="text-faint text-[11.5px] [font-variant-numeric:tabular-nums]">{shown.length} of {data.items.length}</span>
           {/* An action, not a filter: only offered when there is voice to make. */}
           {voiceable.length > 0 && !batchBusy && (
-            <button className="ml-auto text-[12.5px] p-[5px_12px]" onClick={queueVoice}
+            <button className="text-[12px] p-[5px_11px]" onClick={queueVoice}
               title="Videos shown here with an approved script whose voice is not finished — made free on this Mac">
               <Headphones size={13} /> Make the voice for {voiceable.length === 1 ? 'this video' : `these ${voiceable.length}`}
             </button>
           )}
-        </div>
-      )}
+        </span>
+      </div>
 
-      <div className="flex flex-wrap items-center gap-x-[18px] gap-y-[10px] mt-[14px]">
-        <label className="relative flex-[1_1_240px] max-w-[320px]">
-          <Search size={14} className="absolute left-[11px] top-1/2 -translate-y-1/2 text-faint" aria-hidden="true" />
-          <input className="w-full text-[13px] p-[8px_10px_8px_32px] rounded-full" placeholder="Search ID, title, company"
+      <div className="flex flex-wrap items-center gap-[12px_8px] mt-[14px]">
+        <label className="relative flex-[0_1_250px] min-w-[180px]">
+          <Search size={13} className="absolute left-[10px] top-1/2 -translate-y-1/2 text-faint" aria-hidden="true" />
+          <input className="w-full text-[12.5px] h-[32px] p-[0_10px_0_29px] rounded-full" placeholder="Search ID, title, company"
             value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search the register" />
         </label>
-        <ChipGroup label="Priority" value={priority} onChange={setPriority}
+        <FilterPill label="Priority" icon={Flag} value={priority} onChange={setPriority}
           options={[['', 'All'], ['P1', 'P1'], ['P2', 'P2'], ['P3', 'P3']]} />
-        <ChipGroup label="Made by" value={format === 'camera' ? 'heygen' : format} onChange={setFormat}
+        <FilterPill label="Made by" icon={Clapperboard} value={format === 'camera' ? 'heygen' : format} onChange={setFormat}
           options={[['', 'All'], ['heygen', 'HeyGen'], ['self', 'Recorded by me'], ['voice', 'Voice-over']]} />
-        <label className="relative flex items-center">
-          <select value={stream} onChange={(e) => setStream(e.target.value)} aria-label="Workstream" className={SELECT(stream)}>
-            <option value="">All workstreams</option>
-            {WORKSTREAMS.map((w) => <option key={w} value={w}>{w}</option>)}
-          </select>
-          <ChevronDown size={13} className={`absolute right-[10px] pointer-events-none ${stream ? 'text-[#fff]' : 'text-muted'}`} />
-        </label>
-        <label className="relative flex items-center">
-          <select value={company} onChange={(e) => setCompany(e.target.value)} aria-label="Company" className={SELECT(company)}>
-            <option value="">All companies</option>
-            {companies.map(([g, names]) => (
-              <optgroup key={g} label={g}>
-                {names.map((n) => <option key={n} value={n}>{n}</option>)}
-              </optgroup>
-            ))}
-          </select>
-          <ChevronDown size={13} className={`absolute right-[10px] pointer-events-none ${company ? 'text-[#fff]' : 'text-muted'}`} />
-        </label>
-        <label className="relative flex items-center">
-          <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort" className={SELECT(sort !== 'release')}>
-            {SORTS.map(([v, l]) => <option key={v} value={v}>Sort: {l}</option>)}
-          </select>
-          <ChevronDown size={13} className={`absolute right-[10px] pointer-events-none ${sort !== 'release' ? 'text-[#fff]' : 'text-muted'}`} />
-        </label>
+        <FilterPill label="Workstream" icon={Layers} value={stream} onChange={setStream}
+          options={[['', 'All'], ...WORKSTREAMS.map((w) => [w, w])]} />
+        <FilterPill label="Company" icon={Building2} value={company} onChange={setCompany}
+          options={[['', 'All']]} groups={companies} />
+        <FilterPill label="Sort" icon={ArrowUpDown} value={sort} onChange={setSort} neutral="release" options={SORTS} />
         {filtered && (
-          <button className="ghostbtn text-[12px] text-accent p-[2px_4px]"
+          <button className="ghostbtn text-[12px] text-accent p-[2px_4px]" title="Clear every filter (keeps the sort)"
             onClick={() => setView((cur) => ({ ...Object.fromEntries(FILTER_KEYS.map((k) => [k, ''])), sort: cur.sort }))}>
-            Clear filters
+            <X size={12} /> Clear
           </button>
         )}
-        <span className="text-faint text-[11.5px] ml-auto">{shown.length} of {data.items.length}</span>
       </div>
 
       {batch?.items.length > 0 && (
@@ -284,9 +288,9 @@ export default function Register({ go, tabs }) {
         </p>
       )}
 
-      <section className="overflow-hidden mt-[12px] border border-solid border-line rounded-lg bg-surface [box-shadow:var(--shadow)]"
+      <section className="overflow-clip mt-[12px] border border-solid border-line rounded-lg bg-surface [box-shadow:var(--shadow)]"
         aria-label="Video register">
-        <div className={`${ROW} min-h-[36px] bg-surface-2 [border-bottom:1px_solid_var(--line)] text-faint text-[10px] font-semibold tracking-[.06em] uppercase lte860:hidden`}>
+        <div className={`${ROW} sticky top-[var(--appbar-h,53px)] z-[5] rounded-t-lg min-h-[36px] bg-surface-2 lte880:static [border-bottom:1px_solid_var(--line)] text-faint text-[10px] font-semibold tracking-[.06em] uppercase lte860:hidden`}>
           <span>ID</span><span>Video</span><span>Company</span><span>Pri</span><span>Stage</span>
           {MARKS.map(([k, l]) => (
             <button key={k} type="button" aria-pressed={need === k} onClick={() => setNeed(need === k ? '' : k)}

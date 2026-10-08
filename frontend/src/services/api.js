@@ -312,4 +312,6 @@ export const api = {
   savePronunciation: (p) => post('/pronunciations', p),
   deletePronunciation: (id) => del(`/pronunciations/${id}`),
   hearPronunciation: (id, voiceId) => post(`/pronunciations/${id}/hear`, { voiceId }),
+  pronunciationsReady: (voiceId) => get(`/pronunciations/ready${voiceId ? `?voiceId=${voiceId}` : ''}`),
+  warmPronunciations: (voiceId) => post('/pronunciations/warm', { voiceId }),
 };

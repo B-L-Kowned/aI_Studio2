@@ -251,7 +251,8 @@ nav .on { color: var(--ink); font-weight: 560; background: var(--canvas); }
   gap: 3px;
 }
 
-main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
+/* Wide enough to use a big screen; text that needs a measure sets its own. */
+main { max-width: 1520px; margin: 14px auto 40px; padding: 0 28px; }
 
 /* ---------------------------------------------------------- page chrome -- */
 /* Hierarchy, format badges and save state on one line, so the title block is
@@ -1019,3 +1020,6 @@ button.danger:hover:not(:disabled) { background: #9d2019; border-color: #9d2019;
 
 /* Utilities last, so a utility on an element always beats a rule above. */
 @tailwind utilities;
+
+/* One colour for every slider and checkbox, not the browser blue. */
+input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--ink); }

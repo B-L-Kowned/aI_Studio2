@@ -147,7 +147,7 @@ function App() {
             on the header's true centre however wide the licence badge is, and an
             empty third track keeps it centred with no licence. Below 880px the
             nav drops to its own row rather than squeezing the wordmark. */}
-        <div className="max-w-[1180px] m-[0_auto] min-h-[56px] grid grid-cols-[1fr_auto_1fr] items-center p-[8px_22px] gap-[10px_26px] lte880:grid-cols-[auto_1fr]">
+        <div className="max-w-[1520px] m-[0_auto] min-h-[52px] grid grid-cols-[1fr_auto_1fr] items-center p-[6px_28px] gap-[10px_26px] lte880:grid-cols-[auto_1fr]">
           <b className="text-[14px] font-[640] tracking-[-0.01em] whitespace-nowrap justify-self-start lte880:col-[1] lte880:row-[1]">◉ AI Video Studio</b>
           <nav className="justify-center lte880:col-[1/-1] lte880:row-[2]">
             {allowed.map((n) => (

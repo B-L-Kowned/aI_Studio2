@@ -33,6 +33,7 @@ import voiceBatch from './routes/voice-batch.js';
 import music from './routes/music.js';
 import managerRoutes from './routes/manager.js';
 import lineFixRoutes from './routes/line-fix.js';
+import { cacheOwnedPreviews } from './lib/preview-cache.js';
 import { resume as resumeVoiceBatch } from './lib/voice-batch.js';
 import { modeSummary } from './lib/providers/mode.js';
 import { ok, fail } from './utils/respond.js';
@@ -151,4 +152,6 @@ const server = app.listen(PORT, '127.0.0.1', () => {
   // One machine-readable line, so a parent process never has to parse prose
   // that was written for a person.
   console.log(`STUDIO_READY ${JSON.stringify({ port: actual, packaged, dbPath })}`);
+  // Avatar pictures are signed links that expire; keep yours while they work.
+  cacheOwnedPreviews().catch(() => {});
 });

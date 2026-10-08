@@ -1,3 +1,4 @@
+import { previewSrc, cacheOwnedPreviews } from '../preview-cache.js';
 import * as heygen from './heygen.js';
 import { approvedLook } from '../appearance.js';
 import * as mcp from './heygen-mcp.js';
@@ -130,6 +131,8 @@ export async function syncProvider(id) {
          last_sync_at = excluded.last_sync_at, last_error = NULL`
     ).run(id, quota.remaining ?? null);
 
+    // Keep the pictures while their signed links still work.
+    cacheOwnedPreviews().catch(() => {});
     return { pulled, quota };
   } catch (err) {
     db.prepare(
@@ -152,7 +155,7 @@ export function localAssets(providerId, kind) {
         .all(providerId);
   return rows.map((r) => ({
     id: r.id, kind: r.kind, remoteId: r.remote_id, name: r.name,
-    previewUrl: r.preview_url, language: r.language, gender: r.gender, syncedAt: r.synced_at,
+    previewUrl: previewSrc(r), language: r.language, gender: r.gender, syncedAt: r.synced_at,
     // Whether THIS account owns it. The column was being written and then
     // dropped here, so every caller saw a catalogue with no sense of mine
     // versus HeyGen's — which is the only distinction that matters in a picker.

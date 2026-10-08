@@ -56,7 +56,7 @@ export default function Library() {
     <>
       <PageHead
         title="Library"
-        lead="Avatars, voices, footage, backgrounds, templates, renders and exports — everything reusable across productions."
+        lead="Avatars, voices, footage, renders and exports — reusable across videos."
       />
 
       <Section
@@ -70,12 +70,15 @@ export default function Library() {
                 className="[border:0] p-[5px_0] w-[130px] focus:[outline:0] focus:[box-shadow:none]"
                 aria-label="Search assets" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" />
             </div>
-            <select aria-label="Filter assets by kind" value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="all">All kinds</option>
-              {kinds.map((k) => (
-                <option key={k} value={k}>{KIND[k]?.label ?? k}</option>
+            {/* Kinds as chips with counts: what is here, at a glance, one click to narrow. */}
+            <span className="flex flex-wrap gap-[4px]" role="group" aria-label="Filter assets by kind">
+              {[['all', 'All', items.length], ...kinds.map((k) => [k, KIND[k]?.label ?? k, items.filter((a) => a.kind === k).length])].map(([id, label, n]) => (
+                <button key={id} type="button" onClick={() => setKind(id)}
+                  className={'text-[12px] p-[3px_10px] rounded-full ' + (kind === id ? 'bg-ink text-white border-ink' : 'bg-surface')}>
+                  {label} <span className={kind === id ? 'opacity-70' : 'text-faint'}>{n}</span>
+                </button>
               ))}
-            </select>
+            </span>
           </>
         }
         flush
@@ -87,14 +90,16 @@ export default function Library() {
               : 'Nothing matches that filter.'}
           </Empty>
         ) : (
-          <div className="assetlist">
+          // Columns on a wide screen: a one-column list of short names was
+          // mostly empty row. Hairline gaps make the grid read as one table.
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(440px,1fr))] overflow-hidden mb-[-1px] mr-[-1px]">
             {shown.map((a) => {
               const k = KIND[a.kind] ?? { label: a.kind, icon: Package };
               const Icon = k.icon;
               return (
                 // Flex, not grid: a row carries a duration, a warning or neither.
                 <div
-                  className={'assetrow group flex items-center gap-[10px]' + (a.playable ? ' playable cursor-default' : '')}
+                  className={'group flex items-center gap-[10px] bg-surface [box-shadow:1px_0_0_var(--line),0_1px_0_var(--line)] p-[8px_14px] text-[13px] min-w-0 hover:bg-surface-2' + (a.playable ? ' playable cursor-default' : '')}
                   key={a.id}
                 >
                   <span className="w-[26px] h-[26px] rounded-sm bg-canvas border border-solid border-line grid place-items-center text-muted"><Icon size={15} /></span>
@@ -108,7 +113,7 @@ export default function Library() {
                       {playing === a.id && <em className="not-italic ml-[8px] text-[11px] text-faint">opening…</em>}
                     </button>
                   ) : (
-                    <b className="flex-1 min-w-0">{a.name}</b>
+                    <b className="flex-1 min-w-0 truncate text-[13.5px] font-[550]" title={a.name}>{a.name}</b>
                   )}
                   <em className="not-italic text-[10.5px] text-muted border border-solid border-line rounded-[20px] p-[2px_9px]">{k.label}</em>
                   {a.duration ? <em className="not-italic font-mono text-[11.5px] font-normal leading-[normal] text-faint">{toClock(a.duration)}</em> : null}

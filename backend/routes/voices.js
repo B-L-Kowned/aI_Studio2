@@ -1,5 +1,6 @@
 import express, { Router } from 'express';
 import { createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { getDb } from '../db/index.js';
 import {
   listLocalVoices, createLocalVoice, updateLocalVoice, speakLocal, serviceStatus, localFile,
@@ -102,6 +103,72 @@ router.delete(
   })
 );
 
+// ------------------------------------------------------------ hearing a term
+// Each term is said once per voice and respelling, and kept: Hear plays the
+// kept clip at once. Opening the list makes them all in the background, the
+// ones still to check first; a click jumps the queue. A changed respelling is a
+// new clip, so what you hear is always what will be said.
+const termKey = (voiceId, term, sayAs) => createHash('sha1').update(`${voiceId}|${term}|${sayAs}`).digest('hex').slice(0, 16);
+const termRel = (key) => `samples/pron/${key}.wav`;
+const termQueue = [];
+const termJobs = new Map();
+let termBusy = false;
+
+function sayTerm(voiceId, row, { front = false } = {}) {
+  const key = termKey(voiceId, row.term, row.sayAs);
+  if (localFile(termRel(key))) return Promise.resolve(key);
+  let job = termJobs.get(key);
+  if (!job) {
+    job = { voiceId, row };
+    job.promise = new Promise((res, rej) => { job.resolve = res; job.reject = rej; });
+    job.promise.catch(() => {});
+    termJobs.set(key, job);
+    termQueue.push(key);
+  }
+  if (front) { const i = termQueue.indexOf(key); if (i > 0) { termQueue.splice(i, 1); termQueue.unshift(key); } }
+  nextTerm();
+  return job.promise;
+}
+
+async function nextTerm() {
+  if (termBusy) return;
+  termBusy = true;
+  try {
+    while (termQueue.length) {
+      const key = termQueue.shift();
+      const job = termJobs.get(key);
+      if (!job) continue;
+      try {
+        // The term as written: the substitution is what is being tested.
+        if (!localFile(termRel(key))) await speakLocal(job.voiceId, `This is ${job.row.term}.`, termRel(key));
+        job.resolve(key);
+      } catch (err) { job.reject(err); } finally { termJobs.delete(key); }
+    }
+  } finally { termBusy = false; }
+}
+
+const defaultVoice = (body) => Number(body?.voiceId) || listLocalVoices()[0]?.id;
+
+/** Which terms can be heard at once, for the list's play buttons. */
+router.get('/pronunciations/ready', route(async (req, res) => {
+  const voiceId = defaultVoice(req.query);
+  return ok(res, Object.fromEntries(listPronunciations().map((p) =>
+    [p.id, !!voiceId && !!localFile(termRel(termKey(voiceId, p.term, p.sayAs)))])));
+}));
+
+/** Make every term ahead of time, the unchecked ones first. */
+router.post('/pronunciations/warm', route(async (req, res) => {
+  const voiceId = defaultVoice(req.body);
+  if (!voiceId) return ok(res, { queued: 0 });
+  const rows = listPronunciations().sort((a, b) => Number(a.checked) - Number(b.checked));
+  let queued = 0;
+  for (const r of rows) {
+    if (localFile(termRel(termKey(voiceId, r.term, r.sayAs)))) continue;
+    sayTerm(voiceId, r); queued++;
+  }
+  return ok(res, { queued });
+}));
+
 /** Say one term, in a sentence, so it can be checked by ear. Free. */
 router.post(
   '/pronunciations/:id/hear',
@@ -109,12 +176,11 @@ router.post(
     const id = Number(req.params.id);
     const row = listPronunciations().find((p) => p.id === id);
     if (!row) return fail(res, 404, 'NOT_FOUND', 'No such pronunciation');
-    const voiceId = Number(req.body?.voiceId) || listLocalVoices()[0]?.id;
+    const voiceId = defaultVoice(req.body);
     if (!voiceId) return fail(res, 409, 'NO_VOICE', 'Create a local voice first');
     try {
-      // The term as written: the substitution is what is being tested.
-      await speakLocal(voiceId, `This is ${row.term}.`, `samples/pron-${id}.wav`);
-      return ok(res, { url: `/api/pronunciations/${id}/audio?t=${Date.now()}` }, `Said "${row.sayAs}"`);
+      const key = await sayTerm(voiceId, row, { front: true });
+      return ok(res, { url: `/api/pronunciations/${id}/audio?k=${key}` }, `Said "${row.sayAs}"`);
     } catch (err) { return bad(res, err); }
   })
 );
@@ -122,7 +188,8 @@ router.post(
 router.get(
   '/pronunciations/:id/audio',
   route(async (req, res) => {
-    const file = localFile(`samples/pron-${Number(req.params.id)}.wav`);
+    const key = String(req.query.k ?? '');
+    const file = /^[0-9a-f]{16}$/.test(key) ? localFile(termRel(key)) : localFile(`samples/pron-${Number(req.params.id)}.wav`);
     if (!file) return fail(res, 404, 'NOT_FOUND', 'Not heard yet');
     res.type('audio/wav');
     return createReadStream(file).pipe(res);

@@ -1,3 +1,4 @@
+import { previewSrc, cacheOwnedPreviews } from './preview-cache.js';
 import { getDb } from '../db/index.js';
 import { TEMPLATES } from '../data/templates.js';
 
@@ -27,7 +28,7 @@ const bad = (message, code = 'BAD_APPEARANCE') => Object.assign(new Error(messag
 
 export function serializeLook(r) {
   return r && {
-    id: r.id, remoteId: r.remote_id, name: r.name, previewUrl: r.preview_url,
+    id: r.id, remoteId: r.remote_id, name: r.name, previewUrl: previewSrc(r),
     groupId: r.group_id ?? null, avatarType: r.avatar_type ?? null, orientation: r.orientation ?? null,
   };
 }
@@ -69,6 +70,7 @@ export function importLooks(provider, looks) {
       n++;
     }
   })();
+  cacheOwnedPreviews().catch(() => {});
   return n;
 }
 

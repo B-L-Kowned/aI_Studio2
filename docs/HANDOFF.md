@@ -306,6 +306,20 @@ In rough priority order. Items 1–3 are about not spending money by accident.
 14. **TypeScript.** This frontend is still JavaScript; the owner's other
     frontends are TypeScript. Convert with the standard scripts, measured
     (files read *and* checked), typecheck gated only at zero errors.
+15. **Voices and personas (requested 2026-10-08, not started).** Today there is
+    one local voice clone and each presenter is cast with one voice. Wanted:
+    several voices per person (calm / energetic / narrator), personas that
+    bundle look + voice + delivery, and one screen to manage, audition and
+    compare them. Propose a plan before building — it touches casting,
+    segments and Settings.
+16. **HeyGen in the working copy.** The working database cannot read the real
+    sign-in by design (§8), so HeyGen shows "not connected" there. Either sign
+    in from the working copy (it makes its own key) or do HeyGen work against
+    the real database. Signing in also refreshes avatar pictures: 6 of the 26
+    owned avatars show initials until then (their links had expired).
+17. **Set the P1/P2/P3 deadlines** on Today; until then pace reads "no date".
+18. Show 12 items in Today's "Work on next" (the server returns 6), and check
+    the "Bialkowned" pronunciation — it read "buyelkkowned" on 2026-10-08.
 
 ---
 
@@ -338,3 +352,44 @@ In rough priority order. Items 1–3 are about not spending money by accident.
 - **Style with tokens and the shared header.** Use `PageHead` and `Tabs` for any
   new page; theme names (`bg-surface`, `border-line`) for colours; `lte*:` for
   breakpoints; `border-solid` with any border utility. See ARCHITECTURE §1.
+
+---
+
+## 9. The production workflow (built 2026-10)
+
+What is not obvious from the code about working through the register.
+
+- **Today (`/home`, `GET /api/manager`)** is the production manager. Three
+  deadlines (P1/P2/P3, `workspace.deadlines`); a video is due by its own
+  `due_at`, else its priority's date. Pace = videos finished in the last 28
+  days ÷ 4. Each queue (approve, checks, makeVoice, approveVoice, record,
+  render, export, publish) opens where that work is done. The sidebar's week
+  calendar and by-campaign progress come from `GET /api/schedule`.
+- **Review** has three queues: drafts ready to approve, [CONFIRM] checks, and
+  voices to approve (listen through; approve-all unlocks only once every line
+  was heard).
+- **Recording sessions**: the To record tile stores the queue in
+  `sessionStorage['record-session']`, and the Record step walks through it.
+- **Line fixing (`/api/line-fix/*`, `lib/line-fix.js`)**: click a word while a
+  line plays to say it differently (saved pronunciation), reword, or re-read.
+  Only the SENTENCE holding the word is remade and spliced in at the pauses
+  either side (`MIN_GAP` 80 ms), level-matched; with no pause there, the whole
+  line. One word alone cannot be remade and blended — it never matches the
+  pitch and pace around it. Choosing a reading makes it the approved take; the
+  old take is kept (`takes.origin_take_id`) for Undo. Rewording changes the
+  ACCEPTED script line in place; the script stays approved.
+- **Word timings** come from Whisper (`small`) on the take, cached as
+  `<take>.words.json`; until then the page spreads the words by length.
+- **Hear caches are keyed on the words as spoken** (after pronunciations), so a
+  pronunciation fix is heard at once. Pronunciation clips are made ahead in the
+  background (`POST /api/pronunciations/warm`) and kept per voice + respelling.
+- **Avatar pictures expire.** HeyGen preview links are signed for about a week.
+  `lib/preview-cache.js` keeps each owned picture in `previews/` beside the
+  database while its link works (on startup, after a sync, after a look
+  import), and every serializer returns `/api/provider-assets/:id/preview`.
+  Never store or render the raw HeyGen link.
+- **"Connected" means reachable now.** `provider_accounts.status` records only
+  the last sync that worked. Whether HeyGen can be used is
+  `GET /api/heygen/status` (sign-in or API key); both Settings pages read it.
+- **Layout**: the app column is 1520px; Create steps have no outer frame (their
+  own sections are the surfaces); long text keeps a measure (`max-w-[68ch]`).

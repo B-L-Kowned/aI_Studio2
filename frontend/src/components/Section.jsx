@@ -60,7 +60,7 @@ export function PageHead({ eyebrow, title, titleHint, lead, actions, tabs, tabsB
   // its rule instead of taking a row of its own under the title.
   const beside = tabs && tabsBeside;
   return (
-    <div className="mb-[14px]">
+    <div className="mb-[12px]">
       {eyebrow && <div className="mb-[3px]">{eyebrow}</div>}
       {/* Wraps on narrow screens: the actions drop below rather than squeezing
           the title to nothing. */}
@@ -70,14 +70,15 @@ export function PageHead({ eyebrow, title, titleHint, lead, actions, tabs, tabsB
           (beside ? ' [box-shadow:inset_0_-1px_0_var(--line)]' : '')
         }
       >
-        <div className={'min-w-0 flex-[1_1_260px]' + (beside ? ' pb-[9px]' : '')}>
+        {/* The lead sits beside the title, not under it: one row, not two. */}
+        <div className={'min-w-0 flex-[1_1_260px] flex flex-wrap items-baseline gap-x-[14px] gap-y-[2px]' + (beside ? ' pb-[9px]' : '')}>
           <h1 className="whitespace-nowrap overflow-hidden text-ellipsis" title={titleHint}>{title}</h1>
-          {lead && <p className="text-muted text-[13px] m-[3px_0_0] max-w-[70ch]">{lead}</p>}
+          {lead && <p className="text-muted text-[13px] m-0 min-w-0 max-w-[90ch]">{lead}</p>}
         </div>
         {beside && <div className="min-w-0 max-w-full shrink-0 [&>.subnav]:[box-shadow:none]">{tabs}</div>}
         {actions && <div className="quickrow">{actions}</div>}
       </div>
-      {tabs && !beside && <div className="mt-[14px]">{tabs}</div>}
+      {tabs && !beside && <div className="mt-[10px]">{tabs}</div>}
     </div>
   );
 }

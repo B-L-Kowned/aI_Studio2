@@ -1,3 +1,4 @@
+import { previewSrc } from './preview-cache.js';
 import { getDb } from '../db/index.js';
 import { presenterTabsFor, PRESENTER_TAB_INFO, hasProgram } from './programs.js';
 
@@ -30,7 +31,7 @@ function serialize(r) {
       id: a.id,
       remoteId: a.remote_id,
       name: a.name,
-      previewUrl: a.preview_url,
+      previewUrl: previewSrc(a),
       provider: a.provider,
     } : null,
     voice: v ? { id: v.id, remoteId: v.remote_id, name: v.name } : null,

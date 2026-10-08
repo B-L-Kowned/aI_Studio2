@@ -71,164 +71,105 @@ export default function HeyGen({ embedded }) {
 
   return (
     <>
-      {/* Inside Settings the rail already names this section, so a second <h1>
-          would be the page title repeated one line below itself. */}
-      <div className={embedded ? 'flex items-center justify-between mb-[14px]' : 'title'}>
-        {embedded ? <h2 className="m-0 text-[17px]">HeyGen account</h2> : <h1>HeyGen</h1>}
-        <div className="quickrow">
-          <button onClick={load}><RefreshCw size={14} /> Refresh</button>
-          {connected && (
-            <button onClick={() => mutate(() => api.heygenDisconnect(), null).then(load)}>
-              Disconnect
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* One state panel. It carries the action, so nothing below needs to. */}
-      <div className={`flex gap-[20px] items-start border border-solid border-line rounded-lg p-[16px_18px] m-[14px_0] ${status.pocket} ${POCKET_CLASS[status.pocket] ?? ''}`}>
-        <div className="flex-1 min-w-0">
-          <b className="inline-flex items-center gap-[8px] text-[14px]">
-            {connected && <><Check size={15} /> Signed in — using your HeyGen plan</>}
-            {!connected && status.pocket === 'key' && <><AlertCircle size={15} /> Using an API key</>}
-            {!connected && status.pocket === 'none' && <><Lock size={15} /> Not connected</>}
-          </b>
-          <p className={CONN_P}>{status.explanation}</p>
-          {status.recommendation && <p className={CONN_P + ' !mt-[8px] font-[560] text-warn'}>{status.recommendation}</p>}
-          {!connected && (
-            <p className={CONN_P + ' text-muted'}>
-              Opens a browser tab. Signing in only reads your account — nothing is charged.
-              The consent screen reads <b className="inline-flex items-center gap-[8px] text-[14px]">“HeyGen MCP Default”</b>; HeyGen overrides the name.
-            </p>
-          )}
-        </div>
-        <div className="flex flex-col gap-[8px] items-end shrink-0">
-          {status.credits != null && (
-            <span className="credits"><Wallet size={13} /> {status.credits} credits</span>
-          )}
-          {!connected && (
-            <button className="primary whitespace-nowrap" onClick={connect} disabled={busy}>
-              {busy ? 'Opening…' : <><ExternalLink size={15} /> Sign in to HeyGen</>}
-            </button>
-          )}
-        </div>
+      {embedded ? <h2 className="m-[0_0_12px] text-[17px]">HeyGen account</h2> : <h1>HeyGen</h1>}
+      {/* One line: whether you are signed in, and the one thing to do about it. */}
+      <div className={`flex flex-wrap items-center gap-x-[12px] gap-y-[8px] rounded-lg p-[10px_14px] mb-[16px] ${POCKET_CLASS[status.pocket] ?? ''}`}>
+        <b className="inline-flex items-center gap-[7px] text-[13.5px] font-[580]">
+          {connected && <><Check size={15} className="text-ok" /> HeyGen connected</>}
+          {!connected && status.pocket === 'key' && <><AlertCircle size={15} className="text-warn" /> Using an API key</>}
+          {!connected && status.pocket === 'none' && <><Lock size={15} className="text-muted" /> HeyGen not connected</>}
+        </b>
+        <span className="text-[12.5px] text-muted min-w-0 flex-1"
+          title={connected ? status.explanation : 'Opens a browser tab. Signing in only reads your account — nothing is charged. The consent screen reads “HeyGen MCP Default”; HeyGen overrides the name.'}>
+          {connected ? 'Renders use the plan you already pay for.' : 'Sign in to use the plan you already pay for, see your videos and refresh avatar pictures.'}
+          {status.recommendation && <span className="text-warn"> {status.recommendation}</span>}
+        </span>
+        {status.credits != null && <span className="credits"><Wallet size={13} /> {status.credits} credits</span>}
+        <span className="flex items-center gap-[6px]">
+          <button className="ghostbtn p-[5px]" title="Refresh" aria-label="Refresh" onClick={load}><RefreshCw size={14} /></button>
+          {connected
+            ? <button onClick={() => mutate(() => api.heygenDisconnect(), null).then(load)}>Disconnect</button>
+            : <button className="primary whitespace-nowrap" onClick={connect} disabled={busy}>{busy ? 'Opening…' : <><ExternalLink size={14} /> Sign in</>}</button>}
+        </span>
       </div>
 
       {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
 
-      <Section
-        title="Your videos"
-        meta={connected ? `${videos?.length ?? 0} in your account` : 'available once signed in'}
-      >
-        {!connected ? (
-          <p className="sectionempty"><Play size={15} /> Your HeyGen videos appear here after you sign in.</p>
-        ) : videos === null ? (
-          <p className="sectionempty">Loading…</p>
-        ) : videos.length === 0 ? (
-          <p className="sectionempty">No videos in this account yet.</p>
-        ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(228px,1fr))] gap-[12px] lte860:grid-cols-[repeat(2,1fr)] lte620:grid-cols-[1fr]">
-            {videos.map((v) => (
-              <div className="bg-surface border border-solid border-line rounded-lg p-[12px] flex flex-col gap-[7px]" key={v.id}>
-                {/* HeyGen renders 9:16 portrait. `contain` letterboxed it on black and a
-                    centred `cover` crop is a chin on a talking head: fill the frame,
-                    biased upward to the face. */}
-                <div className="aspect-[16/10] rounded [background-color:#17181a] bg-cover bg-no-repeat bg-[position:center_28%] grid place-items-center text-[rgba(255,255,255,.45)]" style={v.thumbnailUrl ? { backgroundImage: `url(${v.thumbnailUrl})` } : undefined}>
-                  {!v.thumbnailUrl && <Play size={20} />}
+      {/* Your videos only exist once signed in; until then the bar above says so. */}
+      {connected && (
+        <Section title="Your videos" meta={`${videos?.length ?? 0} in your account`}>
+          {videos === null ? (
+            <p className="sectionempty">Loading…</p>
+          ) : videos.length === 0 ? (
+            <p className="sectionempty">No videos in this account yet.</p>
+          ) : (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-[12px]">
+              {videos.map((v) => (
+                <div className="flex flex-col gap-[6px]" key={v.id}>
+                  <div className="aspect-[16/10] rounded [background-color:#17181a] bg-cover bg-no-repeat bg-[position:center_28%] grid place-items-center text-[rgba(255,255,255,.45)]" style={v.thumbnailUrl ? { backgroundImage: `url(${v.thumbnailUrl})` } : undefined}>
+                    {!v.thumbnailUrl && <Play size={20} />}
+                  </div>
+                  <b className="text-[12.5px] leading-[1.35] line-clamp-2">{v.title}</b>
+                  <div className="flex gap-[8px] items-center text-[11.5px] text-muted">
+                    <span className={'vchip ' + (v.status === 'completed' ? 'complete' : v.status)}>{v.status}</span>
+                    {v.duration && <span>{Math.round(v.duration)}s</span>}
+                    <button className="ml-auto ghostbtn p-[2px_4px] text-[11.5px] text-accent" disabled={v.status !== 'completed'}
+                      onClick={() => mutate(() => api.importHeygenVideo(v.id), null).then(load)}>
+                      <Download size={12} /> Import
+                    </button>
+                  </div>
                 </div>
-                <b className="text-[13px] leading-[1.35] min-h-[2.7em] line-clamp-2">{v.title}</b>
-                <div className="flex gap-[8px] items-center text-[11.5px] text-muted mt-[-2px]">
-                  <span className={'vchip ' + (v.status === 'completed' ? 'complete' : v.status)}>{v.status}</span>
-                  {v.duration && <span>{Math.round(v.duration)}s</span>}
-                </div>
-                <button
-                  className="text-[12px] p-[6px_10px] justify-center flex items-center gap-[6px]"
-                  disabled={v.status !== 'completed'}
-                  onClick={() => mutate(() => api.importHeygenVideo(v.id), null).then(load)}
-                >
-                  <Download size={13} /> Import to Library
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
 
-      {/* 2000 synced assets were all drawn as rows, which made this page 77,000
-          pixels tall and pushed the settings rail off into nothing. A catalogue
-          is something you search, not something you scroll. */}
-      <Section
-        title="Avatars & voices"
-        meta={`${real} yours · ${fixtures} sample`}
-        actions={connected && (
-          <button onClick={() => mutate(() => api.syncProvider('heygen'), null).then(load)}>
-            <RefreshCw size={13} /> Sync
-          </button>
-        )}
-      >
+      {/* A catalogue is something you look at: pictures, not rows of IDs. */}
+      <section>
+        <div className="flex flex-wrap items-center gap-[10px] mb-[10px]">
+          <h3 className="m-0 text-[13.5px] font-[600]">Avatars &amp; voices</h3>
+          <span className="flex gap-[4px]" role="group" aria-label="Show">
+            {[['all', 'All', assets.length], ['avatar', 'Avatars', assets.filter((a) => a.kind === 'avatar').length], ['voice', 'Voices', assets.filter((a) => a.kind === 'voice').length]].map(([id, label, n]) => (
+              <button key={id} type="button" onClick={() => { setAssetKind(id); setAssetLimit(ASSET_PAGE); }}
+                className={'text-[12px] p-[3px_10px] rounded-full ' + (assetKind === id ? 'bg-ink text-white border-ink' : 'bg-surface')}>
+                {label} <span className={assetKind === id ? 'opacity-70' : 'text-faint'}>{n}</span>
+              </button>
+            ))}
+          </span>
+          <input className="ml-auto w-[240px] text-[12.5px] p-[5px_9px]" placeholder="Search…" value={assetQuery}
+            onChange={(e) => { setAssetQuery(e.target.value); setAssetLimit(ASSET_PAGE); }} />
+          {connected && (
+            <button onClick={() => mutate(() => api.syncProvider('heygen'), null).then(load)}><RefreshCw size={13} /> Sync</button>
+          )}
+        </div>
+
         {assets.length === 0 ? (
           <p className="sectionempty">Nothing synced yet.</p>
-        ) : (
-          <>
-            <div className="flex gap-[8px] mb-[10px]">
-              <input
-                className="flex-1 text-[13px] p-[6px_9px]"
-                placeholder={`Search ${assets.length} avatars and voices…`}
-                value={assetQuery}
-                onChange={(e) => { setAssetQuery(e.target.value); setAssetLimit(ASSET_PAGE); }}
-              />
-              <select className="text-[13px] p-[6px_8px]" value={assetKind} onChange={(e) => { setAssetKind(e.target.value); setAssetLimit(ASSET_PAGE); }}>
-                <option value="all">All kinds</option>
-                <option value="avatar">Avatars</option>
-                <option value="voice">Voices</option>
-              </select>
-            </div>
-
-            {(() => {
-              const q = assetQuery.trim().toLowerCase();
-              const matched = assets.filter((a) =>
-                (assetKind === 'all' || a.kind === assetKind) &&
-                (!q || a.name.toLowerCase().includes(q) || a.remoteId.toLowerCase().includes(q)));
-              const shown = matched.slice(0, assetLimit);
-
-              if (!matched.length) {
-                return <p className="sectionempty">Nothing matches “{assetQuery}”.</p>;
-              }
-              return (
-                <>
-                  <div className="assetlist">
-                    {shown.map((a) => (
-                      <div className="assetrow" key={a.id}>
-                        <span className="akind">{a.kind}</span>
-                        <b>{a.name.trim() || 'Untitled'}</b>
-                        {a.isFixture
-                          ? <em className="sample">sample</em>
-                          : <em className="realmark"><Check size={11} /> yours</em>}
-                        <code className="text-muted">{a.remoteId}</code>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="sectionnote">
-                    Showing {shown.length} of {matched.length}
-                    {matched.length < assets.length ? ` (filtered from ${assets.length})` : ''}
-                    {shown.length < matched.length && (
-                      <> · <button className="[border:0] bg-transparent p-0 text-[length:inherit] text-accent underline rounded-none [&:hover:not(:disabled)]:bg-transparent [&:hover:not(:disabled)]:text-accent" onClick={() => setAssetLimit((n) => n + 200)}>
-                        Show 200 more
-                      </button></>
-                    )}
-                  </p>
-                </>
-              );
-            })()}
-          </>
-        )}
-      </Section>
+        ) : (() => {
+          const q = assetQuery.trim().toLowerCase();
+          const matched = assets.filter((a) =>
+            (assetKind === 'all' || a.kind === assetKind) &&
+            (!q || a.name.toLowerCase().includes(q) || a.remoteId.toLowerCase().includes(q)));
+          const shown = matched.slice(0, assetLimit);
+          if (!matched.length) return <p className="sectionempty">Nothing matches “{assetQuery}”.</p>;
+          return (
+            <>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[12px]">
+                {shown.map((a) => <AssetTile key={a.id} asset={a} />)}
+              </div>
+              {shown.length < matched.length && (
+                <p className="sectionnote">
+                  Showing {shown.length} of {matched.length} · <button className="ghostbtn p-0 text-accent text-[length:inherit]" onClick={() => setAssetLimit((n) => n + 200)}>Show more</button>
+                </p>
+              )}
+            </>
+          );
+        })()}
+      </section>
 
       {status.capabilities?.connected && (
-        <Section
-          title="What your MCP server exposes"
-          meta="from tools/list — free to read"
-        >
+        <Section title="What your MCP server exposes" meta="from tools/list — free to read">
           <div className="flex gap-[5px] flex-wrap mt-[8px] max-h-[132px] overflow-auto pr-[4px]">
             {status.capabilities.tools.map((t) => (
               <code key={t} className="text-[11px] bg-canvas border border-solid border-line p-[3px_7px] rounded-sm text-muted">{t}</code>
@@ -242,5 +183,44 @@ export default function HeyGen({ embedded }) {
         </Section>
       )}
     </>
+  );
+}
+
+/**
+ * One avatar or voice: its picture (kept on this Mac, so it does not go blank
+ * when HeyGen's link expires) or, for a voice, a play button for its sample.
+ */
+function AssetTile({ asset: a }) {
+  const [broken, setBroken] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const audio = React.useRef(null);
+  const initials = a.name.split(/[\s—-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  const voice = a.kind === 'voice';
+  const toggle = () => {
+    if (!a.previewUrl) return;
+    const el = audio.current ?? (audio.current = new Audio(a.previewUrl));
+    if (playing) { el.pause(); return; }
+    el.onended = () => setPlaying(false);
+    el.onpause = () => setPlaying(false);
+    el.play().then(() => setPlaying(true)).catch(() => setBroken(true));
+  };
+  return (
+    <figure className="m-0 flex flex-col gap-[6px] min-w-0" title={`${a.name}\n${a.remoteId}`}>
+      <div className="relative aspect-[4/5] rounded-lg overflow-hidden bg-canvas border border-solid border-line grid place-items-center">
+        {!voice && a.previewUrl && !broken
+          ? <img src={a.previewUrl} alt="" loading="lazy" onError={() => setBroken(true)} className="absolute inset-0 w-full h-full object-cover object-[center_25%]" />
+          : voice
+            ? <button type="button" onClick={toggle} disabled={!a.previewUrl || broken} aria-label={`Play ${a.name}`}
+                className="w-[44px] h-[44px] p-0 rounded-full grid place-items-center">
+                {playing ? <span className="w-[12px] h-[12px] bg-ink rounded-[2px]" /> : <Play size={16} className="ml-[2px]" />}
+              </button>
+            : <span className="text-[22px] font-[600] text-faint tracking-[.02em]" title="The preview link expired — sign in and Sync to refresh it">{initials}</span>}
+        {a.isFixture && <span className="absolute top-[6px] left-[6px] text-[10px] bg-warn-soft text-warn rounded p-[1px_6px]">sample</span>}
+      </div>
+      <figcaption className="min-w-0">
+        <b className="block text-[12.5px] font-[560] text-ink truncate">{a.name.trim() || 'Untitled'}</b>
+        <span className="block text-[11px] text-faint capitalize">{a.kind}{voice && a.language ? ` · ${a.language}` : ''}</span>
+      </figcaption>
+    </figure>
   );
 }
