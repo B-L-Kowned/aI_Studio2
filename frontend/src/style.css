@@ -510,12 +510,9 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
 .source small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 
 /* --------------------------------------------------------------- stages -- */
-.stagepane {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  padding: 16px 18px;
-}
+/* A step is the page itself, not a card: its own sections are the surfaces.
+   A white frame around white cards was a box for the sake of a box. */
+.stagepane { padding: 2px 0 0; }
 .stagepane > h2 { margin-bottom: 2px; }
 .stagepane > p { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
 .empty { text-align: center; padding: 64px 20px; color: var(--faint); }

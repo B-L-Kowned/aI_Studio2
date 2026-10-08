@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Check, SkipForward, ExternalLink, Pencil, RefreshCw, ClipboardList, AlertCircle, Undo2, ChevronLeft, Play, Square, Headphones, RotateCcw } from 'lucide-react';
+import { Check, SkipForward, ExternalLink, Pencil, RefreshCw, ClipboardList, AlertCircle, Undo2, ChevronLeft, Square, Headphones, RotateCcw } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import LineVoice from '../components/LineVoice.jsx';
 import { PageHead } from '../components/Section.jsx';
 import { madeByLabel } from '../utils/made-by.js';
 
@@ -51,7 +52,7 @@ function BriefPanel({ item }) {
  * One video's voice, to hear and approve in one pass. Approve all opens once
  * every made line has been played — by Listen through or one at a time.
  */
-function VoiceItem({ item, onApproveAll, onApproveLine, onRemake, busy }) {
+function VoiceItem({ item, onApproveAll, onApproveLine, onRemake, onChanged, busy }) {
   const audio = React.useRef(null);
   const [playing, setPlaying] = useState(null);
   const [heard, setHeard] = useState(() => new Set());
@@ -93,24 +94,24 @@ function VoiceItem({ item, onApproveAll, onApproveLine, onRemake, busy }) {
           : <button className={allHeard ? '' : 'primary'} onClick={() => listen(0)}><Headphones size={14} /> Listen through <kbd className="opacity-60 text-[10.5px]">Space</kbd></button>}
         <span className="text-[12.5px] text-muted">{heard.size} of {made.length} heard{missing ? ` · ${missing} not made yet` : ''}</span>
       </div>
-      {item.lines.map((l) => {
-        const now = playing === l.segmentId;
-        return (
-          <div key={l.segmentId} className={'grid grid-cols-[28px_minmax(0,1fr)_auto] gap-[10px] items-start p-[9px_12px] rounded-lg border border-solid ' + (now ? 'border-accent bg-accent-soft' : 'border-line')}>
-            <button type="button" disabled={!l.audioUrl} aria-label={now ? 'Stop' : 'Play'} onClick={() => (now ? stop() : play(l))}
-              className={'w-[28px] h-[28px] p-0 grid place-items-center rounded-full ' + (now ? 'bg-accent text-[#fff] border-accent' : '') + (l.audioUrl ? '' : ' opacity-40')}>
-              {now ? <Square size={11} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
-            </button>
-            <p className="m-0 text-[14.5px] leading-[1.6] text-ink max-w-[66ch]">{l.text}</p>
-            <span className="flex items-center gap-[6px] whitespace-nowrap text-[12px]">
-              {l.heard ? <span className="text-ok"><Check size={13} className="inline" /> Approved</span>
-                : l.audioUrl ? <button className="text-[12px] p-[3px_9px]" disabled={busy} onClick={() => onApproveLine(item, l)}><Check size={12} /> Approve</button>
-                : <span className="text-faint">Not made</span>}
-              <button className="ghostbtn p-[4px] text-faint hover:text-ink" title="Make this line again" disabled={busy} onClick={() => onRemake(item, l)}><RotateCcw size={13} /></button>
-            </span>
+      {/* Already inside the review card: rules between lines, not another box. */}
+      <div className="[border-top:1px_solid_var(--line)]">
+        {item.lines.map((l) => (
+          <div key={l.segmentId} className="[border-bottom:1px_solid_var(--line)] last:[border-bottom:0]">
+            <LineVoice text={l.text} current={playing === l.segmentId} dim={!l.audioUrl}
+              audio={l.audioUrl ? { url: l.audioUrl, takeId: l.takeId, duration: l.duration } : null}
+              segmentId={l.audioUrl ? l.segmentId : null}
+              onPlayed={() => setHeard((h) => new Set(h).add(l.segmentId))}
+              onChange={() => onChanged?.()}
+              aside={<>
+                {l.heard ? <span className="text-ok text-[12px]"><Check size={13} className="inline" /> Approved</span>
+                  : l.audioUrl ? <button className="text-[12px] p-[3px_9px]" disabled={busy} onClick={() => onApproveLine(item, l)}><Check size={12} /> Approve</button>
+                  : <span className="text-faint text-[12px]">Not made</span>}
+                <button className="ghostbtn p-[4px] text-faint hover:text-ink" title="A whole new reading of this line" disabled={busy} onClick={() => onRemake(item, l)}><RotateCcw size={13} /></button>
+              </>} />
           </div>
-        );
-      })}
+        ))}
+      </div>
       {unapproved.length > 0 && (
         <button className="primary self-start" disabled={!allHeard || busy} title={allHeard ? '' : 'Listen to every line first'} onClick={() => onApproveAll(item, unapproved)}>
           <Check size={14} /> Approve all {unapproved.length} <kbd className="opacity-60 text-[10.5px]">A</kbd>
@@ -263,7 +264,8 @@ export default function Review({ go, tabs }) {
                   catch { /* reported */ } finally { setBusy(false); }
                 }}
                 onApproveLine={async (it, l) => { setBusy(true); try { await mutate(() => api.markHeard(it.productionId, l.segmentId, l.takeId, true), null, { silent: true }); await load(); } catch { /* reported */ } finally { setBusy(false); } }}
-                onRemake={async (it, l) => { setBusy(true); try { await mutate(() => api.auditionSegment(it.productionId, l.segmentId, {}), null); await load(); } catch { /* reported */ } finally { setBusy(false); } }} />
+                onRemake={async (it, l) => { setBusy(true); try { await mutate(() => api.auditionSegment(it.productionId, l.segmentId, {}), null); await load(); } catch { /* reported */ } finally { setBusy(false); } }}
+                onChanged={load} />
             ) : mode === 'ready' ? (
               <article className="max-w-[66ch] flex flex-col gap-[12px]">
                 {item.lines.map((l) => (editing === l.id ? (

@@ -166,7 +166,8 @@ function AvatarFromRecording({ production, onFinished }) {
 /** A small labelled group of settings. */
 function SettingGroup({ title, children }) {
   return (
-    <div className="border border-solid border-line rounded-lg bg-surface p-[10px_12px]">
+    // Groups of one panel, divided by rules — not a stack of separate boxes.
+    <div className="p-[12px_14px] [border-top:1px_solid_var(--line)] first:[border-top:0]">
       <div className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold mb-[8px]">{title}</div>
       <div className="flex flex-col gap-[7px]">{children}</div>
     </div>
@@ -279,7 +280,7 @@ function FinishInApp({ production, goToStage }) {
           )}
         </div>
 
-        <div className="flex flex-col gap-[10px]">
+        <div className="flex flex-col self-start border border-solid border-line rounded-lg bg-surface">
           {self && (
             <SettingGroup title="Clean-up">
               <button className={analyzed ? '' : 'primary'} onClick={() => act(() => api.analyzeTakes(production.id))} disabled={busy}>
@@ -322,12 +323,12 @@ function FinishInApp({ production, goToStage }) {
       {self && (
         <div className="mt-[18px]">
           <div className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold mb-[6px]">Lines · {recorded} of {lines.length} recorded</div>
-          <ol className="list-none p-0 m-0 flex flex-col gap-[6px]">
+          <ol className="list-none p-0 m-0 border border-solid border-line rounded-lg bg-surface">
             {lines.map((l) => {
               const t = chosen(l);
               const kept = t ? t.outPoint - t.inPoint - t.cuts.filter((c) => c.on).reduce((n, c) => n + (c.end - c.start), 0) : 0;
               return (
-                <li key={l.segmentId} className="border border-solid border-line rounded-lg bg-surface p-[9px_12px]">
+                <li key={l.segmentId} className="p-[10px_14px] [border-top:1px_solid_var(--line)] first:[border-top:0]">
                   <div className="grid grid-cols-[22px_minmax(0,1fr)_auto] gap-[10px] items-start">
                     <code className="text-[11px] text-faint pt-[2px]">{String(l.n).padStart(2, '0')}</code>
                     <button type="button" className="ghostbtn text-left text-[13px] leading-[1.45] p-0 text-ink" onClick={() => setOpen(open === l.segmentId ? null : l.segmentId)}>{l.text}</button>

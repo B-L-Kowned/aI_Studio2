@@ -53,7 +53,7 @@ export default function ShotList() {
       )}
 
       {v.rows.map((r) => (
-        <section key={r.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-[16px] border border-solid border-line rounded-lg bg-surface p-[12px_14px] mb-[10px] lte800:grid-cols-[1fr]">
+        <section key={r.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-[16px] p-[14px_0] [border-top:1px_solid_var(--line)] first-of-type:[border-top:0] lte800:grid-cols-[1fr]">
           <div className="min-w-0">
             <div className="flex items-baseline gap-[8px] mb-[6px]">
               <code className="text-[11px] text-faint">{String(r.ref).padStart(2, '0')}</code>

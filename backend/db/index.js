@@ -99,6 +99,11 @@ const ADDED_COLUMNS = [
   // A take synthesised on this machine keeps its file here (relative to the
   // voices folder); a HeyGen take has only its remote audio_url.
   ['takes', 'local_path', 'TEXT'],
+  // A take made by fixing another (a respelled name, a reworded sentence, a
+  // new reading): which take it was fixed from, and what was done — so the
+  // fix can be undone, and the line says what changed.
+  ['takes', 'origin_take_id', 'INTEGER'],
+  ['takes', 'fix_note', 'TEXT'],
   // Which avatar GROUP a look belongs to, so a picker offers one person's
   // looks (20 of Pat) and not every face the account owns. A photo avatar is
   // sent to HeyGen as a talking photo, not an avatar, so the type is kept too.

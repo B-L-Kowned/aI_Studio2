@@ -227,7 +227,9 @@ async function retime(file, speed) {
   await run('mv', [tmp, file]);
 }
 
-export async function speakLocal(voiceAssetId, text, out, { speed } = {}) {
+// `seed` asks for a different reading of the same words; `exaggeration`
+// overrides the voice's own delivery for one line (calmer / more energy).
+export async function speakLocal(voiceAssetId, text, out, { speed, seed, exaggeration } = {}) {
   const row = getDb().prepare("SELECT * FROM provider_assets WHERE id = ? AND provider = ?").get(voiceAssetId, LOCAL);
   if (!row) throw Object.assign(new Error('No such local voice.'), { code: 'NOT_FOUND' });
   const line = String(text ?? '').trim();
@@ -244,7 +246,9 @@ export async function speakLocal(voiceAssetId, text, out, { speed } = {}) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         text: applyPronunciations(line), reference: inside(s.reference), out: target,
-        exaggeration: s.exaggeration, cfg_weight: s.cfgWeight,
+        exaggeration: exaggeration === undefined ? s.exaggeration : clamp(exaggeration, 0.25, 1.5, s.exaggeration),
+        cfg_weight: s.cfgWeight,
+        ...(seed === undefined ? {} : { seed: Math.floor(Number(seed)) || 0 }),
       }),
       // A long line on a busy service queues behind the one before it.
       signal: AbortSignal.timeout(10 * 60 * 1000),

@@ -6,6 +6,7 @@ import LoadState from '../components/LoadState.jsx';
 import PaidConfirm from '../components/PaidConfirm.jsx';
 import { toSeconds, toClock } from '../utils/format.js';
 import PresenterPick from '../components/PresenterPick.jsx';
+import LineVoice from '../components/LineVoice.jsx';
 
 /**
  * The segment is the unit of script, take, presenter, shot, quality and render.
@@ -30,7 +31,7 @@ const clock = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStar
  * "Listen through" plays every take in order; once you have heard them all,
  * they can be approved together. Nothing is approved unheard.
  */
-function LocalVoice({ data, optional, castable, run, production }) {
+function LocalVoice({ data, optional, castable, run, production, busy, reload }) {
   const { segments, speakers } = data;
   const audio = useRef(null);
   const [playing, setPlaying] = useState(null);     // segment id now playing
@@ -72,88 +73,89 @@ function LocalVoice({ data, optional, castable, run, production }) {
 
   return (
     <div className="stagepane">
-      <div className="sectiontitle">
-        <div>
-          <h2>Voice</h2>
-          <p>{optional
-            ? 'Optional when you record it yourself — your AI read of each line is the pace guide in the teleprompter.'
-            : 'Your voice for each line, made on this Mac for free. Listen, then approve — nothing goes into a video unheard.'}</p>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-[10px] p-[10px_12px] rounded-lg bg-surface-2 text-[13px]">
-        <b className={approved.length === segments.length ? 'text-ok' : 'text-ink'}>
-          {approved.length === segments.length ? <><Check size={14} className="inline -mt-[2px]" /> All {segments.length} lines approved</> : `${approved.length} of ${segments.length} lines approved`}
-        </b>
-        {seconds > 0 && <span className="text-muted">· {clock(seconds)} spoken</span>}
-        <span className="text-muted">· Voice: {voiceName}</span>
-        <button className="ghostbtn text-[12.5px] text-accent p-0" onClick={() => setChanging((c) => !c)}>{changing ? 'done' : 'change'}</button>
-        <span className="ml-auto flex gap-[8px]">
-          {missing.length > 0 && (
-            <button className={made.length ? '' : 'primary'} onClick={() => run('all', () => api.auditionAll(production.id))}>
-              <Volume2 size={14} /> Make {missing.length === segments.length ? 'all' : 'the missing'} {missing.length} line{missing.length === 1 ? '' : 's'}
-            </button>
-          )}
-          {made.length > 0 && (through == null
-            ? <button className={unapproved.length && !heardAll ? 'primary' : ''} onClick={() => { setHeardAll(false); listenThrough(0); }}><Headphones size={14} /> Listen through</button>
-            : <button onClick={stop}><Square size={13} /> Stop</button>)}
-          {unapproved.length > 0 && heardAll && (
-            <button className="primary" onClick={approveAll}><Check size={14} /> Approve all {unapproved.length}</button>
-          )}
-        </span>
-      </div>
-      {changing && speakers.map((sp) => (
-        <div key={sp.speaker} className="flex items-center gap-[8px] mt-[8px] text-[12.5px]">
-          <span className="text-muted">Lines spoken by {sp.speaker} use</span>
-          <PresenterPick items={castable} value={sp.mixed ? null : (sp.presenter?.id ?? null)} placeholder="not cast" clearLabel="Not cast"
-            onChange={(id) => run(`sp${sp.speaker}`, () => api.updateSegment(production.id, sp.firstSegmentId, { presenterId: id, applyToSpeaker: true }), { tracksSave: true })} />
-        </div>
-      ))}
-
-      <ol className="list-none p-0 m-[14px_0_0] flex flex-col gap-[6px]">
-        {segments.map((s, i) => {
-          const isMade = s.take?.audioUrl && !s.needsAudition;
-          const now = playing === s.id;
-          return (
-            <li key={s.id} id={`line-${s.id}`}
-              className={'grid grid-cols-[28px_minmax(0,1fr)_auto] gap-[12px] items-start p-[10px_12px] rounded-lg border border-solid '
-                + (now ? 'border-accent bg-accent-soft' : s.heard ? 'border-line bg-surface' : 'border-line bg-surface')}>
-              <button type="button" aria-label={now ? 'Stop' : `Play line ${i + 1}`} disabled={!isMade}
-                onClick={() => (now ? stop() : play(s))}
-                className={'w-[28px] h-[28px] p-0 grid place-items-center rounded-full ' + (isMade ? (now ? 'bg-accent text-[#fff] border-accent' : '') : 'opacity-40')}>
-                {now ? <Square size={11} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+      <section className="bg-surface border border-solid border-line rounded-lg" aria-label="Voice">
+        <header className="flex flex-wrap items-center gap-x-[18px] gap-y-[10px] p-[14px_18px] [border-bottom:1px_solid_var(--line)]">
+          <div className="min-w-0 flex-1">
+            <h2 className="m-0 text-[15px]">Voice</h2>
+            <p className="m-[2px_0_0] text-[12px] text-muted">
+              {optional
+                ? 'Optional when you record it yourself — this read is the pace guide in the teleprompter.'
+                : 'Made on this Mac, free. Play a line and click any word that sounds wrong to fix just that sentence.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-[8px]">
+            <span className={'text-[12.5px] ' + (approved.length === segments.length ? 'text-ok' : 'text-ink-2')}>
+              {approved.length === segments.length
+                ? <><Check size={13} className="inline -mt-[2px]" /> All {segments.length} approved</>
+                : <><b className="font-[600]">{approved.length}</b> of {segments.length} approved</>}
+              {seconds > 0 && <span className="text-muted"> · {clock(seconds)}</span>}
+            </span>
+            {missing.length > 0 && (
+              <button className={made.length ? '' : 'primary'} onClick={() => run('all', () => api.auditionAll(production.id))}>
+                <Volume2 size={14} /> Make {missing.length === segments.length ? 'all' : 'the missing'} {missing.length}
               </button>
-              <div className="min-w-0">
+            )}
+            {made.length > 0 && (through == null
+              ? <button className={unapproved.length && !heardAll ? 'primary' : ''} onClick={() => { setHeardAll(false); listenThrough(0); }}><Headphones size={14} /> Listen through</button>
+              : <button onClick={stop}><Square size={13} /> Stop</button>)}
+            {unapproved.length > 0 && heardAll && (
+              <button className="primary" onClick={approveAll}><Check size={14} /> Approve all {unapproved.length}</button>
+            )}
+          </div>
+        </header>
+
+        <div className="flex flex-wrap items-center gap-[8px] p-[8px_18px] text-[12px] text-muted bg-surface-2 [border-bottom:1px_solid_var(--line)]">
+          <span>Voice <b className="font-[560] text-ink-2">{voiceName}</b></span>
+          <button className="ghostbtn text-[12px] text-accent p-0" onClick={() => setChanging((c) => !c)}>{changing ? 'done' : 'change'}</button>
+          {changing && speakers.map((sp) => (
+            <span key={sp.speaker} className="flex items-center gap-[8px] ml-[8px]">
+              <span>{sp.speaker} uses</span>
+              <PresenterPick items={castable} value={sp.mixed ? null : (sp.presenter?.id ?? null)} placeholder="not cast" clearLabel="Not cast"
+                onChange={(id) => run(`sp${sp.speaker}`, () => api.updateSegment(production.id, sp.firstSegmentId, { presenterId: id, applyToSpeaker: true }), { tracksSave: true })} />
+            </span>
+          ))}
+        </div>
+
+        <ol className="list-none m-0 p-[2px_18px_6px]">
+          {segments.map((s, i) => {
+            const isMade = s.take?.audioUrl && !s.needsAudition;
+            const now = through != null && made[through]?.id === s.id;
+            return (
+              <li key={s.id} id={`line-${s.id}`}
+                className={'relative [border-bottom:1px_solid_var(--line)] last:[border-bottom:0] '
+                  + (now ? 'before:content-[""] before:absolute before:left-[-18px] before:top-[8px] before:bottom-[8px] before:w-[3px] before:rounded-r before:bg-accent' : '')}>
                 {editing === s.id ? (
-                  <>
+                  <div className="p-[10px_0]">
                     <textarea className="w-full min-h-[64px] text-[14px] leading-[1.55]" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus />
                     <div className="flex gap-[6px] mt-[6px]">
-                      <button className="primary text-[12px] p-[4px_10px]" onClick={() => { setEditing(null); run(`t${s.id}`, () => api.updateSegment(production.id, s.id, { text: draft }), { tracksSave: true }); }}>Save — remake this line</button>
+                      <button className="primary text-[12px] p-[4px_10px]" onClick={() => { setEditing(null); run(`t${s.id}`, () => api.updateSegment(production.id, s.id, { text: draft }), { tracksSave: true }); }}>Save</button>
                       <button className="text-[12px] p-[4px_10px]" onClick={() => setEditing(null)}>Cancel</button>
                     </div>
-                  </>
+                  </div>
                 ) : (
-                  <p className="m-0 text-[14px] leading-[1.55] text-ink">{s.text}</p>
+                  <LineVoice text={s.text} dim={!isMade}
+                    audio={isMade ? { url: s.take.audioUrl, takeId: s.take.local ? s.take.id : null, duration: s.take.duration } : null}
+                    segmentId={isMade && s.take.local ? s.id : null} take={s.take}
+                    making={busy === `a${s.id}`}
+                    onChange={() => reload()}
+                    aside={<>
+                      {s.take?.duration ? <span>{clock(s.take.duration)}</span> : null}
+                      {s.heard
+                        ? <span className="text-ok inline-flex items-center gap-[3px] text-[12px]"><Check size={13} /> Approved</span>
+                        : isMade
+                          ? <button className="primary text-[12px] p-[4px_10px]" onClick={() => run(`h${s.id}`, () => api.markHeard(production.id, s.id, s.take.id, true))}><Check size={12} /> Approve</button>
+                          : <span className="text-faint text-[12px]">{s.take ? 'Words changed — remake' : 'Not made'}</span>}
+                      <button className="ghostbtn p-[4px] text-faint hover:text-ink" title={isMade ? 'A whole new reading of this line' : 'Make this line'}
+                        aria-label={`Make line ${i + 1} again`}
+                        onClick={() => run(`a${s.id}`, () => api.auditionSegment(production.id, s.id, {}))}><RotateCcw size={13} /></button>
+                      {!isMade && <button className="ghostbtn p-[4px] text-faint hover:text-ink" title="Edit the words" onClick={() => { setEditing(s.id); setDraft(s.text); }}><Pencil size={13} /></button>}
+                    </>} />
                 )}
-                {s.take && (!s.textMatchesTake || s.take.stale) && (
-                  <small className="flex items-center gap-[4px] mt-[4px] text-warn text-[12px]"><AlertCircle size={12} /> The words changed since this take — remake it.</small>
-                )}
-              </div>
-              <div className="flex items-center gap-[6px] whitespace-nowrap">
-                {s.take?.duration ? <span className="text-faint text-[11.5px] [font-variant-numeric:tabular-nums]">{clock(s.take.duration)}</span> : null}
-                {s.heard
-                  ? <span className="text-ok text-[12px] inline-flex items-center gap-[3px]"><Check size={13} /> Approved</span>
-                  : isMade
-                    ? <button className="primary text-[12px] p-[4px_10px]" onClick={() => run(`h${s.id}`, () => api.markHeard(production.id, s.id, s.take.id, true))}><Check size={12} /> Approve</button>
-                    : <span className="text-faint text-[12px]">Not made</span>}
-                <button className="ghostbtn p-[4px] text-faint hover:text-ink" title={isMade ? 'Make this line again' : 'Make this line'}
-                  onClick={() => run(`a${s.id}`, () => api.auditionSegment(production.id, s.id, {}))}><RotateCcw size={13} /></button>
-                <button className="ghostbtn p-[4px] text-faint hover:text-ink" title="Edit the words" onClick={() => { setEditing(s.id); setDraft(s.text); }}><Pencil size={13} /></button>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
     </div>
   );
 }
@@ -229,7 +231,7 @@ export default function SegmentsStage({ optional = false }) {
   const auditionLine = (segId) => runPaid(`a${segId}`, () =>
     api.auditionSegment(production.id, segId, { confirmPaid: spends }));
   const renderLine = (segId) => runPaid(`r${segId}`, () => api.renderSegment(production.id, segId, true));
-  if (local) return <LocalVoice data={data} optional={optional} castable={castable} run={run} production={production} />;
+  if (local) return <LocalVoice data={data} optional={optional} castable={castable} run={run} production={production} busy={busy} reload={() => load().catch(() => {})} />;
 
   return (
     <div className="stagepane">

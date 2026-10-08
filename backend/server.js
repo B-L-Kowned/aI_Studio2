@@ -32,6 +32,7 @@ import review from './routes/review.js';
 import voiceBatch from './routes/voice-batch.js';
 import music from './routes/music.js';
 import managerRoutes from './routes/manager.js';
+import lineFixRoutes from './routes/line-fix.js';
 import { resume as resumeVoiceBatch } from './lib/voice-batch.js';
 import { modeSummary } from './lib/providers/mode.js';
 import { ok, fail } from './utils/respond.js';
@@ -85,6 +86,7 @@ app.use('/api', review);
 app.use('/api', voiceBatch);
 app.use('/api', music);
 app.use('/api', managerRoutes);
+app.use('/api', lineFixRoutes);
 app.use('/api', appearance);
 
 // ------------------------------------------------------- the app itself ---

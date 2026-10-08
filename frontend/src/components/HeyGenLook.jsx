@@ -103,13 +103,13 @@ export default function HeyGenLook() {
         </div>
       </div>
 
-      <div className={'notice ' + (approved ? '' : 'warn')}>
-        {approved ? <Check /> : <AlertCircle />}
-        <span>
-          <b>{performer.name.replace(/ \(your likeness\)/, '')} — PJB</b> · voice: your local voice ·{' '}
-          {approved ? `approved look: ${approved.look?.name ?? approved.outfit}` : showPicker ? 'no approved look yet — choose one below and approve it' : 'no approved look yet — approve the one below'}
-        </span>
-      </div>
+      {/* The folded card says it all once a look is approved or ready. */}
+      {showPicker && (
+        <div className={'notice ' + (approved ? '' : 'warn')}>
+          {approved ? <Check /> : <AlertCircle />}
+          <span>{approved ? `Approved look: ${approved.look?.name ?? approved.outfit} — choose another below to replace it` : 'No approved look yet — choose one below and approve it'}</span>
+        </div>
+      )}
 
       {!showPicker && (() => {
         const look = approved ? (performer.looks.find((l) => l.id === approved.look?.id) ?? approved.look) : chosen;
@@ -222,9 +222,6 @@ export default function HeyGenLook() {
         </>
       )}
 
-      <p className="text-faint text-[11.5px] mt-[16px]">
-        People and consent for the whole workspace are managed in Cast → Collaborators.
-      </p>
     </>
   );
 }

@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { Sparkles, Check, X, Lock, AlertCircle, FileText, Play, Minus, Plus, ChevronDown, Headphones, RefreshCw } from 'lucide-react';
+import { Sparkles, Check, X, Lock, AlertCircle, FileText, Play, Pause, Minus, Plus, ChevronDown, Headphones, RefreshCw, MousePointerClick } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import MadeByChooser from '../components/MadeByChooser.jsx';
 import PlanStage from './PlanStage.jsx';
+import LineVoice from '../components/LineVoice.jsx';
 import { madeByOf } from '../utils/made-by.js';
 
 const GENERATOR_LABELS = {
@@ -31,14 +32,6 @@ const words = (t) => String(t).replace(CONFIRM_RE, ' ').split(/\s+/).filter(Bool
 const clock = (s) => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.round(Math.max(0, s) % 60)).padStart(2, '0')}`;
 const signed = (s) => `${s >= 0 ? '+' : '−'}${clock(Math.abs(s))}`;
 
-/** Text with each [CONFIRM: …] marked, for reading (accepted scripts). */
-function Marked({ text }) {
-  const parts = String(text).split(/(\[CONFIRM:[^\]]*\])/g);
-  return parts.map((p, i) => (/^\[CONFIRM:/.test(p)
-    ? <mark key={i} className="bg-warn-soft text-warn rounded-[3px] px-[3px]">{p}</mark>
-    : <React.Fragment key={i}>{p}</React.Fragment>));
-}
-
 export default function ScriptStage({ goToStage }) {
   const { production, mutate } = useStudio();
   const [state, setState] = useState(null);
@@ -50,7 +43,10 @@ export default function ScriptStage({ goToStage }) {
   const [showVersions, setShowVersions] = useState(false);
   const [fullRead, setFullRead] = useState(null);     // the whole script in one track
   const [details, setDetails] = useState(false);      // Plan details drawer
+  const [segs, setSegs] = useState([]);               // production lines (an approved script's takes)
+  const [hint, setHint] = useState(() => { try { return !localStorage.getItem('hint-fix-word'); } catch { return false; } });
   const lineRefs = useRef({});
+  const draftPlayer = useRef(null);
 
   const load = useCallback(async () => {
     const [script, flow, t] = await Promise.all([
@@ -61,6 +57,16 @@ export default function ScriptStage({ goToStage }) {
   useEffect(() => { load().catch(setLoadError); }, [load]);
 
   const latest = state?.latest;
+
+  // An approved script's lines have their own takes: those are what plays, and
+  // what a clicked word fixes. A draft only has the Hear cache.
+  const accepted = latest?.status === 'accepted';
+  useEffect(() => {
+    if (!accepted) { setSegs([]); return undefined; }
+    let live = true;
+    api.segments(production.id).then((r) => live && setSegs(r.segments ?? [])).catch(() => {});
+    return () => { live = false; };
+  }, [production.id, accepted, latest?.id]);
 
   // Make the lines ahead of time in the background, so Hear plays at once.
   // Re-run when the words change, since a changed line is a new read.
@@ -147,13 +153,31 @@ export default function ScriptStage({ goToStage }) {
   };
   const saveLine = (s, patch) =>
     mutate(() => api.updateScriptSegment(production.id, latest.id, s.id, patch), apply).catch(() => {});
-  const listen = async (l) => {
+  // Hear a line: its take if it has one, else the cache (made now if need be).
+  const hearLine = async (l) => {
+    const r = await mutate(() => api.listenLine(production.id, latest.id, l.id), null, { silent: true });
+    const url = r.data.url;
+    return {
+      url, duration: r.data.duration,
+      takeId: Number(/\/takes\/(\d+)\/audio/.exec(url)?.[1]) || null,
+      cacheKey: /[?&]k=([0-9a-f]{16})/.exec(url)?.[1] ?? null, lineId: l.id,
+    };
+  };
+  // A draft line is a text box; its Hear plays in place, with no player bar.
+  const playDraft = async (l) => {
+    const a = draftPlayer.current ?? (draftPlayer.current = new Audio());
+    if (listening?.id === l.id && listening.url && !a.paused) { a.pause(); return; }
     setListening({ id: l.id, busy: true });
     try {
-      const r = await mutate(() => api.listenLine(production.id, latest.id, l.id), null, { silent: true });
-      setListening({ id: l.id, url: r.data.url });
+      const { url } = await hearLine(l);
+      a.src = url;
+      a.onended = () => setListening(null);
+      a.onpause = () => setListening((x) => (x?.id === l.id ? null : x));
+      setListening({ id: l.id, url });
+      await a.play();
     } catch { setListening(null); }
   };
+  const dismissHint = () => { setHint(false); try { localStorage.setItem('hint-fix-word', '1'); } catch { /* storage blocked */ } };
   const hearAll = async () => {
     try {
       const r = await mutate(() => api.listenAll(production.id, latest.id), null, { silent: true });
@@ -182,39 +206,34 @@ export default function ScriptStage({ goToStage }) {
 
   return (
     <div className="stagepane">
-      {/* The few facts that matter while reading, then how it is made. */}
-      <div className="flex flex-wrap items-baseline gap-x-[14px] gap-y-[4px] text-[12.5px] text-muted mb-[12px]">
-        {brief['Register ID'] && <code className="text-[11.5px] font-semibold text-ink-2">{brief['Register ID']}</code>}
-        {brief.Priority && <span className={brief.Priority === 'P1' ? 'text-danger font-semibold' : ''}>{brief.Priority}</span>}
-        {brief.Format && <span>{brief.Format}</span>}
-        {brief.Audience && <span className="truncate max-w-[420px]" title={brief.Audience}>For: {brief.Audience}</span>}
-        <button className="ghostbtn text-[12.5px] text-accent p-0 ml-auto" onClick={() => setDetails((d) => !d)} aria-expanded={details}>
-          <ChevronDown size={13} className={details ? 'rotate-180' : ''} /> Plan details
+      {/* One quiet line of facts: what it is, who it is for, how it is made. */}
+      <div className="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] text-[12.5px] text-muted mb-[14px]">
+        {[
+          brief.Priority && <span key="p" className={brief.Priority === 'P1' ? 'text-danger font-semibold' : 'font-[560] text-ink-2'}>{brief.Priority}</span>,
+          brief.Format && <span key="f">{brief.Format}</span>,
+          brief.Audience && <span key="a" className="truncate max-w-[340px]" title={`For: ${brief.Audience}`}>For {brief.Audience.charAt(0).toLowerCase()}{brief.Audience.slice(1)}</span>,
+          <MadeByChooser key="m" inline />,
+        ].filter(Boolean).flatMap((x, i) => (i ? [<span key={`s${i}`} className="text-line-2" aria-hidden="true">·</span>, x] : [x]))}
+        <button className="ghostbtn text-[12.5px] text-muted hover:text-ink p-[1px_4px] ml-auto" onClick={() => setDetails((d) => !d)} aria-expanded={details}>
+          Plan details <ChevronDown size={12} className={details ? 'rotate-180' : ''} />
         </button>
       </div>
       {brief['Verify first'] && (
         <div className="notice warn items-start"><AlertCircle /> <span><b>Verify before recording.</b> {brief['Verify first']}</span></div>
       )}
       {details && <div className="mb-[16px]"><PlanStage goToStage={goToStage} /></div>}
-      <MadeByChooser />
 
-      <div className="sectiontitle mt-[18px]">
-        <div>
-          <h2>Script</h2>
-          <p>
-            {imported ? 'Imported from your script pack' : 'Written from the plan'}
-            {/^https?:\/\//.test(brief['Script source'] ?? '') && <> · <a className="text-accent underline" href={brief['Script source']} target="_blank" rel="noreferrer">source</a></>}
-            {' · '}<span className={latest?.status === 'accepted' ? 'text-ok' : 'text-warn'}>
-              {!latest ? 'no script yet' : latest.status === 'accepted' ? 'approved' : 'draft — approve when it reads right'}
-            </span>
-          </p>
-        </div>
-        {!latest && (
+      {!latest && (
+        <div className="sectiontitle mt-[18px]">
+          <div>
+            <h2>Script</h2>
+            <p>No script yet</p>
+          </div>
           <button className="primary" disabled={!ready} onClick={() => mutate(() => api.generateScript(production.id), apply)}>
             <Sparkles size={15} /> Generate script
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {!ready && !latest && (
         <div className="notice warn">
@@ -242,183 +261,191 @@ export default function ScriptStage({ goToStage }) {
       )}
 
       {latest && (
-        <>
-          {/* ---- timing: what this will run, at the voice it will be read in */}
-          <section className="border border-solid border-line rounded-lg bg-surface p-[14px_16px] mt-[12px]" aria-label="Timing">
-            <div className="flex flex-wrap items-baseline gap-x-[18px] gap-y-[6px]">
+        <section className="mt-[14px] bg-surface border border-solid border-line rounded-lg" aria-label="Script">
+          {/* ---- the document's head: one row — what it is, how long it runs, hear it */}
+          <header className="p-[16px_22px] [border-bottom:1px_solid_var(--line)]">
+            <div className="flex flex-wrap items-center gap-x-[28px] gap-y-[12px]">
+              <div className="min-w-0 mr-auto">
+                <h2 className="m-0 text-[16px] tracking-[-0.01em]">Script</h2>
+                <p className="m-[3px_0_0] text-[12px] text-muted flex flex-wrap items-center gap-x-[6px]">
+                  <span className={accepted ? 'text-ok' : 'text-warn'}>{accepted ? `Approved v${latest.version}` : 'Draft'}</span>
+                  <span className="text-faint">·</span>
+                  {/^https?:\/\//.test(brief['Script source'] ?? '')
+                    ? <a className="text-muted hover:text-ink underline decoration-dotted underline-offset-2" href={brief['Script source']} target="_blank" rel="noreferrer">{imported ? 'script pack' : 'source'}</a>
+                    : <span>{imported ? 'script pack' : 'from the plan'}</span>}
+                  {!published && timing.pace === 'own' && <>
+                    <span className="text-faint">·</span>
+                    <span title={timing.measured ? `Measured from ${timing.takes} of your takes` : 'A typical pace until you record a few lines'}>{timing.wpm} wpm{timing.measured ? '' : ' typical'}</span>
+                  </>}
+                </p>
+              </div>
+
               {published ? (
-                <div>
-                  <span className="text-[26px] font-[620] [font-variant-numeric:tabular-nums] text-ink">
-                    {fileSeconds ? clock(fileSeconds) : recordedLength ?? '—'}
-                  </span>
-                  <span className="text-muted text-[13px]">
-                    {recordedLength || fileSeconds ? ' as published' : ' — the finished video has no length on record'}
-                  </span>
-                  {target > 0 && <span className="text-faint text-[12px] ml-[8px]">planned {clock(target)}</span>}
+                <div className="text-right">
+                  <div className="text-[22px] font-[600] leading-none text-ink [font-variant-numeric:tabular-nums]">{fileSeconds ? clock(fileSeconds) : recordedLength ?? '—'}</div>
+                  <div className="text-[11.5px] text-muted mt-[5px]">{recordedLength || fileSeconds ? 'as published' : 'no length on record'}</div>
                 </div>
               ) : (
-              <div>
-                <span className={`text-[26px] font-[620] [font-variant-numeric:tabular-nums] ${tone}`}>{clock(total)}</span>
-                <span className="text-muted text-[13px]"> of {clock(target)} target</span>
-                {target > 0 && <span className={`ml-[8px] text-[12px] font-semibold ${tone}`}>{within ? 'fits' : signed(delta)}</span>}
-              </div>
+                <div className="w-[230px]" title={`${totalWords} words · ${lines.length} lines`}>
+                  <div className="flex items-baseline gap-[8px] [font-variant-numeric:tabular-nums]">
+                    <span className={`text-[22px] font-[600] leading-none ${tone}`}>{clock(total)}</span>
+                    <span className="text-[12px] text-muted">of {clock(target)}</span>
+                    {target > 0 && <span className={`ml-auto text-[11.5px] font-semibold ${tone}`}>{within ? 'On length' : signed(delta)}</span>}
+                  </div>
+                  <div className="relative h-[3px] rounded-full bg-canvas mt-[8px]" aria-hidden="true">
+                    <div className={`h-full rounded-full ${within ? 'bg-ok' : 'bg-warn'}`} style={{ width: `${barPct}%` }} />
+                    {target > 0 && <div className="absolute top-[-3px] w-[2px] h-[9px] bg-ink rounded-full" style={{ left: `calc(${targetPct}% - 1px)` }} />}
+                  </div>
+                </div>
               )}
-              <span className="text-muted text-[12px]">
-                {totalWords} words · {lines.length} lines
-                {openChecks > 0 && <> · <button className="ghostbtn p-0 text-warn text-[12px] underline" onClick={nextCheck}>{openChecks} check{openChecks === 1 ? '' : 's'} open — next</button></>}
-              </span>
-            </div>
 
-            {!published && <>
-            <div className="relative h-[6px] rounded-full bg-canvas mt-[10px] overflow-visible" aria-hidden="true">
-              <div className={`h-full rounded-full ${within ? 'bg-ok' : 'bg-warn'}`} style={{ width: `${barPct}%` }} />
-              {target > 0 && <div className="absolute top-[-4px] w-[2px] h-[14px] bg-ink" style={{ left: `calc(${targetPct}% - 1px)` }} title={`Target ${clock(target)}`} />}
-            </div>
-
-            {timing.pace === 'own' ? (
-              <p className="m-[12px_0_0] text-[12.5px] text-ink-2">
-                Your pace: <b className="font-[560]">{timing.wpm} words a minute</b>
-                <span className="text-muted">{timing.measured ? ` — measured from ${timing.takes} of your takes` : ' — a typical pace until you record a few lines'}</span>
-              </p>
-            ) : (
-            <div className="flex flex-wrap items-center gap-[10px] mt-[12px] text-[12.5px]">
-              <span className="text-ink-2">
-                Voice: <b className="font-[560]">{timing.voice?.name ?? 'planning pace'}</b>
-                {' · '}natural {timing.naturalWpm} wpm{timing.measured ? ' (measured)' : ' (estimate)'}
-              </span>
-              <span className="flex items-center gap-[4px] ml-auto">
-                Speed
-                <button className="ghostbtn p-[4px]" aria-label="Slower" onClick={() => setSpeed(timing.speed - 0.05)}><Minus size={13} /></button>
-                <input type="range" min={timing.speedRange[0]} max={timing.speedRange[1]} step="0.01" value={timing.speed}
-                  aria-label="Narration speed" className="w-[120px]"
-                  onChange={(e) => setTiming((t) => ({ ...t, speed: Number(e.target.value), wpm: Math.round(t.naturalWpm * Number(e.target.value)) }))}
-                  onMouseUp={(e) => setSpeed(Number(e.target.value))} onKeyUp={(e) => setSpeed(Number(e.target.value))} />
-                <button className="ghostbtn p-[4px]" aria-label="Faster" onClick={() => setSpeed(timing.speed + 0.05)}><Plus size={13} /></button>
-                <code className="text-[12px] w-[44px] text-right">{timing.speed.toFixed(2)}×</code>
-                <span className="text-muted">{timing.wpm} wpm</span>
-              </span>
-            </div>
-            )}
-            </>}
-
-            <div className="flex flex-wrap items-center gap-[10px] mt-[12px] pt-[12px] [border-top:1px_solid_var(--line)] text-[12.5px]">
               {fullRead?.state === 'running' ? (
-                <span className="text-ink-2">
-                  <Headphones size={13} className="inline mr-[4px] align-[-2px]" />
-                  Preparing the full read — line {Math.min(fullRead.done + 1, fullRead.total)} of {fullRead.total}…
-                  <span className="text-muted"> (your voice is made on this Mac at about 2× real time)</span>
+                <span className="text-[12px] text-ink-2 flex items-center gap-[6px]">
+                  <RefreshCw size={12} className="animate-spin" /> Full read — line {Math.min(fullRead.done + 1, fullRead.total)} of {fullRead.total}
                 </span>
               ) : (
-                <button className="text-[12.5px] p-[5px_11px]" onClick={hearAll} disabled={!lines.length}
+                <button className="text-[12.5px] p-[7px_13px]" onClick={hearAll} disabled={!lines.length}
                   title="Every line in order, in your voice at this speed — free">
-                  <Headphones size={13} /> {fullRead?.state === 'done' ? 'Rebuild the full read' : 'Hear the whole script'}
+                  <Headphones size={13} /> {fullRead?.state === 'done' ? 'Rebuild full read' : 'Hear it all'}
                 </button>
               )}
-              {fullRead?.state === 'done' && fullRead.duration != null && (
-                <span className="text-ink-2">
-                  Runs <b className="font-[560] [font-variant-numeric:tabular-nums]">{clock(fullRead.duration)}</b> spoken
-                  {target > 0 && <span className="text-muted"> · target {clock(target)}</span>}
-                  {fullRead.skipped > 0 && <span className="text-warn"> · {fullRead.skipped} line{fullRead.skipped === 1 ? '' : 's'} with open checks left out</span>}
-                </span>
-              )}
-              {fullRead?.state === 'failed' && <span className="text-danger">{fullRead.error}</span>}
             </div>
-            {fullRead?.state === 'done' && fullRead.url && (
-              <audio key={fullRead.url} className="w-full h-[34px] mt-[8px]" src={fullRead.url} controls />
-            )}
 
-            {target > 0 && !within && !published && timing.pace === 'own' && (
-              <p className="m-[10px_0_0] text-[12.5px] text-ink-2">
-                At your pace this runs {clock(total)} — about <b>{Math.abs(Math.round(delta / 60 * wpm))} words {delta > 0 ? 'over' : 'under'}</b> the {clock(target)} target.
-              </p>
-            )}
-            {target > 0 && !within && !published && timing.pace !== 'own' && (
-              <p className="m-[10px_0_0] text-[12.5px] text-ink-2">
-                {fitSpeed >= NATURAL_SPEED[0] && fitSpeed <= NATURAL_SPEED[1] ? (
-                  <>At {fitSpeed.toFixed(2)}× it lands on {clock(target)} and still sounds natural.{' '}
-                    <button className="text-[12px] p-[3px_9px]" onClick={() => setSpeed(fitSpeed)}>Use {fitSpeed.toFixed(2)}×</button></>
-                ) : delta < 0 ? (
-                  <>Too short for a natural pace: about <b>{Math.round((target - total) / 60 * wpm)} more words</b> are needed
-                    {' '}(slowing the voice past {NATURAL_SPEED[0]}× starts to sound dragged).</>
-                ) : (
-                  <>Too long for a natural pace: cut about <b>{Math.round((total - target) / 60 * wpm)} words</b>
-                    {' '}(speeding past {NATURAL_SPEED[1]}× starts to sound rushed).</>
+            {!published && (timing.pace === 'own' ? null : (
+              <div className="flex flex-wrap items-center gap-x-[14px] gap-y-[6px] mt-[10px] text-[12px] text-muted">
+                <span>Voice <b className="font-[560] text-ink-2">{timing.voice?.name ?? 'planning pace'}</b> · {timing.naturalWpm} wpm{timing.measured ? '' : ' (estimate)'}</span>
+                <span className="flex items-center gap-[4px]">
+                  Speed
+                  <button className="ghostbtn p-[3px]" aria-label="Slower" onClick={() => setSpeed(timing.speed - 0.05)}><Minus size={12} /></button>
+                  <input type="range" min={timing.speedRange[0]} max={timing.speedRange[1]} step="0.01" value={timing.speed}
+                    aria-label="Narration speed" className="w-[110px] accent-[var(--ink)]"
+                    onChange={(e) => setTiming((t) => ({ ...t, speed: Number(e.target.value), wpm: Math.round(t.naturalWpm * Number(e.target.value)) }))}
+                    onMouseUp={(e) => setSpeed(Number(e.target.value))} onKeyUp={(e) => setSpeed(Number(e.target.value))} />
+                  <button className="ghostbtn p-[3px]" aria-label="Faster" onClick={() => setSpeed(timing.speed + 0.05)}><Plus size={12} /></button>
+                  <code className="text-[11.5px] text-ink-2">{timing.speed.toFixed(2)}×</code>
+                </span>
+                {target > 0 && !within && (
+                  <span className="text-ink-2">
+                    {fitSpeed >= NATURAL_SPEED[0] && fitSpeed <= NATURAL_SPEED[1] ? (
+                      <>At {fitSpeed.toFixed(2)}× it lands on {clock(target)}. <button className="ghostbtn p-0 text-accent text-[12px]" onClick={() => setSpeed(fitSpeed)}>Use {fitSpeed.toFixed(2)}×</button></>
+                    ) : delta < 0 ? (
+                      <>Short by about <b className="font-[560]">{Math.round((target - total) / 60 * wpm)} words</b> at a natural pace.</>
+                    ) : (
+                      <>Long by about <b className="font-[560]">{Math.round((total - target) / 60 * wpm)} words</b> at a natural pace.</>
+                    )}
+                  </span>
                 )}
+              </div>
+            ))}
+
+            {fullRead?.state === 'done' && fullRead.url && (
+              <div className="flex items-center gap-[10px] mt-[10px]">
+                <audio key={fullRead.url} className="flex-1 h-[30px]" src={fullRead.url} controls />
+                <span className="text-[11.5px] text-muted whitespace-nowrap [font-variant-numeric:tabular-nums]">
+                  {fullRead.duration != null && <>runs {clock(fullRead.duration)}</>}
+                  {fullRead.skipped > 0 && <span className="text-warn"> · {fullRead.skipped} skipped (open checks)</span>}
+                </span>
+              </div>
+            )}
+            {fullRead?.state === 'failed' && <p className="m-[8px_0_0] text-[12px] text-danger">{fullRead.error}</p>}
+            {openChecks > 0 && (
+              <p className="m-[10px_0_0] text-[12px] text-warn">
+                {openChecks} check{openChecks === 1 ? '' : 's'} still open. <button className="ghostbtn p-0 text-warn text-[12px] underline" onClick={nextCheck}>Go to the next one</button>
               </p>
             )}
-          </section>
+            {accepted && hint && (
+              <p className="m-[12px_0_0] text-[12px] text-muted flex items-center gap-[6px]">
+                <MousePointerClick size={13} className="text-accent" />
+                Play a line, then click any word that sounds off to fix it.
+                <button className="ghostbtn p-[0_4px] text-[12px] text-faint hover:text-ink" onClick={dismissHint}>Got it</button>
+              </p>
+            )}
+          </header>
 
           {/* ---- the lines, by outline section */}
-          <div className="mt-[14px]">
+          <div className="p-[4px_22px_8px]">
             {grouped.map((g, gi) => {
               const written = secsAt(g.lines.reduce((n, l) => n + l.words, 0));
               const off = g.seconds && (written < g.seconds * 0.7 || written > g.seconds * 1.3);
               return (
-                <section key={gi} className="mb-[14px]">
-                  {g.title && (
-                    <header className="flex items-baseline gap-[10px] pb-[6px] mb-[6px] [border-bottom:1px_solid_var(--line)]">
-                      <b className="text-[11px] tracking-[.06em] uppercase text-ink-2">{g.title}</b>
-                      {/* Estimates mean nothing beside a finished video's real length. */}
-                      {!published && (
-                        <span className={`text-[11.5px] [font-variant-numeric:tabular-nums] ${off ? 'text-warn' : 'text-muted'}`}>
-                          {clock(written)} of {clock(g.seconds)}
-                        </span>
-                      )}
-                      {gi === 0 && !latest.segments.some((s) => s.sceneRef) && (
-                        <span className="text-faint text-[11px] ml-auto" title="Imported lines carry no section; they are placed by where they fall in the running time.">≈ placed by timing</span>
-                      )}
-                    </header>
-                  )}
-                  {g.lines.length === 0 && <p className="text-faint text-[12px] m-[4px_0_8px]">Nothing written for this section yet.</p>}
-                  {g.lines.map((l) => (
-                    <div key={l.id} className={'grid gap-[10px] p-[4px_0] items-start lte800:grid-cols-[1fr] ' + (oneSpeaker && !editable ? 'grid-cols-[1fr_92px]' : 'grid-cols-[84px_1fr_92px]')}>
-                      {oneSpeaker && !editable ? null : editable ? (
-                        <select className="text-[12px] p-[6px_6px]" value={SPEAKERS.some(([v]) => v === l.speaker) ? l.speaker : ''}
-                          aria-label="Speaker" onChange={(e) => e.target.value && saveLine(l, { speaker: e.target.value })}>
-                          {!SPEAKERS.some(([v]) => v === l.speaker) && <option value="">{l.speaker}</option>}
-                          {SPEAKERS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                        </select>
-                      ) : (
-                        <b className="text-[12px] text-muted text-right font-[560] pt-[2px] lte800:text-left">{l.speaker === 'Pat' ? 'PJB' : l.speaker}</b>
-                      )}
-                      <div className="min-w-0">
-                        {editable ? (
+                // The section sits in the margin beside its lines, as in a printed script.
+                <div key={gi} className={'grid grid-cols-[150px_minmax(0,1fr)] gap-x-[22px] p-[14px_0] lte800:grid-cols-[1fr] ' + (gi ? '[border-top:1px_solid_var(--line)]' : '')}>
+                  <div className="pt-[11px]">
+                    {g.title && <b className="block text-[10.5px] tracking-[.08em] uppercase text-ink-2 font-semibold leading-[1.4]">{g.title}</b>}
+                    {g.title && !published && (
+                      <span className={`block mt-[3px] text-[11.5px] [font-variant-numeric:tabular-nums] ${off ? 'text-warn' : 'text-faint'}`}
+                        title={`Written ${clock(written)}, planned ${clock(g.seconds)}`}>
+                        {clock(written)} of {clock(g.seconds)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                  {g.lines.length === 0 && <p className="text-faint text-[12.5px] m-[4px_0_6px] italic">Nothing written for this section yet.</p>}
+                  {g.lines.map((l) => {
+                    if (editable) return (
+                      <div key={l.id} className={'grid gap-[10px] p-[5px_0] items-start ' + (oneSpeaker ? 'grid-cols-[30px_minmax(0,1fr)_auto]' : 'grid-cols-[30px_84px_minmax(0,1fr)_auto]')}>
+                        <button type="button" onClick={() => playDraft(l)} disabled={l.checks > 0}
+                          title={l.checks ? 'Resolve the check first' : 'Hear it in your voice — free'}
+                          aria-label="Hear this line"
+                          className={'w-[28px] h-[28px] mt-[6px] p-0 rounded-full grid place-items-center border border-solid '
+                            + (listening?.id === l.id && listening.url ? 'bg-ink border-ink text-white' : 'bg-surface border-line text-ink hover:border-ink')}>
+                          {listening?.id === l.id && listening.busy ? <RefreshCw size={12} className="animate-spin" />
+                            : listening?.id === l.id ? <Pause size={12} /> : <Play size={12} className="ml-[1px]" />}
+                        </button>
+                        {!oneSpeaker && (
+                          <select className="text-[12px] p-[6px_6px] mt-[3px]" value={SPEAKERS.some(([v]) => v === l.speaker) ? l.speaker : ''}
+                            aria-label="Speaker" onChange={(e) => e.target.value && saveLine(l, { speaker: e.target.value })}>
+                            {!SPEAKERS.some(([v]) => v === l.speaker) && <option value="">{l.speaker}</option>}
+                            {SPEAKERS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                          </select>
+                        )}
+                        <div className="min-w-0">
                           <textarea ref={(el) => { lineRefs.current[l.id] = el; }}
-                            className={'w-full min-h-[54px] resize-y text-[13.5px] leading-[1.55]' + (l.checks ? ' border-warn-line' : '')}
+                            className={'w-full min-h-[52px] resize-y text-[14px] leading-[1.6] bg-surface-2 border-transparent hover:border-line focus:bg-surface' + (l.checks ? ' !border-warn-line' : '')}
                             defaultValue={l.text} aria-label="Script line" rows={2}
                             onChange={(e) => setDrafts((d) => ({ ...d, [l.id]: e.target.value }))}
                             onBlur={(e) => e.target.value !== latest.segments.find((x) => x.id === l.id)?.text && saveLine(l, { text: e.target.value })} />
-                        ) : (
-                          <p className="m-0 leading-[1.6] text-[13.5px] text-ink"><Marked text={l.text} /></p>
-                        )}
-                        {l.checks > 0 && (
-                          <div className="flex flex-wrap gap-[5px] mt-[4px]">
-                            {(l.text.match(CONFIRM_RE) ?? []).map((m, i) => (
-                              <span key={i} className="text-[11px] text-warn bg-warn-soft border border-solid border-warn-line rounded-[3px] p-[1px_6px]">
-                                Check: {m.slice(10, -1).trim()}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {listening?.id === l.id && listening.url && <audio className="w-full h-[30px] mt-[4px]" src={listening.url} controls autoPlay />}
+                          {l.checks > 0 && (
+                            <div className="flex flex-wrap gap-[5px] mt-[4px]">
+                              {(l.text.match(CONFIRM_RE) ?? []).map((m, i) => (
+                                <span key={i} className="text-[11px] text-warn bg-warn-soft border border-solid border-warn-line rounded-[3px] p-[1px_6px]">
+                                  Check: {m.slice(10, -1).trim()}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {listening?.id === l.id && listening.busy && (
+                            <p className="m-[3px_0_0] text-[11.5px] text-muted">Making it in your voice — about 30 seconds for a new line, instant after.</p>
+                          )}
+                        </div>
+                        <span className="pt-[9px] text-[11.5px] text-muted [font-variant-numeric:tabular-nums] whitespace-nowrap">{clock(secsAt(l.words))}</span>
                       </div>
-                      <div className="flex flex-col items-end gap-[3px] text-[11px] text-muted [font-variant-numeric:tabular-nums] lte800:flex-row lte800:justify-start">
-                        <span>{published ? `${l.words} words` : `${clock(secsAt(l.words))} · ${l.words}w`}</span>
-                        <button className="ghostbtn text-[11px] p-[2px_6px]" disabled={l.checks > 0 || listening?.busy}
-                          title={l.checks ? 'Resolve the check first' : 'Hear it in your voice — free'} onClick={() => listen(l)}>
-                          {listening?.id === l.id && listening.busy
-                            ? <span title="Your voice is made on this Mac — about 20-40 seconds for a new line; instant once made"><RefreshCw size={11} className="animate-spin inline" /> Making… ~30s</span>
-                            : <><Play size={11} /> Hear</>}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </section>
+                    );
+                    const i = latest.segments.findIndex((x) => x.id === l.id);
+                    const seg = segs[i];
+                    const own = seg?.take?.local && !seg.take.stale && seg.textMatchesTake ? seg : null;
+                    return (
+                      <LineVoice key={l.id} text={l.text}
+                        audio={own ? { url: own.take.audioUrl, takeId: own.take.id, duration: own.take.duration } : null}
+                        getAudio={own || l.checks ? null : () => hearLine(l)}
+                        segmentId={own?.id ?? null} take={own?.take}
+                        onChange={(line) => {
+                          setSegs((all) => all.map((x) => (x.id === line?.id ? line : x)));
+                          if (line && line.text !== l.text) load().catch(() => {});
+                        }}
+                        aside={<>
+                          {!oneSpeaker && <b className="font-[560] text-muted">{l.speaker === 'Pat' ? 'PJB' : l.speaker}</b>}
+                          <span>{published ? `${l.words} words` : clock(own?.take?.duration ?? secsAt(l.words))}</span>
+                        </>} />
+                    );
+                  })}
+                  </div>
+                </div>
               );
             })}
           </div>
 
-          <div className="flex flex-wrap items-center gap-[10px] mt-[6px]">
+          <footer className="flex flex-wrap items-center gap-[10px] p-[10px_22px] [border-top:1px_solid_var(--line)] bg-surface-2 rounded-b-lg">
             <button className="ghostbtn text-[12px] text-muted p-[3px_0]" onClick={() => setShowVersions((v) => !v)}>
               <ChevronDown size={13} className={showVersions ? 'rotate-180' : ''} /> {state.versions.length} version{state.versions.length === 1 ? '' : 's'}
             </button>
@@ -441,10 +468,10 @@ export default function ScriptStage({ goToStage }) {
                 <button className="primary" onClick={accept}><Check size={15} /> Approve script</button>
               </>
             ) : (
-              <span className="statusnote"><Check size={15} /> v{latest.version} {latest.status}</span>
+              <span className="statusnote text-[12.5px]"><Check size={14} /> Approved</span>
             )}
-          </div>
-        </>
+          </footer>
+        </section>
       )}
     </div>
   );

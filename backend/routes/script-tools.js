@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { getDb } from '../db/index.js';
 import { clearStale } from '../lib/stale.js';
 import { resolveSpeaker, presenterCasting } from '../lib/casting.js';
-import { listLocalVoices, speakLocal, localFile, voicesDir, SPEED_RANGE, LOCAL } from '../lib/local-voice.js';
+import { listLocalVoices, speakLocal, localFile, voicesDir, applyPronunciations, SPEED_RANGE, LOCAL } from '../lib/local-voice.js';
 import { invalidateTakes } from '../lib/segments.js';
 import { joinWavs } from '../lib/audio-join.js';
 import { madeBy } from '../lib/made-by.js';
@@ -103,9 +103,11 @@ router.post(
   })
 );
 
-// One cache for every line heard, keyed by voice + speed + words: Hear, the
-// full read and the warm-up share it, so a line is made once, not per click.
-const cacheKey = (voice, speed, text) => createHash('sha1').update(`${voice.id}|${speed ?? ''}|${text}`).digest('hex').slice(0, 16);
+// One cache for every line heard, keyed by voice + speed + the words as SPOKEN
+// (after your pronunciations): Hear, the full read and the warm-up share it, so
+// a line is made once, not per click — and a pronunciation fix is heard at once.
+const cacheKey = (voice, speed, text) =>
+  createHash('sha1').update(`${voice.id}|${speed ?? ''}|${applyPronunciations(text)}`).digest('hex').slice(0, 16);
 const cacheRel = (key) => `samples/listen/cache/${key}.wav`;
 
 /** The quickest audio for a line: its approved take, else a cached read, else nothing yet. */

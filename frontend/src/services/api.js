@@ -283,6 +283,16 @@ export const api = {
   checkToNote: (productionId, lineId) => post('/review/note', { productionId, lineId }),
   voiceBatch: () => get('/voice-batch'),
   queueVoice: (productionIds) => post('/voice-batch', { productionIds }),
+  // line fixing — hear a line word by word, fix just the sentence that is wrong
+  takeWords: (takeId) => get(`/takes/${takeId}/words`),
+  cacheWords: (key, lineId) => get(`/listen-cache/${key}/words?line=${lineId}`),
+  lineFix: (segmentId) => get(`/line-fix/${segmentId}`),
+  startLineFix: (segmentId, body) => post(`/line-fix/${segmentId}`, body),
+  applyLineFix: (segmentId, n) => post(`/line-fix/${segmentId}/apply`, { n }),
+  revertLineFix: (segmentId) => post(`/line-fix/${segmentId}/revert`),
+  discardLineFix: (segmentId) => del(`/line-fix/${segmentId}`),
+  pronunciationUses: (term, except) => get(`/pronunciation-uses?term=${encodeURIComponent(term)}&except=${except ?? ''}`),
+  remakePronunciationUses: (term, except) => post('/pronunciation-uses/remake', { term, except }),
   stopVoiceBatch: () => post('/voice-batch/cancel'),
   localVoices: () => get('/voices/local'),
   // The recording goes up as the raw body — it would never fit the JSON limit.

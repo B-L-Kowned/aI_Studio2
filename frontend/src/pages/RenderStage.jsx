@@ -21,6 +21,7 @@ export default function RenderStage() {
   const { production, mutate } = useStudio();
   const [state, setState] = useState(null);
   const [lock, setLock] = useState(null);
+  const [showGates, setShowGates] = useState(false);
   const [path, setPath] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [confirming, setConfirming] = useState(false);
@@ -134,16 +135,24 @@ export default function RenderStage() {
       )}
 
       {lock && (
-        <div className="border border-solid border-line rounded m-[12px_0] overflow-hidden">
-          <b className="block p-[9px_12px] bg-surface-2 text-[12px]">Production Lock · {lock.ready ? 'ready to render' : `${lock.blockers.length} blocker${lock.blockers.length === 1 ? '' : 's'}`}</b>
-          {lock.gates.map((gate) => (
-            <div className="grid grid-cols-[18px_145px_1fr_auto] gap-[8px] items-center p-[7px_12px] [border-top:1px_solid_var(--line)] text-[11.5px]" key={gate.key}>
+        // What still stands between you and a render — only that. Passed checks
+        // fold away behind one line; they are not work.
+        <div className="border border-solid border-line rounded-lg bg-surface m-[12px_0] overflow-hidden">
+          <button type="button" onClick={() => setShowGates((v) => !v)}
+            className="w-full flex items-center gap-[8px] p-[9px_12px] border-0 rounded-none bg-surface-2 text-[12.5px] text-left">
+            {lock.ready ? <Check size={14} className="text-ok" /> : <AlertCircle size={14} className="text-warn" />}
+            <b className="font-[580]">{lock.ready ? 'Ready to render' : `${lock.blockers.length} to fix before it can render`}</b>
+            {lock.gates.some((g) => g.status === 'warn') && <span className="text-muted">· {lock.gates.filter((g) => g.status === 'warn').length} worth a look</span>}
+            <span className="ml-auto text-muted text-[11.5px]">{showGates ? 'hide' : `all ${lock.gates.length} checks`}</span>
+          </button>
+          {lock.gates.filter((g) => showGates || g.status !== 'pass').map((gate) => (
+            <div className="grid grid-cols-[18px_145px_1fr_auto] gap-[8px] items-center p-[7px_12px] [border-top:1px_solid_var(--line)] text-[12px]" key={gate.key}>
               {gate.status === 'pass' ? <Check className={gateIcon(gate.status)} />
                 : gate.status === 'warn' ? <AlertCircle className={gateIcon(gate.status)} />
                 : <X className={gateIcon(gate.status)} />}
-              <strong>{gate.label}</strong>
+              <strong className="font-[560]">{gate.label}</strong>
               <span className="text-muted">{gate.detail}</span>
-              {gate.action && <em className="text-faint not-italic text-[10.5px]">{gate.action}</em>}
+              {gate.action && <em className="text-faint not-italic text-[11px]">{gate.action}</em>}
             </div>
           ))}
         </div>

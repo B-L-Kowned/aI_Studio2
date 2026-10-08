@@ -18,6 +18,8 @@ function serializeTake(t) {
     id: t.id, version: t.version, text: t.text,
     audioUrl: t.audio_url, duration: t.duration,
     heard: !!t.heard, stale: !!t.stale, staleReason: t.stale_reason,
+    // A take made by fixing another can be undone back to it.
+    fixNote: t.fix_note ?? null, fixed: !!t.origin_take_id, local: !!t.local_path,
     createdAt: t.created_at,
   };
 }
