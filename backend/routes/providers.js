@@ -62,12 +62,17 @@ router.get(
     // Yours first — but an account with nothing of its own gets the catalogue
     // rather than an empty picker. "Show only yours" is useless advice when you
     // have none yet, which is exactly the state a new install is in.
+    // `pool`: mine = only your own, all = the whole catalogue; unset keeps the
+    // picker's rule (yours first, the catalogue when you have none).
+    const pool = req.query.pool === 'mine' ? owned : req.query.pool === 'all' ? all : null;
+    const offset = Math.max(0, Number(req.query.offset) || 0);
     const matched = q
-      ? all.filter((a) => a.name.toLowerCase().includes(q))
-      : (owned.length ? owned : all);
+      ? (pool ?? all).filter((a) => a.name.toLowerCase().includes(q))
+      : (pool ?? (owned.length ? owned : all));
 
     return ok(res, {
-      items: matched.slice(0, limit),
+      items: matched.slice(offset, offset + limit),
+      offset,
       matched: matched.length,
       total: all.length,
       // Said plainly, so a short list never reads as the whole answer.

@@ -25,24 +25,34 @@ export default function Cast() {
   // belongs to which program (`presenterTab`), so the pairing is not repeated
   // here. "You" and Collaborators belong to every program and are never hidden
   // — the bubble chooses what you land on, it does not take people away.
-  const tabForScope = workspace?.program?.info?.find((i) => i.id === scope)?.presenterTab ?? null;
+  // In Content every video in the register is presented by you, so You comes
+  // first and is where Cast opens; Characters belong to Comedy and are not
+  // shown here at all (they were listed, 166 of them, beside your own videos).
+  const content = scope === 'content';
+  const shown = (content ? tabs.filter((t) => t.id !== 'characters') : tabs)
+    .slice().sort((a, b) => (content ? (b.id === 'personal') - (a.id === 'personal') : 0));
+  const tabForScope = content && shown.some((t) => t.id === 'personal')
+    ? 'personal'
+    : workspace?.program?.info?.find((i) => i.id === scope)?.presenterTab ?? null;
   useEffect(() => {
-    if (tabForScope && tabs.some((t) => t.id === tabForScope)) setView(tabForScope);
-  }, [tabForScope, tabs.length]);
+    if (tabForScope && shown.some((t) => t.id === tabForScope)) setView(tabForScope);
+  }, [tabForScope, tabs.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const current = view ?? tabForScope ?? tabs[0]?.id ?? null;
+  const current = (view && (view === 'collaborators' || shown.some((t) => t.id === view)) ? view : null) ?? tabForScope ?? shown[0]?.id ?? null;
 
   // Drawn by whichever view is showing, under that view's own title.
   const bar = (
     <Tabs
       items={[
-        ...tabs.map((t) => ({ id: t.id, label: t.label, count: t.presenters.length })),
+        ...shown.map((t) => ({ id: t.id, label: t.label, count: t.presenters.length })),
         { id: 'collaborators', label: 'Collaborators' },
       ]}
       value={current}
       onChange={setView}
     />
   );
+
+  if (content) return <Presenters onePage after={<PeoplePage section />} onTabs={setTabs} />;
 
   return (
     <>

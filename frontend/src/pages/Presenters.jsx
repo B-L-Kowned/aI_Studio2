@@ -51,7 +51,7 @@ function initials(name = '') {
  * a small thumbnail, so a cast roster never reads as a list of bare names.
  * Presenter and personal cards ARE people, so they keep the avatar photo.
  */
-export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode }) {
+export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, onePage = false, after = null }) {
   const { mutate } = useStudio();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState(null);
@@ -60,6 +60,7 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
   const [err, setErr] = useState(null);
   const [query, setQuery] = useState('');
   const [visibleCount, setVisibleCount] = useState(ROSTER_PAGE_SIZE);
+  const [browsing, setBrowsing] = useState(false);
 
   const load = useCallback(async () => {
     const d = await api.presenters(showRetired);
@@ -94,6 +95,56 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
     try { await mutate(fn, null); await load(); }
     catch (ex) { setErr(ex.message); }
   };
+  const useAvatar = async (a) => {
+    setErr(null);
+    try {
+      const r = await mutate(() => api.createPresenter({ kind: 'avatar', name: a.name, description: 'From your HeyGen account' }), null);
+      await mutate(() => api.castPresenter(r.data.id, { avatarAssetId: a.id }), null, { silent: true });
+      await load();
+    } catch (ex) { setErr(ex.message); }
+  };
+  const rowsOf = (list) => (
+    <div className="border border-solid border-line rounded-lg bg-surface overflow-clip">
+      {list.map((p) => (
+        <PresenterRow key={p.id} presenter={p} options={data.options}
+          onSave={(body) => run(() => api.castPresenter(p.id, body))}
+          onRetire={() => run(() => api.retirePresenter(p.id, !p.isActive))} />
+      ))}
+    </div>
+  );
+
+  // Content: who is in your videos, on one page — you, anyone else on camera,
+  // and the people who approve their likeness. Tabs made it three pages.
+  if (onePage) {
+    const you = data.tabs.find((t) => t.id === 'personal');
+    const others = data.tabs.find((t) => t.id === 'avatars');
+    return (
+      <>
+        <PageHead title="Cast" lead="Who appears in your videos — you, anyone else on camera, and who has approved their likeness."
+          actions={<button onClick={() => setShowRetired((v) => !v)}>{showRetired ? 'Hide retired' : 'Show retired'}</button>} />
+        {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
+        {you && (
+          <Section title="You" meta={`${you.presenters.length} look${you.presenters.length === 1 ? '' : 's'}`}>
+            {you.presenters.length ? rowsOf(you.presenters) : <p className="sectionempty">No looks of you yet.</p>}
+          </Section>
+        )}
+        {others && (
+          <Section title="Other presenters" meta={others.presenters.length ? `${others.presenters.length}` : 'none'}
+            actions={<>
+              <button onClick={() => setBrowsing((b) => !b)}>{browsing ? 'Close HeyGen avatars' : <><Plus size={14} /> Add from HeyGen</>}</button>
+              <button onClick={() => setAdding(true)}><Plus size={14} /> New presenter</button>
+            </>}>
+            {others.presenters.length
+              ? rowsOf(others.presenters)
+              : <p className="sectionempty">Every video in your register is presented by you. Add someone here only when another person appears on camera.</p>}
+          </Section>
+        )}
+        {browsing && <HeyGenBrowser onUse={useAvatar} />}
+        {after}
+        {adding && <NewPresenter kind="avatar" onClose={() => setAdding(false)} onDone={load} />}
+      </>
+    );
+  }
 
   return (
     <>
@@ -119,12 +170,17 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
       />
 
       {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
+      {active?.id === 'avatars' && <HeyGenBrowser onUse={useAvatar} />}
 
       {active && (
         <>
           {active.presenters.length === 0 ? (
             <Section>
-              <p className="sectionempty">Nothing here yet.</p>
+              <p className="sectionempty">
+                {active.id === 'avatars'
+                  ? 'No other presenters. Every video in your register is presented by you — your looks and voice are under You. Add one here only for someone else on camera.'
+                  : 'Nothing here yet.'}
+              </p>
             </Section>
           ) : (
             <Section>
@@ -151,6 +207,18 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
                 <p className="sectionempty">No {active.label.toLocaleLowerCase()} match “{query.trim()}”.</p>
               ) : (
                 <>
+                  {active.id !== 'characters' ? (
+                    // People read as a list: who, the look and voice they are
+                    // cast to, whether they are ready. One row each; the persona
+                    // and Retire are there when wanted, not on every visit.
+                    <div className="border border-solid border-line rounded-lg bg-surface overflow-clip">
+                      {visiblePresenters.map((p) => (
+                        <PresenterRow key={p.id} presenter={p} options={data.options}
+                          onSave={(body) => run(() => api.castPresenter(p.id, body))}
+                          onRetire={() => run(() => api.retirePresenter(p.id, !p.isActive))} />
+                      ))}
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-[repeat(3,1fr)] gap-[12px] lte860:grid-cols-[repeat(2,1fr)] lte620:grid-cols-[1fr]">
                     {visiblePresenters.map((p) => (
                       <article
@@ -163,8 +231,11 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
                   {/* A persona that only shows a name is decoration. These are
                       the lines that actually steer the script. */}
                   {p.persona && (p.persona.voice || p.persona.signatureOpening) && (
-                    // Capped and scrolling: a long persona must not make its whole row as tall as itself.
-                    <dl className="m-[5px_14px_2px] grid grid-cols-[auto_1fr] gap-[3px_8px] max-h-[190px] overflow-y-auto pr-[4px] [&::-webkit-scrollbar]:w-[5px] [&::-webkit-scrollbar-thumb]:bg-line-2 [&::-webkit-scrollbar-thumb]:rounded-[3px]">
+                    <details className="m-[2px_14px_0] text-[12px] group/persona">
+                    <summary className="cursor-pointer text-muted hover:text-ink select-none list-none [&::-webkit-details-marker]:hidden">
+                      <span className="inline-block transition-transform group-open/persona:rotate-90">›</span> How they speak
+                    </summary>
+                    <dl className="m-[6px_0_2px] grid grid-cols-[auto_1fr] gap-[3px_8px]">
                       {p.persona.voice && (
                         <><dt className={PERSONA_DT + ' text-faint'}>Voice</dt><dd className={PERSONA_DD + ' text-ink-2'}>{p.persona.voice}</dd></>
                       )}
@@ -178,12 +249,13 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
                         <><dt className={'warn ' + PERSONA_DT + ' text-warn'}>Never claims</dt><dd className={'warn ' + PERSONA_DD + ' text-warn'}>{p.persona.neverClaim}</dd></>
                       )}
                     </dl>
+                    </details>
                   )}
 
                   {/* Casting is the same action on every card, so it sits in
                       the same place on every card — pinned to the bottom rather
                       than floating wherever the text above happens to end. */}
-                  <div className="mt-auto p-[10px_14px_13px] flex flex-col gap-[7px]">
+                  <div className="mt-auto p-[8px_14px_11px] flex flex-col gap-[6px]">
                     <div className="text-[11.5px] min-h-[1.4em]">
                       {p.ready
                         ? <span className="okv inline-flex items-center gap-[4px]"><Check size={12} /> Ready to produce</span>
@@ -203,6 +275,7 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
                       </article>
                     ))}
                   </div>
+                  )}
                   {visiblePresenters.length < matches.length && (
                     <div className="flex justify-center items-center gap-[12px] pt-[16px] text-muted text-[12px]">
                       <span>Showing {visiblePresenters.length} of {matches.length}</span>
@@ -216,7 +289,7 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
             </Section>
           )}
 
-          {!active.presenters.some((p) => p.ready) && (
+          {active.presenters.length > 0 && !active.presenters.some((p) => p.ready) && (
             <div className="notice warn">
               <AlertCircle />
               <span>
@@ -247,6 +320,123 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
  * three characters to a screen. The tile now appears only for a real image.
  * The kind badge ("CHARACTER") went too: the page title already says it.
  */
+/**
+ * Every avatar HeyGen holds for you — your own first, the whole catalogue a
+ * search away. The roster above is the presenters you cast; this is what they
+ * can be cast from. Nine thousand rows are searched, never shipped.
+ */
+const PAGE = 48;
+function HeyGenBrowser({ onUse }) {
+  const [pool, setPool] = useState('mine');
+  const [q, setQ] = useState('');
+  const [res, setRes] = useState(null);
+  const [items, setItems] = useState([]);
+  const [busy, setBusy] = useState(null);
+  useEffect(() => {
+    let live = true;
+    const t = setTimeout(() => {
+      api.providerAssets('heygen', { kind: 'avatar', q: q.trim(), pool, limit: PAGE }).then((r) => {
+        if (!live) return;
+        setRes(r); setItems(r.items);
+      }).catch(() => live && setRes({ items: [], matched: 0, total: 0, owned: 0 }));
+    }, q ? 250 : 0);
+    return () => { live = false; clearTimeout(t); };
+  }, [pool, q]);
+  const more = () => api.providerAssets('heygen', { kind: 'avatar', q: q.trim(), pool, limit: PAGE, offset: items.length })
+    .then((r) => setItems((cur) => [...cur, ...r.items])).catch(() => {});
+  if (!res) return null;
+  const chip = (id, label) => (
+    <button type="button" onClick={() => setPool(id)}
+      className={'text-[12px] p-[4px_11px] rounded-full border border-solid ' + (pool === id ? 'bg-ink text-white border-ink' : 'bg-surface text-ink-2 border-line')}>
+      {label}
+    </button>
+  );
+  return (
+    <Section title="HeyGen avatars" meta={`${res.matched.toLocaleString()} ${q ? 'match' : pool === 'mine' ? 'yours' : 'in the catalogue'}`}
+      actions={<>
+        {chip('mine', `Yours ${res.owned ?? ''}`)}
+        {chip('all', `All ${res.total?.toLocaleString() ?? ''}`)}
+        <label className="flex items-center gap-[6px] border border-solid border-line-2 rounded p-[0_8px] bg-surface text-faint">
+          <Search size={13} />
+          <input className="[border:0] p-[5px_0] w-[180px] text-[12.5px] focus:[outline:0] focus:[box-shadow:none] text-ink" placeholder="Search avatars…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search HeyGen avatars" />
+        </label>
+      </>}>
+      {items.length === 0 ? (
+        <p className="sectionempty">{res.total ? 'No avatar matches that.' : 'No HeyGen avatars synced yet — connect HeyGen under Settings → HeyGen account.'}</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[10px]">
+            {items.map((a) => (
+              <figure key={a.id} className="m-0 group relative border border-solid border-line rounded-md overflow-hidden bg-surface">
+                <img className="block w-full aspect-square object-cover object-[center_22%] bg-surface-2" src={a.previewUrl} alt={a.name} loading="lazy" />
+                <figcaption className="p-[6px_8px] text-[11.5px] leading-[1.35] text-ink-2 truncate" title={a.name}>{a.name}</figcaption>
+                <button type="button" disabled={busy === a.id}
+                  className="absolute left-[8px] right-[8px] bottom-[34px] text-[11.5px] p-[5px_8px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [transition:opacity_.12s]"
+                  onClick={async () => { setBusy(a.id); await onUse(a); setBusy(null); }}>
+                  <Plus size={12} /> {busy === a.id ? 'Adding…' : 'Use as presenter'}
+                </button>
+              </figure>
+            ))}
+          </div>
+          {items.length < res.matched && (
+            <div className="flex items-center gap-[10px] mt-[12px] text-[12px] text-muted">
+              Showing {items.length.toLocaleString()} of {res.matched.toLocaleString()}
+              <button type="button" className="text-[12px] p-[4px_10px]" onClick={more}>Show {Math.min(PAGE, res.matched - items.length)} more</button>
+            </div>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
+/** One person in the cast, on one line: portrait, who, look and voice, ready. */
+function PresenterRow({ presenter: p, options, onSave, onRetire }) {
+  const [open, setOpen] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
+  const image = (p.artworkUrl || p.avatar?.previewUrl) && !imageFailed ? (p.artworkUrl || p.avatar?.previewUrl) : null;
+  const persona = p.persona && (p.persona.voice || p.persona.signatureOpening) ? p.persona : null;
+  return (
+    <div className={'[&+&]:[border-top:1px_solid_var(--line)] ' + (p.isActive ? '' : 'opacity-50')}>
+      <div className="grid grid-cols-[44px_minmax(200px,1.2fr)_minmax(360px,1.4fr)_150px] gap-[14px] items-center p-[10px_14px] lte960:grid-cols-[44px_1fr]">
+        {image ? (
+          <img className="w-[44px] h-[44px] rounded-[8px] object-cover object-[center_22%] bg-surface-2" src={image} alt="" loading="lazy" onError={() => setImageFailed(true)} />
+        ) : (
+          <b className="w-[44px] h-[44px] grid place-items-center rounded-[8px] bg-surface-2 border border-solid border-line text-ink-2 text-[12px] font-mono" aria-hidden="true">{initials(p.name)}</b>
+        )}
+        <div className="min-w-0">
+          <b className="flex items-center gap-[6px] text-[13.5px] font-[580]">
+            <span className="truncate">{p.name}</span>
+            {p.ready
+              ? <Check size={13} className="flex-none text-ok" aria-label="Ready to produce" />
+              : <span className="flex-none text-[11px] font-normal text-warn">needs casting</span>}
+          </b>
+          <span className="block truncate text-[12px] text-muted" title={p.tagline || p.description}>{p.tagline || p.description || ' '}</span>
+        </div>
+        <div className="min-w-0 lte960:col-span-2"><CastRow presenter={p} options={options} onSave={onSave} /></div>
+        <span className="flex items-center justify-end gap-[2px] lte960:col-span-2">
+          {persona && (
+            <button type="button" className={'ghostbtn text-[12px] p-[4px_8px] ' + (open ? 'text-ink' : 'text-muted')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+              How they speak <ChevronDown size={12} className={open ? 'rotate-180' : ''} />
+            </button>
+          )}
+          <button type="button" className="ghostbtn p-[6px] text-faint hover:text-ink" title={p.isActive ? 'Retire — kept, out of the way' : 'Restore'} onClick={onRetire}>
+            {p.isActive ? <Archive size={13} /> : <RotateCcw size={13} />}
+          </button>
+        </span>
+      </div>
+      {open && persona && (
+        <dl className="m-0 p-[0_14px_12px_72px] grid grid-cols-[auto_1fr] gap-[3px_10px] text-[12px] lte960:p-[0_14px_12px]">
+          {persona.voice && <><dt className={PERSONA_DT + ' text-faint'}>Voice</dt><dd className={PERSONA_DD + ' text-ink-2'}>{persona.voice}</dd></>}
+          {persona.signatureOpening && <><dt className={PERSONA_DT + ' text-faint'}>Opens</dt><dd className={PERSONA_DD + ' text-ink-2'}>{persona.signatureOpening}</dd></>}
+          {persona.signOff && <><dt className={PERSONA_DT + ' text-faint'}>Signs off</dt><dd className={PERSONA_DD + ' text-ink-2'}>{persona.signOff}</dd></>}
+          {persona.neverClaim && <><dt className={PERSONA_DT + ' text-warn'}>Never claims</dt><dd className={PERSONA_DD + ' text-warn'}>{persona.neverClaim}</dd></>}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 function PresenterHead({ presenter, tabId }) {
   const [imageFailed, setImageFailed] = useState(false);
   const isCharacter = tabId === 'characters';
@@ -256,6 +446,28 @@ function PresenterHead({ presenter, tabId }) {
   // with a thumbnail, rather than shown as the character.
   const performer = isCharacter && presenter.avatar;
   const caption = isCharacter ? null : (presenter.artworkUrl ? 'Custom artwork' : presenter.avatar?.name);
+
+  // You and presenters are people: a portrait beside the name reads as who it
+  // is. Only a character keeps the wide artwork, because the art is the point.
+  if (!isCharacter) {
+    return (
+      <div className="p-[12px_14px_6px] flex gap-[12px] items-start">
+        {hasImage ? (
+          <img className="flex-none w-[56px] h-[56px] rounded-[10px] object-cover object-[center_22%] bg-surface-2 border border-solid border-line"
+            src={imageUrl} alt={caption ? `${presenter.name} — ${caption}` : presenter.name} loading="lazy" onError={() => setImageFailed(true)} />
+        ) : (
+          <b className="flex-none w-[56px] h-[56px] grid place-items-center border border-solid border-line-2 rounded-[10px] bg-surface-2 text-ink-2 font-[620] text-[13px] font-mono" aria-hidden="true">
+            {initials(presenter.name)}
+          </b>
+        )}
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[14px] leading-[1.3] m-0">{presenter.name}</h3>
+          <p className="m-[2px_0_0] text-muted text-[12px] leading-[1.45] line-clamp-2">{presenter.tagline || presenter.description || 'No note yet.'}</p>
+          {caption && <p className="m-[3px_0_0] text-faint text-[11px] truncate" title={caption}>Look: {caption}</p>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

@@ -14,15 +14,19 @@ const SCOPES = [
   ['workspace', 'Workspace'],
 ];
 
-export default function PeoplePage({ compact, tabs }) {
+export default function PeoplePage({ compact, tabs, section = false }) {
   const { collections, refreshPeople, mutate } = useStudio();
   const [inviting, setInviting] = useState(false);
   const [name, setName] = useState('');
   const [invite, setInvite] = useState(null);
   const [managing, setManaging] = useState(null);
+  const [showInactive, setShowInactive] = useState(false);
 
-  const people = collections.people;
-  const approved = people.filter((p) => p.status === 'approved').length;
+  const all = collections.people;
+  // A revoked consent is history, not someone to act on: kept, folded away.
+  const inactive = all.filter((p) => /revoked/i.test(p.representation ?? ''));
+  const people = section && !showInactive ? all.filter((p) => !inactive.includes(p)) : all;
+  const approved = all.filter((p) => p.status === 'approved').length;
 
   const sendInvite = async (e) => {
     e.preventDefault();
@@ -34,7 +38,7 @@ export default function PeoplePage({ compact, tabs }) {
   };
 
   const inviteBtn = (
-    <button className="primary" onClick={() => setInviting((v) => !v)}>
+    <button className={section ? '' : 'primary'} onClick={() => setInviting((v) => !v)}>
       <UserPlus size={14} /> Invite collaborator
     </button>
   );
@@ -114,6 +118,61 @@ export default function PeoplePage({ compact, tabs }) {
   );
 
   // Inside the Plan workspace this is a panel, not a page.
+  if (section) {
+    return (
+      <Section title="Collaborators" meta={`${approved} of ${all.length} approved`} actions={inviteBtn}>
+        {inviting && (
+          <form className="flex gap-[8px] m-[0_0_12px]" onSubmit={sendInvite}>
+            <input className="flex-1" placeholder="Collaborator name" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+            <button className="primary" type="submit" disabled={!name.trim()}>Create invite</button>
+            <button type="button" onClick={() => setInviting(false)}><X size={15} /></button>
+          </form>
+        )}
+        {invite && (
+          <div className="notice"><Copy size={15} /><span>Invite link: <code>{invite}</code> — they approve appearance and voice without project access.</span>
+            <button onClick={() => setInvite(null)}><X size={14} /></button></div>
+        )}
+        <div className="border border-solid border-line rounded-lg bg-surface overflow-clip">
+          {people.map((p) => (
+            <div key={p.id} className="[&+&]:[border-top:1px_solid_var(--line)]">
+              <div className="grid grid-cols-[32px_minmax(160px,1fr)_minmax(200px,1fr)_auto] gap-[12px] items-center p-[9px_14px]">
+                <span className="w-[32px] h-[32px] rounded-full bg-surface-2 border border-solid border-line grid place-items-center text-[12px] text-ink-2 font-[600]">{p.name[0]}</span>
+                <span className="min-w-0"><b className="block text-[13.5px] font-[580] truncate">{p.name}</b><span className="text-[12px] text-muted">{p.role}</span></span>
+                <span className={'text-[12px] flex items-center gap-[5px] ' + (p.status === 'approved' ? 'text-ok' : 'text-muted')}>
+                  {p.status === 'approved' ? <><Check size={13} /> Approved · {p.consentScope}</> : <><Clock size={13} /> {p.representation || 'Awaiting setup'}</>}
+                </span>
+                <button className="text-[12px] p-[4px_10px]" onClick={() => setManaging(managing === p.id ? null : p.id)}>
+                  {p.status === 'approved' ? 'Permissions' : 'Complete consent'}
+                </button>
+              </div>
+              {managing === p.id && (
+                <div className="flex flex-wrap gap-[6px] p-[0_14px_10px_58px]">
+                  {p.status === 'approved' ? (
+                    <button className="text-[12px] p-[4px_10px]" onClick={async () => { await mutate(() => api.revokeConsent(p.id), null); await refreshPeople(); setManaging(null); }}>Revoke consent</button>
+                  ) : SCOPES.map(([v, l]) => (
+                    <button key={v} className="text-[12px] p-[4px_10px]" onClick={async () => { await mutate(() => api.grantConsent(p.id, v), null); await refreshPeople(); setManaging(null); }}>Grant for {l.toLowerCase()}</button>
+                  ))}
+                  {!/owner/i.test(p.role) && (
+                    <button className="text-[12px] p-[4px_10px] text-danger" onClick={async () => {
+                      if (!window.confirm(`Remove ${p.name}? Their consent record is deleted; productions are not affected.`)) return;
+                      try { await mutate(() => api.removePerson(p.id), null); } catch { return; }
+                      await refreshPeople(); setManaging(null);
+                    }}>Remove</button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        {inactive.length > 0 && (
+          <button className="ghostbtn text-[12px] text-muted p-[8px_0_0]" onClick={() => setShowInactive((v) => !v)}>
+            {showInactive ? 'Hide' : 'Show'} {inactive.length} with consent revoked
+          </button>
+        )}
+      </Section>
+    );
+  }
+
   if (compact) {
     return (
       <>

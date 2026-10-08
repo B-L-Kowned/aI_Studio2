@@ -49,11 +49,11 @@ export default function Setup() {
         lead="Voice, HeyGen, storage and connections."
       />
 
-      <div className="grid grid-cols-[186px_1fr] bg-surface border border-solid border-line rounded-lg overflow-hidden lte860:grid-cols-[1fr]">
+      <div className="grid grid-cols-[186px_1fr] bg-surface border border-solid border-line rounded-lg overflow-clip lte860:grid-cols-[1fr]">
         {/* The rail is a list, not a column to be stretched: without
             align-self:start a long section made it 80,000px tall with its links
             marooned at the top. */}
-        <nav className="p-[12px] bg-surface-2 [border-right:1px_solid_var(--line)] self-start sticky top-[16px] lte860:[border-right:0] lte860:[border-bottom:1px_solid_var(--line)] lte860:flex lte860:flex-wrap lte860:gap-[4px]">
+        <nav className="p-[12px] bg-surface-2 [border-right:1px_solid_var(--line)] self-start sticky top-[69px] z-[1] lte860:static lte860:[border-right:0] lte860:[border-bottom:1px_solid_var(--line)] lte860:flex lte860:flex-wrap lte860:gap-[4px]">
           {SECTIONS.map((s) => {
             const I = s.icon;
             return (
