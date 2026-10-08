@@ -52,7 +52,7 @@ function initials(name = '') {
  * Presenter and personal cards ARE people, so they keep the avatar photo.
  */
 export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, onePage = false, after = null }) {
-  const { mutate } = useStudio();
+  const { mutate, scopeMode } = useStudio();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState(null);
   const [showRetired, setShowRetired] = useState(false);
@@ -95,10 +95,14 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
     try { await mutate(fn, null); await load(); }
     catch (ex) { setErr(ex.message); }
   };
+  // In Comedy a HeyGen avatar becomes a character's performer; in Content, a presenter.
+  const comedy = scopeMode === 'comedy';
   const useAvatar = async (a) => {
     setErr(null);
     try {
-      const r = await mutate(() => api.createPresenter({ kind: 'avatar', name: a.name, description: 'From your HeyGen account' }), null);
+      const r = await mutate(() => api.createPresenter(comedy
+        ? { kind: 'character', name: a.name, description: 'Performed by a HeyGen avatar' }
+        : { kind: 'avatar', name: a.name, description: 'From your HeyGen account' }), null);
       await mutate(() => api.castPresenter(r.data.id, { avatarAssetId: a.id }), null, { silent: true });
       await load();
     } catch (ex) { setErr(ex.message); }
@@ -113,14 +117,18 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
     </div>
   );
 
-  // Content: who is in your videos, on one page — you, anyone else on camera,
-  // and the people who approve their likeness. Tabs made it three pages.
+  // Who is in your videos, on one page, the same shape in both programs: you,
+  // the program's cast (presenters in Content, characters in Comedy — made
+  // here or brought in from HeyGen), and the people you invited.
   if (onePage) {
     const you = data.tabs.find((t) => t.id === 'personal');
-    const others = data.tabs.find((t) => t.id === 'avatars');
+    const others = data.tabs.find((t) => t.id === (comedy ? 'characters' : 'avatars'));
+    const word = comedy ? 'character' : 'presenter';
     return (
       <>
-        <PageHead title="Cast" lead="Who appears in your videos — you, anyone else on camera, and who has approved their likeness."
+        <PageHead title="Cast" lead={comedy
+          ? 'Who appears in your comedy — you, your characters, and who has approved their likeness.'
+          : 'Who appears in your videos — you, anyone else on camera, and who has approved their likeness.'}
           actions={<button onClick={() => setShowRetired((v) => !v)}>{showRetired ? 'Hide retired' : 'Show retired'}</button>} />
         {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
         {you && (
@@ -129,19 +137,40 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
           </Section>
         )}
         {others && (
-          <Section title="Other presenters" meta={others.presenters.length ? `${others.presenters.length}` : 'none'}
+          <Section title={comedy ? 'Characters' : 'Other presenters'} meta={others.presenters.length ? `${others.presenters.length}` : 'none'}
             actions={<>
+              {others.presenters.length > 12 && (
+                <label className="flex items-center gap-[6px] border border-solid border-line-2 rounded p-[0_8px] bg-surface text-faint">
+                  <Search size={13} />
+                  <input className="[border:0] p-[5px_0] w-[150px] text-[12.5px] text-ink focus:[outline:0] focus:[box-shadow:none]" placeholder={`Search ${word}s…`}
+                    value={query} onChange={(e) => setQuery(e.target.value)} aria-label={`Search ${word}s`} />
+                </label>
+              )}
               <button onClick={() => setBrowsing((b) => !b)}>{browsing ? 'Close HeyGen avatars' : <><Plus size={14} /> Add from HeyGen</>}</button>
-              <button onClick={() => setAdding(true)}><Plus size={14} /> New presenter</button>
+              <button onClick={() => setAdding(true)}><Plus size={14} /> New {word}</button>
             </>}>
-            {others.presenters.length
-              ? rowsOf(others.presenters)
-              : <p className="sectionempty">Every video in your register is presented by you. Add someone here only when another person appears on camera.</p>}
+            {others.presenters.length ? (() => {
+              const found = others.presenters.filter((p) => !normalizedQuery || searchablePresenter(p).includes(normalizedQuery));
+              return (
+                <>
+                  {found.length ? rowsOf(found.slice(0, visibleCount)) : <p className="sectionempty">No {word} matches “{query.trim()}”.</p>}
+                  {found.length > visibleCount && (
+                    <div className="flex items-center gap-[10px] pt-[10px] text-[12px] text-muted">
+                      Showing {visibleCount} of {found.length}
+                      <button className="text-[12px] p-[4px_10px]" onClick={() => setVisibleCount((n) => n + ROSTER_PAGE_SIZE)}>Show {Math.min(ROSTER_PAGE_SIZE, found.length - visibleCount)} more</button>
+                    </div>
+                  )}
+                </>
+              );
+            })()
+              : <p className="sectionempty">{comedy
+                ? 'No characters yet. Create one, or bring in a HeyGen avatar to perform one.'
+                : 'Every video in your register is presented by you. Add someone here only when another person appears on camera.'}</p>}
           </Section>
         )}
         {browsing && <HeyGenBrowser onUse={useAvatar} />}
         {after}
-        {adding && <NewPresenter kind="avatar" onClose={() => setAdding(false)} onDone={load} />}
+        {adding && <NewPresenter kind={comedy ? 'character' : 'avatar'} onClose={() => setAdding(false)} onDone={load} />}
       </>
     );
   }
