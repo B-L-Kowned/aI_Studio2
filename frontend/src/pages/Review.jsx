@@ -3,6 +3,7 @@ import { Check, SkipForward, ExternalLink, Pencil, RefreshCw, ClipboardList, Ale
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LineVoice from '../components/LineVoice.jsx';
+import { EnhanceButton, Suggestion, modelLabel } from '../components/Enhance.jsx';
 import { PageHead } from '../components/Section.jsx';
 import { madeByLabel } from '../utils/made-by.js';
 
@@ -176,6 +177,15 @@ export default function Review({ go, tabs }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [mode, approve, skip]);
 
+  // A suggested answer to one line's check, from the company's own material.
+  const [answer, setAnswer] = useState(null); // { lineId, busy } | result
+  const suggest = async (it, line) => {
+    setAnswer({ lineId: line.id, busy: true });
+    try {
+      const r = await mutate(() => api.suggestAnswer(it.productionId, line.id), null, { silent: true });
+      setAnswer(r.data);
+    } catch { setAnswer(null); }
+  };
   const saveLine = async (it, line, text) => {
     setBusy(true);
     try {
@@ -306,7 +316,30 @@ export default function Review({ go, tabs }) {
                           <button className="text-[12.5px] p-[5px_11px]" disabled={busy} onClick={() => { setEditing(l.id); setDraft(strip(l.text)); }}><Pencil size={13} /> Edit the line</button>
                           <button className="text-[12.5px] p-[5px_11px]" disabled={busy} title="Remove it from the script and add it to the shot list, to check while you record that screen"
                             onClick={() => toNote(item, l)}><ClipboardList size={13} /> Make it a recording note</button>
+                          <EnhanceButton label="Suggest an answer" busy={answer?.lineId === l.id && answer.busy} busyLabel="Looking…"
+                            onPick={() => suggest(item, l)} options={[{ id: 'answer', label: 'Find the answer in what the company has said',
+                              detail: 'Searches its published videos, approved scripts and website. Only suggests an answer it can quote.' }]} />
                         </div>
+                        {answer?.lineId === l.id && answer.found === false && (
+                          <div className="mt-[8px] text-[12.5px] text-ink-2 bg-surface-2 rounded-md p-[8px_11px]">
+                            <b className="font-[560]">Not found — yours to answer.</b> Searched {answer.searched.join(', ')}.{answer.why ? ` ${answer.why}` : ''}
+                            {answer.nearest?.length > 0 && (
+                              <span className="block mt-[4px] text-muted">Closest: “{answer.nearest[0].text}” <i>({answer.nearest[0].source})</i></span>
+                            )}
+                            <button className="ghostbtn p-0 ml-[8px] text-[12px] text-muted" onClick={() => setAnswer(null)}>Dismiss</button>
+                          </div>
+                        )}
+                        {answer?.lineId === l.id && answer.found && (
+                          <>
+                            <Suggestion text={answer.text} flags={answer.flags} meta={modelLabel(answer.model)} useLabel="Use this answer"
+                              onDismiss={() => setAnswer(null)} onUse={() => { saveLine(item, l, answer.text); setAnswer(null); }} />
+                            <ul className="m-[6px_0_0] p-0 list-none">
+                              {answer.quotes.map((q) => (
+                                <li key={q.text} className="text-[12px] text-muted leading-[1.5]">“{q.text}” <i className="text-faint">— {q.source}</i></li>
+                              ))}
+                            </ul>
+                          </>
+                        )}
                       </>
                     )}
                   </div>

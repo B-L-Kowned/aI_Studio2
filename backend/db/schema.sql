@@ -527,3 +527,13 @@ CREATE TABLE IF NOT EXISTS voice_batch (
   queued_at     TEXT NOT NULL DEFAULT (datetime('now')),
   finished_at   TEXT
 );
+
+-- A company's own website, read once and kept for a week: the evidence a
+-- [CONFIRM] answer may quote. Only text is kept, never the page itself.
+CREATE TABLE IF NOT EXISTS company_evidence (
+  company_id INTEGER PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  url        TEXT NOT NULL,
+  text       TEXT NOT NULL DEFAULT '',
+  error      TEXT,
+  fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

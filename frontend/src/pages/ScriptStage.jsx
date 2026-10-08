@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { Sparkles, Check, X, Lock, AlertCircle, FileText, Play, Pause, Minus, Plus, ChevronDown, Headphones, RefreshCw, MousePointerClick } from 'lucide-react';
+import { Sparkles, Check, X, Lock, AlertCircle, FileText, Play, Pause, Minus, Plus, ChevronDown, Headphones, RefreshCw, MousePointerClick, AlertTriangle } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
@@ -7,6 +7,7 @@ import MadeByChooser from '../components/MadeByChooser.jsx';
 import PlanStage from './PlanStage.jsx';
 import LineVoice from '../components/LineVoice.jsx';
 import { madeByOf } from '../utils/made-by.js';
+import { EnhanceButton, Suggestion, modelLabel } from '../components/Enhance.jsx';
 
 const GENERATOR_LABELS = {
   included: 'Built-in deterministic',
@@ -42,6 +43,11 @@ export default function ScriptStage({ goToStage }) {
   const [listening, setListening] = useState(null);   // { id, url } | { id, busy }
   const [showVersions, setShowVersions] = useState(false);
   const [fullRead, setFullRead] = useState(null);     // the whole script in one track
+  const [checks, setChecks] = useState(null);         // the plain rules, run on every change
+  const [showChecks, setShowChecks] = useState(false);
+  const [enh, setEnh] = useState(null);               // the local model's rewrite of the draft
+  const [compare, setCompare] = useState(null);       // the version that rewrite came from
+  const [suggest, setSuggest] = useState(null);       // one line reworded: { lineId, busy } | result
   const [details, setDetails] = useState(false);      // Plan details drawer
   const [segs, setSegs] = useState([]);               // production lines (an approved script's takes)
   const [hint, setHint] = useState(() => { try { return !localStorage.getItem('hint-fix-word'); } catch { return false; } });
@@ -86,6 +92,17 @@ export default function ScriptStage({ goToStage }) {
     const t = setInterval(() => api.fullRead(production.id, latest.id).then(setFullRead).catch(() => {}), 2000);
     return () => clearInterval(t);
   }, [fullRead?.state, production.id, latest?.id]);
+  const loadChecks = useCallback(() => api.scriptChecks(production.id).then(setChecks).catch(() => setChecks(null)), [production.id]);
+  useEffect(() => { if (latest?.id) loadChecks(); }, [latest?.id, wordsKey, loadChecks]);
+  useEffect(() => { api.enhanceState(production.id).then(setEnh).catch(() => {}); }, [production.id]);
+  useEffect(() => {
+    if (enh?.state !== 'running') return undefined;
+    const t = setInterval(() => api.enhanceState(production.id).then((j) => {
+      setEnh(j);
+      if (j?.state === 'done') load().catch(() => {});
+    }).catch(() => {}), 2500);
+    return () => clearInterval(t);
+  }, [enh?.state, production.id, load]);
   const brief = useMemo(() => Object.fromEntries(production.brief.map((b) => [b.label, b.value])), [production.brief]);
 
   // A finished video is the length it was published at; there is nothing left
@@ -184,6 +201,30 @@ export default function ScriptStage({ goToStage }) {
       setFullRead(r.data);
     } catch { /* mutate reports it */ }
   };
+  const runEnhance = (mode) => mutate(() => api.enhanceScript(production.id, mode), (r) => { setEnh(r.data); setCompare(null); }, { silent: true }).catch(() => {});
+  const undoEnhance = async () => {
+    try { await mutate(() => api.undoEnhance(production.id, enh.result.versionId), null); } catch { return; }
+    setEnh(null); setCompare(null); load().catch(() => {});
+  };
+  const toggleCompare = async () => {
+    if (compare) { setCompare(null); return; }
+    const prev = state.versions.find((v) => v.version === enh.result.from);
+    if (prev) setCompare(await api.scriptVersionLines(production.id, prev.id).catch(() => null));
+  };
+  const fixChecks = (ids = null) => mutate(() => api.fixScriptChecks(production.id, ids), (r) => setChecks(r.data.checks))
+    .then(() => load()).catch(() => {});
+  const improve = async (l, goal) => {
+    setSuggest({ lineId: l.id, busy: true });
+    try {
+      const r = await mutate(() => api.improveLine(production.id, l.id, goal), null, { silent: true });
+      setSuggest(r.data);
+    } catch { setSuggest(null); }
+  };
+  const goLine = (id) => {
+    const el = lineRefs.current[id];
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el?.focus();
+  };
   const nextCheck = () => {
     const ids = lines.filter((l) => l.checks).map((l) => l.id);
     const el = lineRefs.current[ids[0]];
@@ -198,6 +239,11 @@ export default function ScriptStage({ goToStage }) {
     goToStage?.(madeByOf(production) === 'self' ? 'Make' : 'Voice');
   };
 
+  const issues = checks?.issues ?? [];
+  const fixable = issues.filter((i) => i.fix).length;
+  const lineIssues = (id) => issues.filter((i) => i.lineId === id && i.kind !== 'website');
+  const enhRunning = enh?.state === 'running';
+  const enhDone = enh?.state === 'done' && enh.result?.versionId === latest?.id;
   const tone = !target ? 'text-muted' : within ? 'text-ok' : 'text-warn';
   // One voice throughout: naming the speaker on every line says nothing.
   const oneSpeaker = new Set(lines.map((l) => l.speaker)).size <= 1;
@@ -353,6 +399,67 @@ export default function ScriptStage({ goToStage }) {
                 {openChecks} check{openChecks === 1 ? '' : 's'} still open. <button className="ghostbtn p-0 text-warn text-[12px] underline" onClick={nextCheck}>Go to the next one</button>
               </p>
             )}
+            {editable && !published && (
+              <div className="mt-[12px] pt-[12px] [border-top:1px_solid_var(--line)]">
+                <div className="flex flex-wrap items-center gap-[8px_14px] text-[12px]">
+                  {issues.length > 0 ? (
+                    <button className="ghostbtn p-0 text-[12px] text-ink-2" onClick={() => setShowChecks((v) => !v)} aria-expanded={showChecks}>
+                      <AlertTriangle size={12} className="text-warn" /> {issues.length} thing{issues.length === 1 ? '' : 's'} to look at
+                      <ChevronDown size={12} className={'text-muted ' + (showChecks ? 'rotate-180' : '')} />
+                    </button>
+                  ) : checks && <span className="text-ok inline-flex items-center gap-[5px]"><Check size={12} /> Passes the checks</span>}
+                  {fixable > 0 && <button className="text-[12px] p-[4px_10px]" onClick={() => fixChecks()}>Fix {fixable} automatically</button>}
+                  <span className="ml-auto" />
+                  {enhRunning && <span className="text-muted">Rewriting on this Mac with {modelLabel(enh.model)}{enh.total ? ` — section ${Math.max(1, enh.section)} of ${enh.total}` : ''}…</span>}
+                  <EnhanceButton busy={enhRunning} busyLabel="Enhancing…" onPick={runEnhance} options={[
+                    { id: 'fit', label: 'Fit to time', disabled: !target,
+                      detail: `Bring it to ${clock(target)} — about ${checks?.targetWords ?? '…'} words — section by section, from the brief. No new facts.` },
+                    { id: 'tighten', label: 'Tighten', detail: 'Cut filler and repetition. Every fact and the call to action stay.' },
+                    { id: 'polish', label: 'Polish for speech', detail: 'Same length and facts, smoother to say aloud.' },
+                  ]} />
+                </div>
+                {showChecks && issues.length > 0 && (
+                  <ul className="m-[10px_0_0] p-0 list-none flex flex-col gap-[5px]">
+                    {issues.map((i) => (
+                      <li key={i.id} className="flex items-start gap-[8px] text-[12px] text-ink-2">
+                        <span className={'mt-[6px] w-[6px] h-[6px] rounded-full flex-none ' + (i.fix ? 'bg-accent' : 'bg-warn')} aria-hidden="true" />
+                        <span className="flex-1">{i.message}</span>
+                        {i.lineId && <button className="ghostbtn p-0 text-[12px] text-accent" onClick={() => goLine(i.lineId)}>Show</button>}
+                        {i.fix && <button className="ghostbtn p-0 text-[12px] text-accent" onClick={() => fixChecks([i.id])}>Fix</button>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {enh?.state === 'failed' && <p className="m-[8px_0_0] text-[12px] text-danger">{enh.error}</p>}
+              </div>
+            )}
+            {enhDone && (
+              <div className="mt-[12px] rounded-md border border-solid border-accent-line bg-accent-soft p-[9px_12px] text-[12.5px] text-ink-2">
+                <div className="flex flex-wrap items-center gap-[6px_14px]">
+                  <span>
+                    <Sparkles size={12} className="inline text-accent align-[-1px]" /> <b className="font-[560] text-ink">Enhanced draft v{enh.result.version}</b>
+                    {' '}from v{enh.result.from} · {enh.result.before} → {enh.result.words} words{enh.result.target ? ` (target ${enh.result.target})` : ''} · {modelLabel(enh.model)} · free
+                  </span>
+                  <span className="ml-auto flex gap-[14px]">
+                    <button className="ghostbtn p-0 text-[12px] text-accent" onClick={toggleCompare}>{compare ? 'Hide comparison' : `Compare with v${enh.result.from}`}</button>
+                    <button className="ghostbtn p-0 text-[12px] text-accent" onClick={undoEnhance}>Undo</button>
+                  </span>
+                </div>
+                {enh.result.flags.map((f) => <p key={f} className="m-[5px_0_0] text-[12px] text-warn flex items-center gap-[5px]"><AlertTriangle size={11} /> {f}</p>)}
+                {compare && (
+                  <div className="grid grid-cols-2 gap-[18px] mt-[10px] pt-[10px] [border-top:1px_solid_var(--accent-line)] lte800:grid-cols-1">
+                    <div>
+                      <b className="text-[10.5px] uppercase tracking-[.06em] text-muted font-semibold">v{compare.version} · before</b>
+                      {compare.lines.map((x) => <p key={x.id} className="m-[5px_0] text-[12.5px] leading-[1.55] text-muted">{x.text}</p>)}
+                    </div>
+                    <div>
+                      <b className="text-[10.5px] uppercase tracking-[.06em] text-accent font-semibold">v{enh.result.version} · enhanced</b>
+                      {latest.segments.map((x) => <p key={x.id} className="m-[5px_0] text-[12.5px] leading-[1.55] text-ink">{x.text}</p>)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             {accepted && hint && (
               <p className="m-[12px_0_0] text-[12px] text-muted flex items-center gap-[6px]">
                 <MousePointerClick size={13} className="text-accent" />
@@ -400,7 +507,7 @@ export default function ScriptStage({ goToStage }) {
                           </select>
                         )}
                         <div className="min-w-0">
-                          <textarea ref={(el) => { lineRefs.current[l.id] = el; }}
+                          <textarea key={latest.segments.find((x) => x.id === l.id)?.text} ref={(el) => { lineRefs.current[l.id] = el; }}
                             className={'w-full min-h-[52px] resize-y text-[14px] leading-[1.6] bg-surface-2 border-transparent hover:border-line focus:bg-surface' + (l.checks ? ' !border-warn-line' : '')}
                             defaultValue={l.text} aria-label="Script line" rows={2}
                             onChange={(e) => setDrafts((d) => ({ ...d, [l.id]: e.target.value }))}
@@ -414,11 +521,37 @@ export default function ScriptStage({ goToStage }) {
                               ))}
                             </div>
                           )}
+                          {lineIssues(l.id).length > 0 && (
+                            <div className="flex flex-wrap gap-[5px] mt-[4px]">
+                              {lineIssues(l.id).map((i) => (
+                                <span key={i.id} className="text-[11px] text-ink-2 bg-surface-2 border border-solid border-line rounded-[3px] p-[1px_6px]">
+                                  {i.message}{i.fix && <button className="ghostbtn p-0 ml-[6px] text-[11px] text-accent" onClick={() => fixChecks([i.id])}>Fix</button>}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {suggest?.lineId === l.id && suggest.busy && <p className="m-[3px_0_0] text-[11.5px] text-muted">Rewording on this Mac…</p>}
+                          {suggest?.lineId === l.id && suggest.text && (
+                            <Suggestion text={suggest.text} flags={suggest.flags}
+                              meta={`${suggest.before} → ${suggest.words} words · ${modelLabel(suggest.model)}`}
+                              onDismiss={() => setSuggest(null)}
+                              onUse={() => { saveLine(l, { text: suggest.text }); setSuggest(null); }} />
+                          )}
                           {listening?.id === l.id && listening.busy && (
                             <p className="m-[3px_0_0] text-[11.5px] text-muted">Making it in your voice — about 30 seconds for a new line, instant after.</p>
                           )}
                         </div>
-                        <span className="pt-[9px] text-[11.5px] text-muted [font-variant-numeric:tabular-nums] whitespace-nowrap">{clock(secsAt(l.words))}</span>
+                        <span className="pt-[6px] flex items-start gap-[8px]">
+                          {!published && (
+                            <EnhanceButton compact label="Improve this line" busy={suggest?.lineId === l.id && suggest.busy}
+                              onPick={(goal) => improve(l, goal)} options={[
+                                { id: 'speak', label: 'Say it more naturally', detail: 'Same meaning and length, easier to say.' },
+                                { id: 'shorter', label: 'Shorter', detail: 'About a third fewer words.' },
+                                { id: 'longer', label: 'Longer', detail: 'Explains what it already says, from the brief.' },
+                              ]} />
+                          )}
+                          <span className="pt-[3px] text-[11.5px] text-muted [font-variant-numeric:tabular-nums] whitespace-nowrap">{clock(secsAt(l.words))}</span>
+                        </span>
                       </div>
                     );
                     const i = latest.segments.findIndex((x) => x.id === l.id);

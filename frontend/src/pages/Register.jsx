@@ -84,18 +84,23 @@ function Mark({ state, title }) {
  * top border. Set to anything but its neutral value, it darkens so an active
  * filter is visible from across the page.
  */
-function FilterPill({ label, icon: Icon, value, onChange, options, groups = [], neutral = '' }) {
+function FilterPill({ label, icon: Icon, value, onChange, options, groups = [], neutral = '', short = {} }) {
   const on = value !== neutral && value !== '';
+  // A native select is as wide as its longest option; laid invisibly over a
+  // label of the current value, the pill is only as wide as what it shows.
+  const current = short[value] ?? options.find(([v]) => v === value)?.[1] ?? value;
   return (
-    <label className="relative inline-flex items-center">
-      <span className={'absolute left-[12px] top-[-6px] z-[1] px-[4px] text-[9px] leading-[11px] font-semibold tracking-[.07em] uppercase pointer-events-none rounded-[3px] '
+    <label className={'relative inline-flex items-center h-[32px] rounded-full border border-solid p-[0_26px_0_29px] text-[12.5px] whitespace-nowrap cursor-pointer max-w-[200px] '
+      + (on ? 'bg-ink text-[#fff] border-ink' : 'bg-surface text-ink-2 border-line hover:border-line-2')}>
+      <span className={'absolute left-[12px] top-[-6px] px-[4px] text-[9px] leading-[11px] font-semibold tracking-[.07em] uppercase pointer-events-none rounded-[3px] '
         + (on ? 'bg-ink text-[#fff]' : 'text-faint [background:linear-gradient(var(--canvas)_50%,var(--surface)_50%)]')}>
         {label}
       </span>
       <Icon size={13} className={`absolute left-[11px] pointer-events-none ${on ? 'text-[#fff]' : 'text-muted'}`} aria-hidden="true" />
+      <span className="truncate">{current}</span>
+      <ChevronDown size={12} className={`absolute right-[10px] pointer-events-none ${on ? 'text-[#fff]' : 'text-muted'}`} aria-hidden="true" />
       <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}
-        className={'appearance-none h-[32px] text-[12.5px] rounded-full p-[0_28px_0_30px] cursor-pointer border border-solid max-w-[210px] '
-          + (on ? 'bg-ink text-[#fff] border-ink' : 'bg-surface text-ink-2 border-line hover:border-line-2')}>
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer appearance-none">
         {options.map(([v, l]) => <option key={v || 'all'} value={v}>{l}</option>)}
         {groups.map(([g, names]) => (
           <optgroup key={g} label={g}>
@@ -103,7 +108,29 @@ function FilterPill({ label, icon: Icon, value, onChange, options, groups = [], 
           </optgroup>
         ))}
       </select>
-      <ChevronDown size={12} className={`absolute right-[10px] pointer-events-none ${on ? 'text-[#fff]' : 'text-muted'}`} aria-hidden="true" />
+    </label>
+  );
+}
+
+/** Search as an icon until it is wanted; open while it holds a query. */
+function SearchPill({ value, onChange }) {
+  const [open, setOpen] = useState(!!value);
+  const input = useRef(null);
+  useEffect(() => { if (open && !value) input.current?.focus(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!open && !value) {
+    return (
+      <button type="button" aria-label="Search the register" title="Search ID, title, company" onClick={() => setOpen(true)}
+        className="w-[32px] h-[32px] p-0 rounded-full grid place-items-center border border-solid border-line bg-surface text-muted hover:border-line-2">
+        <Search size={13} />
+      </button>
+    );
+  }
+  return (
+    <label className="relative w-[200px]">
+      <Search size={13} className="absolute left-[10px] top-1/2 -translate-y-1/2 text-faint" aria-hidden="true" />
+      <input ref={input} className="w-full text-[12.5px] h-[32px] p-[0_10px_0_29px] rounded-full" placeholder="ID, title, company"
+        value={value} onChange={(e) => onChange(e.target.value)} onBlur={() => !value && setOpen(false)}
+        onKeyDown={(e) => e.key === 'Escape' && (onChange(''), setOpen(false))} aria-label="Search the register" />
     </label>
   );
 }
@@ -222,24 +249,41 @@ export default function Register({ go, tabs }) {
         lead="Every video and where it really stands."
       />
 
-      {/* One toolbar: the stage as a segmented queue, then compact filters whose
-          names float on their borders — the value is what you read, the name is
-          there when you need it. */}
-      <div className="flex flex-wrap items-center gap-[8px_12px] mt-[2px]">
+      {/* One row: the stage as a segmented queue, then search and compact
+          filters whose names float on their borders, then the count. */}
+      <div className="flex flex-wrap items-center gap-[12px_8px] mt-[6px]">
         {t && (
-          <div className="inline-flex flex-wrap rounded-full border border-solid border-line bg-surface p-[2px]" role="group" aria-label="Filter by stage">
+          <div className="inline-flex rounded-full border border-solid border-line bg-surface p-[2px]" role="group" aria-label="Filter by stage">
             {[{ id: '', label: 'All', n: base.length }, ...STAGES.filter((s) => t.stages[s.id] || stage === s.id).map((s) => ({ ...s, n: stageCount(s.id) }))].map((s) => (
               <button key={s.id || 'all'} type="button" aria-pressed={stage === s.id}
                 onClick={() => setStage(stage === s.id || !s.id ? '' : s.id)}
-                className={'text-[12px] leading-none p-[6px_10px] rounded-full [border:0] cursor-pointer whitespace-nowrap [transition:background_.12s] '
+                className={'text-[12px] leading-none h-[26px] p-[0_10px] rounded-full [border:0] cursor-pointer whitespace-nowrap [transition:background_.12s] '
                   + (stage === s.id ? 'bg-ink text-[#fff]' : 'bg-transparent text-ink-2 hover:bg-surface-2')}>
                 {s.label} <span className={'[font-variant-numeric:tabular-nums] ' + (stage === s.id ? 'opacity-75' : 'text-faint')}>{s.n}</span>
               </button>
             ))}
           </div>
         )}
+        <span className="w-[4px]" aria-hidden="true" />
+        <SearchPill value={q} onChange={setQ} />
+        <FilterPill label="Priority" icon={Flag} value={priority} onChange={setPriority}
+          options={[['', 'All'], ['P1', 'P1'], ['P2', 'P2'], ['P3', 'P3']]} />
+        <FilterPill label="Made by" icon={Clapperboard} value={format === 'camera' ? 'heygen' : format} onChange={setFormat}
+          options={[['', 'All'], ['heygen', 'HeyGen'], ['self', 'Recorded by me'], ['voice', 'Voice-over']]} short={{ self: 'By me' }} />
+        <FilterPill label="Stream" icon={Layers} value={stream} onChange={setStream}
+          options={[['', 'All'], ...WORKSTREAMS.map((w) => [w, w])]} />
+        <FilterPill label="Company" icon={Building2} value={company} onChange={setCompany}
+          options={[['', 'All']]} groups={companies} />
+        <FilterPill label="Sort" icon={ArrowUpDown} value={sort} onChange={setSort} neutral="release" options={SORTS}
+          short={{ release: 'Release', stage: 'Closest to done', runtime: 'Shortest' }} />
+        {filtered && (
+          <button className="ghostbtn text-[12px] text-accent p-[2px_4px]" title="Clear every filter (keeps the sort)"
+            onClick={() => setView((cur) => ({ ...Object.fromEntries(FILTER_KEYS.map((k) => [k, ''])), sort: cur.sort }))}>
+            <X size={12} /> Clear
+          </button>
+        )}
         <span className="flex items-center gap-[10px] ml-auto">
-          <span className="text-faint text-[11.5px] [font-variant-numeric:tabular-nums]">{shown.length} of {data.items.length}</span>
+          <span className="text-faint text-[11.5px] [font-variant-numeric:tabular-nums] whitespace-nowrap">{shown.length} of {data.items.length}</span>
           {/* An action, not a filter: only offered when there is voice to make. */}
           {voiceable.length > 0 && !batchBusy && (
             <button className="text-[12px] p-[5px_11px]" onClick={queueVoice}
@@ -248,29 +292,6 @@ export default function Register({ go, tabs }) {
             </button>
           )}
         </span>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-[12px_8px] mt-[14px]">
-        <label className="relative flex-[0_1_250px] min-w-[180px]">
-          <Search size={13} className="absolute left-[10px] top-1/2 -translate-y-1/2 text-faint" aria-hidden="true" />
-          <input className="w-full text-[12.5px] h-[32px] p-[0_10px_0_29px] rounded-full" placeholder="Search ID, title, company"
-            value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search the register" />
-        </label>
-        <FilterPill label="Priority" icon={Flag} value={priority} onChange={setPriority}
-          options={[['', 'All'], ['P1', 'P1'], ['P2', 'P2'], ['P3', 'P3']]} />
-        <FilterPill label="Made by" icon={Clapperboard} value={format === 'camera' ? 'heygen' : format} onChange={setFormat}
-          options={[['', 'All'], ['heygen', 'HeyGen'], ['self', 'Recorded by me'], ['voice', 'Voice-over']]} />
-        <FilterPill label="Workstream" icon={Layers} value={stream} onChange={setStream}
-          options={[['', 'All'], ...WORKSTREAMS.map((w) => [w, w])]} />
-        <FilterPill label="Company" icon={Building2} value={company} onChange={setCompany}
-          options={[['', 'All']]} groups={companies} />
-        <FilterPill label="Sort" icon={ArrowUpDown} value={sort} onChange={setSort} neutral="release" options={SORTS} />
-        {filtered && (
-          <button className="ghostbtn text-[12px] text-accent p-[2px_4px]" title="Clear every filter (keeps the sort)"
-            onClick={() => setView((cur) => ({ ...Object.fromEntries(FILTER_KEYS.map((k) => [k, ''])), sort: cur.sort }))}>
-            <X size={12} /> Clear
-          </button>
-        )}
       </div>
 
       {batch?.items.length > 0 && (

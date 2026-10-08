@@ -225,9 +225,9 @@ async function anthropic({ prompt, systemPrompt, maxTokens, temperature, fetchIm
   return { data: parseStructured(text, { provider, model }), provider, model };
 }
 
-async function ollama({ prompt, systemPrompt, maxTokens, temperature, fetchImpl }) {
+async function ollama({ prompt, systemPrompt, maxTokens, temperature, fetchImpl, model: chosen }) {
   const provider = 'ollama';
-  const model = LLM_MODELS.ollama;
+  const model = chosen || LLM_MODELS.ollama;
   const data = await request(`${ollamaBaseUrl()}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -237,7 +237,9 @@ async function ollama({ prompt, systemPrompt, maxTokens, temperature, fetchImpl 
       system: `${systemPrompt || 'You are a helpful assistant.'}\n\n${JSON_ONLY}`,
       stream: false,
       format: 'json',
-      options: { temperature, num_predict: maxTokens },
+      // Ollama's default window is 4096 tokens; a long script with its brief
+      // overflowed it silently, and the model saw only part of the draft.
+      options: { temperature, num_predict: maxTokens, num_ctx: 8192 },
     }),
   }, { provider, model, timeout: LOCAL_TIMEOUT_MS, fetchImpl });
 
@@ -256,6 +258,7 @@ export async function generateStructured(provider, {
   temperature = 0.35,
   fetchImpl = globalThis.fetch,
   readKey = readCredential,
+  model = null, // local only: which installed Ollama model to use
 } = {}) {
   if (!String(prompt ?? '').trim()) {
     throw new LlmRuntimeError('EMPTY_PROMPT', 'The model prompt is empty.', { provider });
@@ -264,7 +267,7 @@ export async function generateStructured(provider, {
     return anthropic({ prompt, systemPrompt, maxTokens, temperature, fetchImpl, readKey });
   }
   if (provider === 'ollama') {
-    return ollama({ prompt, systemPrompt, maxTokens, temperature, fetchImpl });
+    return ollama({ prompt, systemPrompt, maxTokens, temperature, fetchImpl, model });
   }
   if (provider === 'openai') {
     return openAi({ prompt, systemPrompt, maxTokens, fetchImpl, readKey });
