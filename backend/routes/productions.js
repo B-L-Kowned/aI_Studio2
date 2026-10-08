@@ -5,7 +5,10 @@ import { assess, rebalance } from '../lib/producer.js';
 import { templateById, BLANK_TEMPLATE, SOURCE_TYPES } from '../data/templates.js';
 import { allowedModes } from '../lib/capabilities.js';
 import { importScript, copyPlanFrom } from '../lib/sources.js';
+import { syncVisualRows } from '../lib/visuals.js';
 import { analyse } from '../lib/video-analysis.js';
+import { researchSource } from '../lib/research.js';
+import { normaliseWebsiteUrl } from '../lib/web-research.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -138,7 +141,7 @@ router.get(
   })
 );
 
-// Create a production. FRONTEND_CONTRACT: createProduction(sourceType, templateId?)
+// Create a production. docs/ARCHITECTURE.md §10: createProduction(sourceType, templateId?)
 router.post(
   '/',
   route(async (req, res) => {
@@ -148,11 +151,16 @@ router.post(
       // What the starting point actually needs. Asking for these AFTER creating
       // the production is what made "New production from an existing video" a
       // dialog that never mentioned a video.
-      videoFile = null, scriptText = null, copyFromId = null,
+      videoFile = null, scriptText = null, copyFromId = null, sourceUrl = null,
     } = req.body ?? {};
 
     if (!SOURCE_TYPES.includes(sourceType)) {
       return fail(res, 400, 'BAD_SOURCE', `sourceType must be one of ${SOURCE_TYPES.join(', ')}`);
+    }
+    let validatedSourceUrl = null;
+    if (sourceType === 'url') {
+      try { validatedSourceUrl = normaliseWebsiteUrl(sourceUrl).href; }
+      catch (err) { return fail(res, 400, err.code ?? 'BAD_URL', err.message); }
     }
 
     const template = templateId ? templateById(templateId) : null;
@@ -262,6 +270,18 @@ router.post(
       }
     }
 
+    if (sourceType === 'url' && validatedSourceUrl) {
+      try {
+        const researched = await researchSource(newId, validatedSourceUrl);
+        extras.push(`website researched: ${researched.title || new URL(researched.url).hostname} — review the evidence in Plan → Sources`);
+      } catch (err) {
+        // Keep the production and the failed research row. A network failure is
+        // not a reason to discard the title, campaign and template the user
+        // already chose, but it must be visible and must keep the lock closed.
+        extras.push(`website research needs attention: ${err.message}`);
+      }
+    }
+
     return ok(res, loadProduction(newId),
       `Created "${name}"` + (extras.length ? ` — ${extras.join('; ')}` : ''));
   })
@@ -351,6 +371,50 @@ router.get(
 );
 
 // --- Brief -----------------------------------------------------------------
+const RECORD_KEEPING = /^(script (status|source|length|review notes|pack id|pack only)|checks pending|completed (asset|confirmed)|final file|transcript|status:|register (id|duration)|priority|owner \/ next action|existing asset|(script|audio|final) link|pre-voiceover notes|visual plan)/i;
+// Set a brief field by label, adding it when the template did not carry one —
+// how an import supplies "Source summary" and "CTA", which the script reads.
+router.post(
+  '/:id/brief',
+  route(async (req, res) => {
+    const label = String(req.body?.label ?? '').trim().slice(0, 80);
+    const { value } = req.body ?? {};
+    if (!label) return fail(res, 400, 'NO_LABEL', 'label is required');
+    if (typeof value !== 'string') return fail(res, 400, 'NO_VALUE', 'value must be a string');
+
+    const db = getDb();
+    const id = Number(req.params.id);
+    if (!db.prepare('SELECT 1 FROM productions WHERE id = ?').get(id)) {
+      return fail(res, 404, 'NOT_FOUND', 'Production not found');
+    }
+    if (label.toLowerCase() === 'target runtime' && !RUNTIME_RE.test(value)) {
+      return fail(res, 400, 'BAD_RUNTIME', 'Target runtime must look like 2:30');
+    }
+    const existing = db
+      .prepare('SELECT * FROM brief_fields WHERE production_id = ? AND lower(label) = lower(?)')
+      .get(id, label);
+    if (existing?.value === value.slice(0, 500)) return send(res, id, 'Brief unchanged', { affected: [] });
+
+    if (existing) {
+      db.prepare('UPDATE brief_fields SET value = ? WHERE id = ?').run(value.slice(0, 500), existing.id);
+    } else {
+      const pos = db.prepare('SELECT COALESCE(MAX(position), 0) n FROM brief_fields WHERE production_id = ?').get(id).n;
+      db.prepare('INSERT INTO brief_fields (production_id, label, value, position) VALUES (?,?,?,?)')
+        .run(id, label, value.slice(0, 500), pos + 1);
+    }
+    if (label.toLowerCase() === 'target runtime') {
+      db.prepare('UPDATE productions SET target_runtime = ? WHERE id = ?').run(value, id);
+    }
+    // Record-keeping (where a script came from, its status, the register's
+    // tracking columns) does not change what the video says, so it must not
+    // mark the script out of date. Everything else in the brief can.
+    const affected = RECORD_KEEPING.test(label) ? []
+      : markStaleFrom(id, 'plan', `Brief field "${label}" ${existing ? 'changed' : 'added'}`);
+    touch(id);
+    return send(res, id, existing ? 'Brief updated' : 'Brief field added', { affected });
+  })
+);
+
 router.patch(
   '/:id/brief/:fieldId',
   route(async (req, res) => {
@@ -386,7 +450,11 @@ router.post(
       (db.prepare('SELECT MAX(position) m FROM outline_sections WHERE production_id = ?').get(id).m ?? -1) + 1;
     db.prepare(
       'INSERT INTO outline_sections (production_id, position, title, runtime, participants, purpose) VALUES (?,?,?,?,?,?)'
-    ).run(id, next, req.body?.title || 'New Section', req.body?.runtime || '1:00', req.body?.participants || '', '');
+    ).run(id, next, req.body?.title || 'New Section', req.body?.runtime || '1:00',
+      // A new section starts with whoever appears in the one before it.
+      req.body?.participants
+        || db.prepare('SELECT participants FROM outline_sections WHERE production_id = ? ORDER BY position DESC LIMIT 1').get(id)?.participants
+        || '', '');
 
     const affected = markStaleFrom(id, 'plan', 'Outline section added');
     touch(id);
@@ -420,7 +488,16 @@ router.patch(
     if (participants !== undefined)
       db.prepare('UPDATE outline_sections SET participants = ? WHERE id = ?').run(String(participants).slice(0, 200), section.id);
 
-    const affected = markStaleFrom(id, 'plan', `Outline section "${section.title}" changed`);
+    // "Who appears in this production?" is answered once every section says.
+    if (participants !== undefined) {
+      const open = db.prepare('SELECT COUNT(*) n FROM outline_sections WHERE production_id = ? AND (participants IS NULL OR participants = \'\')').get(id).n;
+      if (!open) {
+        db.prepare("UPDATE decisions SET resolution = 'Chosen in How it\'s made' WHERE production_id = ? AND kind = 'warning' AND resolution IS NULL AND text = 'Who appears in this production?'").run(id);
+      }
+    }
+    // Who appears does not change the words, so it does not make the script stale.
+    const wordsMayChange = [runtime, title, purpose].some((v) => v !== undefined);
+    const affected = wordsMayChange ? markStaleFrom(id, 'plan', `Outline section "${section.title}" changed`) : [];
     touch(id);
     return send(res, id, 'Outline updated', { affected });
   })
@@ -458,6 +535,8 @@ router.post(
   route(async (req, res) => {
     const id = Number(req.params.id);
     getDb().prepare('UPDATE productions SET outline_approved = 1 WHERE id = ?').run(id);
+    // The shot list starts from the approved structure: one row per section.
+    syncVisualRows(id);
     return send(res, id, 'Outline approved');
   })
 );
@@ -582,6 +661,31 @@ router.post(
     const affected = markStaleFrom(id, 'plan', 'A planning decision was resolved');
     touch(id);
     return send(res, id, 'Decision resolved', { affected });
+  })
+);
+
+// --- Script written elsewhere ----------------------------------------------
+// The same import "New production → Existing script" performs, for a
+// production that already exists: an accepted version, segments built.
+router.post(
+  '/:id/script/import',
+  route(async (req, res) => {
+    const id = Number(req.params.id);
+    const text = String(req.body?.text ?? '');
+    const status = req.body?.status === 'proposed' ? 'proposed' : 'accepted';
+    if (!getDb().prepare('SELECT 1 FROM productions WHERE id = ?').get(id)) {
+      return fail(res, 404, 'NOT_FOUND', 'Production not found');
+    }
+    if (!text.trim()) return fail(res, 400, 'EMPTY_SCRIPT', 'text is required');
+    try {
+      const r = importScript(id, text, { status });
+      touch(id);
+      return send(res, id,
+        `Script v${r.version} imported as ${status === 'proposed' ? 'a proposal to review' : 'accepted'} — ${r.lines} line${r.lines === 1 ? '' : 's'}`,
+        { imported: r });
+    } catch (err) {
+      return fail(res, err.code === 'EMPTY_SCRIPT' ? 422 : 400, err.code ?? 'IMPORT_FAILED', err.message);
+    }
   })
 );
 

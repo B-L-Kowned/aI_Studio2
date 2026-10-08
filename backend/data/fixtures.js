@@ -133,14 +133,13 @@ export const startSources = [
   { icon: 'FolderKanban', title: 'Existing Project',
     body: 'Copy the plan from another production — brief, outline and scenes. The work is not copied, only the plan.' },
   { icon: 'Link', title: 'Source / URL',
-    body: 'Build a production from a link. Not built yet — fetching and reading a page is its own piece of work.',
-    available: false },
+    body: 'Research a website, preserve the evidence and propose brief fields for your approval.' },
 ];
 
 export const setupCards = [
   { title: 'License', icon: 'KeyRound', body: 'Validate key · upgrade without reinstall', step: 'license' },
   { title: 'Storage', icon: 'HardDrive', body: 'Local · Google Drive · Dropbox', step: 'storage' },
-  { title: 'Planning AI', icon: 'Sparkles', body: 'Included LLM · OpenAI · Claude · Grok (BYO keys)', step: 'ai' },
+  { title: 'Planning AI', icon: 'Sparkles', body: 'Built-in deterministic · local Ollama · cloud keys', step: 'ai' },
   { title: 'Generation', icon: 'Video', body: 'Provider abstraction · HeyGen connection · Dry Run default', step: 'generation' },
   { title: 'Publishing', icon: 'Share2', body: 'YouTube · LinkedIn · TikTok · Instagram · Facebook · X', step: 'publishing' },
   { title: 'Safety / Cost', icon: 'Lock', body: 'Preview first · explicit paid render confirmation · usage ledger', step: 'safety' },

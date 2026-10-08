@@ -1,3 +1,5 @@
+> Archived 2026-09-29: superseded by `docs/HANDOFF.md` and `docs/ARCHITECTURE.md` (moved from `frontend/docs/`). Paths below are as they were when written.
+
 # SANDY_REPORT
 
 > Historical report for the 2026-09-28 run. Its commit-state notes describe

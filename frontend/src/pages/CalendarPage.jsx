@@ -25,13 +25,31 @@ const STAGE = {
   published: { label: 'Published', tone: 'done' },
 };
 
+// Colour is the pipeline position, so a month reads as progress. The left edge
+// carries it; `border: 0` leaves the other three sides in currentcolor.
+// Written out in full so Tailwind can see every class.
+const ITEM_TONE = {
+  plan:   '[border-color:currentcolor_currentcolor_currentcolor_var(--line-2)] bg-canvas text-ink-2',
+  script: '[border-color:currentcolor_currentcolor_currentcolor_var(--warn)] bg-canvas text-ink-2',
+  ready:  '[border-color:currentcolor_currentcolor_currentcolor_var(--accent)] bg-canvas text-ink-2',
+  rend:   '[border-color:currentcolor_currentcolor_currentcolor_var(--accent)] bg-accent-soft text-ink-2',
+  export: '[border-color:currentcolor_currentcolor_currentcolor_var(--ok)] bg-ok-soft text-ink-2',
+  done:   '[border-color:currentcolor_currentcolor_currentcolor_var(--ok)] bg-ok-soft text-ok',
+  late:   '[border-color:currentcolor_currentcolor_currentcolor_var(--danger)] bg-danger-soft text-danger',
+};
+
+// A zero is not news, so it is dimmed rather than coloured.
+const statSpan = (n, tone) => (n ? tone : 'text-faint font-[500]');
+const statB = (n, color) =>
+  'text-[16px] mr-[5px] ' + (n ? 'font-semibold ' + color : 'text-faint font-[500]');
+
 const shiftMonth = (key, by) => {
   const [y, m] = key.split('-').map(Number);
   const d = new Date(y, m - 1 + by, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
-export default function CalendarPage({ go }) {
+export default function CalendarPage({ go, tabs }) {
   const {
     openProduction, setPendingStage, mutate, pendingDate, setPendingDate, scopeMode,
   } = useStudio();
@@ -88,44 +106,59 @@ export default function CalendarPage({ go }) {
     catch { /* mutate reports it */ }
   };
 
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <><PageHead title="Production calendar" tabs={tabs} /><p className="muted">Loading…</p></>;
   const { days, label, counts, unscheduled } = data;
 
   return (
     <>
       <PageHead
         title="Production calendar"
+        tabs={tabs}
         lead="What lands when, and what it still needs before it can."
         actions={
           <>
             <button onClick={() => setMonthKey(shiftMonth(monthKey, -1))}><ChevronLeft size={14} /></button>
-            <b className="monthlabel">{label}</b>
+            <b className="text-[13px] min-w-[140px] text-center">{label}</b>
             <button onClick={() => setMonthKey(shiftMonth(monthKey, 1))}><ChevronRight size={14} /></button>
           </>
         }
       />
 
-      <div className="calstats">
-        <span><b>{counts.scheduled}</b> scheduled</span>
-        <span className={counts.late ? 'bad' : 'zero'}><b>{counts.late}</b> late</span>
-        <span className={counts.readyToPublish ? 'good' : 'zero'}>
-          <b>{counts.readyToPublish}</b> ready to publish
+      <div className="flex gap-[18px] m-[0_0_14px] text-[12px] text-muted">
+        <span><b className={statB(1, 'text-ink')}>{counts.scheduled}</b> scheduled</span>
+        <span className={statSpan(counts.late, '')}>
+          <b className={statB(counts.late, 'text-danger')}>{counts.late}</b> late
         </span>
-        <span className={counts.published ? 'good' : 'zero'}><b>{counts.published}</b> published</span>
+        <span className={statSpan(counts.readyToPublish, 'good')}>
+          <b className={statB(counts.readyToPublish, 'text-ok')}>{counts.readyToPublish}</b> ready to publish
+        </span>
+        <span className={statSpan(counts.published, 'good')}>
+          <b className={statB(counts.published, 'text-ok')}>{counts.published}</b> published
+        </span>
       </div>
 
-      <div className="calgrid">
+      <div className="grid grid-cols-[repeat(7,1fr)] gap-[1px] bg-line border border-solid border-line rounded overflow-hidden mb-[20px]">
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-          <span className="calhead" key={d}>{d}</span>
+          <span className="bg-surface-2 p-[7px_8px] text-[10.5px] uppercase tracking-[.04em] text-muted" key={d}>{d}</span>
         ))}
 
         {days.map((d) => (
           <div
-            className={'calday' + (d.inMonth ? '' : ' out') + (d.isToday ? ' today' : '')
-              + (d.isWeekend ? ' weekend' : '') + (highlight === d.date ? ' picked' : '')}
+            // relative: the day cell is what the add popover anchors to.
+            className={'group relative min-h-[92px] p-[6px] flex flex-col gap-[3px]'
+              + (d.inMonth ? '' : ' out') + (d.isToday ? ' today' : '')
+              + (highlight === d.date ? ' picked' : '')
+              // Days from the neighbouring months are shown, not hidden.
+              + (highlight === d.date ? ' bg-accent-soft' : !d.inMonth ? ' bg-canvas'
+                : d.isWeekend ? ' bg-surface-2' : ' bg-surface')
+              + (highlight === d.date ? ' [box-shadow:inset_0_0_0_2px_var(--accent)]'
+                : d.isToday ? ' [box-shadow:inset_0_0_0_2px_var(--ink)]' : '')}
             key={d.date}
           >
-            <span className="caldate">{d.dayOfMonth}</span>
+            <span
+              className={'font-mono text-[11px] not-italic leading-[normal] '
+                + (d.isToday ? 'text-ink font-semibold' : !d.inMonth ? 'text-line-2 font-normal' : 'text-faint font-normal')}
+            >{d.dayOfMonth}</span>
 
             {/* Every in-month day takes work. This is the gesture people
                 actually reach for on a calendar, and it did not exist: days
@@ -133,7 +166,7 @@ export default function CalendarPage({ go }) {
                 scheduling meant scrolling past the whole grid to a list. */}
             {d.inMonth && (
               <button
-                className="caladdbtn"
+                className="absolute top-[3px] right-[3px] inline-flex items-center justify-center w-[18px] h-[18px] p-0 [border:0] rounded-sm bg-transparent text-faint opacity-0 cursor-pointer group-hover:opacity-100 focus-visible:opacity-100 hover:bg-canvas hover:text-ink"
                 title={`Put a production on ${d.date}`}
                 aria-label={`Put a production on ${d.date}`}
                 onClick={() => setAddingOn(addingOn === d.date ? null : d.date)}
@@ -143,19 +176,26 @@ export default function CalendarPage({ go }) {
             )}
 
             {addingOn === d.date && (
-              <div className="caladd" onKeyDown={(e) => e.key === 'Escape' && setAddingOn(null)}>
+              <div
+                className="absolute top-[22px] left-[4px] right-[4px] z-30 bg-surface border border-solid border-line rounded-sm [box-shadow:0_8px_24px_rgb(0_0_0/0.14)] p-[6px] min-w-[190px]"
+                onKeyDown={(e) => e.key === 'Escape' && setAddingOn(null)}>
                 {unscheduled.length === 0 ? (
-                  <p className="muted">Everything already has a date.</p>
+                  <p className="muted m-0 p-[4px] text-[11.5px]">Everything already has a date.</p>
                 ) : (
                   <>
-                    <small>Put on {d.date}</small>
+                    <small className="block text-faint text-[10.5px] p-[2px_4px_5px]">Put on {d.date}</small>
                     {/* Not capped. With fifty companies a list that silently
                         stops at ten hides the thing you are looking for. */}
-                    <div className="caladdlist">
+                    {/* Scrolls rather than truncating. */}
+                    <div className="flex flex-col max-h-[210px] overflow-y-auto">
                       {unscheduled.map((u) => (
-                        <button key={u.id} onClick={() => putOnDay(u.id, d.date)}>
+                        <button
+                          className="block w-full text-left [border:0] bg-transparent cursor-pointer p-[5px_6px] rounded-sm text-[12px] text-ink [&:hover:not(:disabled)]:bg-canvas"
+                          key={u.id}
+                          onClick={() => putOnDay(u.id, d.date)}
+                        >
                           {u.title}
-                          <i>{u.campaign ?? 'No campaign'}</i>
+                          <i className="block not-italic text-faint text-[10.5px]">{u.campaign ?? 'No campaign'}</i>
                         </button>
                       ))}
                     </div>
@@ -166,7 +206,10 @@ export default function CalendarPage({ go }) {
 
             {d.items.map((i) => (
               <button
-                className={'calitem ' + (STAGE[i.stage]?.tone ?? '') + (i.late ? ' late' : '')}
+                className={'[border-style:none_none_none_solid] [border-width:0_0_0_3px] rounded-[3px] p-[3px_6px] text-[11px] text-left truncate '
+                  + '[&:hover:not(:disabled)]:bg-surface-2 [&:hover:not(:disabled)]:text-ink '
+                  + (STAGE[i.stage]?.tone === 'rend' ? '' : (STAGE[i.stage]?.tone ?? '')) + ' '
+                  + ITEM_TONE[i.late ? 'late' : STAGE[i.stage]?.tone ?? 'plan']}
                 key={i.id}
                 title={`${i.title}\n${i.campaign ?? 'No campaign'}\n${STAGE[i.stage]?.label}`
                   + (i.action ? ` — next: ${i.action}` : ' — done')}
@@ -188,15 +231,19 @@ export default function CalendarPage({ go }) {
           meta={`${unscheduled.length} without a date`}
           flush
         >
-          <div className="schedlist">
+          <div className="flex flex-col">
             {unscheduled.map((p) => (
-              <div className="schedrow tight" key={p.id}>
-                <span className="schedwho">
-                  <b>{p.title}</b>
-                  <i>{p.campaign ?? 'No campaign'} · {STAGE[p.stage]?.label}</i>
+              <div
+                className="grid grid-cols-[minmax(0,1fr)_auto] gap-[14px] items-center p-[11px_14px] [border-top:1px_solid_var(--line)] first:[border-top:0] lte900:gap-y-[8px]"
+                key={p.id}
+              >
+                <span className="flex flex-col gap-[1px] min-w-0">
+                  <b className="text-[13.5px] font-[550] truncate">{p.title}</b>
+                  <i className="not-italic text-[11px] text-faint truncate">{p.campaign ?? 'No campaign'} · {STAGE[p.stage]?.label}</i>
                 </span>
                 {scheduling === p.id ? (
                   <input
+                    className="text-[12.5px] p-[5px_8px]"
                     type="date"
                     autoFocus
                     onChange={(e) => schedule(p.id, e.target.value)}

@@ -1,95 +1,77 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Share2, Lock, Check, AlertCircle, ExternalLink } from 'lucide-react';
+import React, { useState } from 'react';
+import { Check, ExternalLink } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import { useResource } from '../hooks/use-resource.js';
+import LoadState from '../components/LoadState.jsx';
 
 export default function PublishStage() {
   const { production, mutate } = useStudio();
-  const [state, setState] = useState(null);
   const [modes, setModes] = useState({});
 
-  const load = useCallback(async () => setState(await api.publications(production.id)), [production.id]);
-  useEffect(() => { load(); }, [load]);
+  const { data: state, error, reload: load, setData: setState } =
+    useResource(() => api.publications(production.id), [production.id]);
 
-  if (!state) return <p className="muted">Loading…</p>;
+  if (!state) return <LoadState error={error} retry={load} />;
 
   const run = async (platform) => {
     // Same fallback the select uses. They disagreed, so a card showing "Publish
     // via connection" could send "prepare" and report success for the wrong act.
     const target = state.targets.find((t) => t.platform === platform);
-    const mode = modes[platform] ?? target?.mode ?? 'prepare';
+    const requested = modes[platform] ?? target?.mode ?? 'prepare';
+    const mode = target?.availableModes?.includes(requested) ? requested : 'prepare';
     try {
       await mutate(() => api.publish(production.id, platform, mode), null);
     } catch { /* mutate reports it */ }
     load();
   };
 
+  if (!state.hasExport) {
+    return (
+      <section aria-label="Publish">
+        <h2>Publish</h2>
+        <p className="text-muted text-[13px]">Opens once the finished video exists — export it in Edit, or upload it above.</p>
+      </section>
+    );
+  }
+
   return (
-    <div className="stagepane">
-      <h2>Publish / Hand Off</h2>
-      <p>
-        Automation is optional. A complete platform package is prepared even when the final
-        upload is manual — an unavailable connection degrades to Prepare only and never blocks you.
-      </p>
-
-      {!state.hasExport && (
-        <div className="notice warn">
-          <Lock /> Create an export in Edit before preparing a publication.
-        </div>
-      )}
-
-      <div className="publishgrid">
-        {state.targets.map((t) => (
-          <div className={'publishcard' + (t.kind === 'owned' ? ' owned' : '')} key={t.platform}>
-            <Share2 />
-            {t.kind === 'owned' && <span className="owntag">Owned channel</span>}
-            <b>{t.platform}</b>
-            <span className="chandetail">{t.domain ?? t.detail}</span>
-            <span className={'conn ' + (t.connected ? 'on' : 'off')}>
-              {t.connected ? <><Check size={12} /> Connected</> : 'Not connected'}
-            </span>
-            <select
-              value={modes[t.platform] ?? t.mode}
-              onChange={(e) => setModes((m) => ({ ...m, [t.platform]: e.target.value }))}
-            >
-              <option value="prepare">Prepare only</option>
-              <option value="schedule">Schedule via connection</option>
-              <option value="publish">Publish via connection</option>
-            </select>
-            <button
-              className={(modes[t.platform] ?? t.mode) === 'publish' ? 'primary' : ''}
-              disabled={!state.hasExport}
-              onClick={() => run(t.platform)}
-            >
-              {(modes[t.platform] ?? t.mode) === 'publish'
-                ? 'Publish now'
-                : t.status === 'not_prepared' ? 'Prepare' : 'Re-prepare'}
-            </button>
-
-            {/* A published post is a real page. Showing only the word
-                "published" was a claim with nothing to click. */}
-            {t.postUrl && (
-              <a className="postlink" href={t.postUrl} target="_blank" rel="noreferrer">
-                <ExternalLink size={12} /> View the post
-              </a>
-            )}
-            {t.error && (
-              <small className="pstatus err"><AlertCircle size={12} /> {t.error}</small>
-            )}
-            {t.status !== 'not_prepared' && !t.error && (
-              <small className={'pstatus' + (t.status === 'published' && !t.verified ? ' unverified' : '')}>
-                {t.stale ? (
-                  <><AlertCircle size={12} /> stale</>
-                ) : t.status === 'published' && !t.verified ? (
-                  <><AlertCircle size={12} /> recorded as published, but nothing was uploaded</>
-                ) : (
-                  <><Check size={12} /> {t.status}</>
+    <section aria-label="Publish">
+      <h2>Publish</h2>
+      <p className="text-muted text-[13px] m-[0_0_10px]">Each channel gets a ready package — the file, title, description and captions. Where there is no connection, you post it yourself.</p>
+      <ul className="list-none p-0 m-0 border border-solid border-line rounded-lg bg-surface">
+        {state.targets.map((t) => {
+          const mode = modes[t.platform] ?? t.mode;
+          return (
+            <li key={t.platform} className="grid grid-cols-[minmax(0,1fr)_auto] gap-[12px] items-center p-[10px_14px] [&+&]:[border-top:1px_solid_var(--line)]">
+              <div className="min-w-0">
+                <b className="text-[13.5px] font-[580]">{t.platform}</b>
+                {t.kind === 'owned' && <span className="ml-[8px] text-[10px] tracking-[.05em] uppercase font-semibold text-ink-2 bg-canvas border border-solid border-line-2 rounded-sm p-[1px_6px]">Yours</span>}
+                <span className="block text-[12px] text-muted">
+                  {t.connected ? <><Check size={11} className="inline -mt-[2px] text-ok" /> Connected</> : 'You post it — the package is prepared for you'}
+                  {t.status !== 'not_prepared' && !t.error && (
+                    <span className={t.status === 'published' && !t.verified ? 'text-warn' : 'text-ok'}>
+                      {' · '}{t.stale ? 'out of date — prepare again' : t.status === 'published' && !t.verified ? 'recorded as published, but nothing was uploaded' : t.status}
+                    </span>
+                  )}
+                  {t.error && <span className="text-danger"> · {t.error}</span>}
+                </span>
+                {t.postUrl && <a className="text-[12px] text-accent underline" href={t.postUrl} target="_blank" rel="noreferrer"><ExternalLink size={11} className="inline" /> View the post</a>}
+              </div>
+              <span className="flex items-center gap-[6px]">
+                {t.availableModes.length > 1 && (
+                  <select className="text-[12px]" value={mode} onChange={(e) => setModes((m) => ({ ...m, [t.platform]: e.target.value }))}>
+                    {t.availableModes.map((m) => <option value={m} key={m}>{{ prepare: 'Prepare only', schedule: 'Schedule', publish: 'Publish' }[m]}</option>)}
+                  </select>
                 )}
-              </small>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
+                <button className={mode === 'publish' ? 'primary' : ''} onClick={() => run(t.platform)}>
+                  {mode === 'publish' ? 'Publish now' : t.status === 'not_prepared' ? 'Prepare' : 'Prepare again'}
+                </button>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

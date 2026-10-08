@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useStudio } from '../context/studio-context.jsx';
+import { Tabs } from '../components/Section.jsx';
 import Campaigns from './Campaigns.jsx';
 import Ideas from './Ideas.jsx';
 import Companies from './Companies.jsx';
 import CalendarPage from './CalendarPage.jsx';
 import Training from './Training.jsx';
+import Register from './Register.jsx';
+import Review from './Review.jsx';
 
 /**
  * Plan — what is being made, and when.
@@ -18,12 +21,18 @@ import Training from './Training.jsx';
  * built from the server's map, never from a copy of it.
  */
 const VIEWS = [
-  // The lot comes first: it is where work starts, before it is work.
-  { id: 'Ideas', label: 'Parking lot' },
-  { id: 'Companies', label: 'Companies' },
-  { id: 'Campaigns', label: 'Campaigns' },
+  // The end-to-end register: every Video ID and where it really stands.
+  { id: 'Register', label: 'Register' },
+  // Reading work across the register: drafts to approve, checks to answer.
+  { id: 'Review', label: 'Review' },
+  // What is due when — daily work, not setup.
   { id: 'Calendar', label: 'Calendar' },
-  { id: 'Training', label: 'Training' },
+  // Ideas not yet videos.
+  { id: 'Ideas', label: 'Parking lot' },
+  // Set up once and rarely visited: set apart so the daily three stand out.
+  { id: 'Companies', label: 'Companies', setup: true },
+  { id: 'Campaigns', label: 'Campaigns', setup: true },
+  { id: 'Training', label: 'Training', setup: true },
 ];
 
 export default function Plan({ go, routes, programs }) {
@@ -32,7 +41,9 @@ export default function Plan({ go, routes, programs }) {
   const granted = programs ?? workspace.program?.programs ?? [];
   const allowed = VIEWS.filter((v) => !map[v.id] || granted.includes(map[v.id]));
 
-  const [view, setView] = useState('Campaigns');
+  // The tab you were on, so opening a video and coming back lands you there.
+  const [view, setViewState] = useState(() => { try { return sessionStorage.getItem('plan-view') || 'Register'; } catch { return 'Register'; } });
+  const setView = (v) => { setViewState(v); try { sessionStorage.setItem('plan-view', v); } catch { /* storage blocked */ } };
 
   // Opened from somewhere that knows which view it meant.
   useEffect(() => {
@@ -42,23 +53,19 @@ export default function Plan({ go, routes, programs }) {
     }
   }, [pendingView, setPendingView]);
   const current = allowed.some((v) => v.id === view) ? view : allowed[0]?.id;
+  const tabs = <Tabs items={allowed} value={current} onChange={setView} />;
 
   return (
     <>
-      <div className="subnav">
-        {allowed.map((v) => (
-          <button key={v.id} className={current === v.id ? 'on' : ''} onClick={() => setView(v.id)}>
-            {v.label}
-          </button>
-        ))}
-      </div>
-
-      {current === 'Ideas' && <Ideas go={go} />}
-      {current === 'Companies' && <Companies go={go} />}
-      {current === 'Campaigns' && <Campaigns go={go} />}
-      {current === 'Calendar' && <CalendarPage />}
+      {/* The view draws the header, so its title sits above these tabs. */}
+      {current === 'Ideas' && <Ideas go={go} tabs={tabs} />}
+      {current === 'Register' && <Register go={go} tabs={tabs} />}
+      {current === 'Review' && <Review go={go} tabs={tabs} />}
+      {current === 'Companies' && <Companies go={go} tabs={tabs} />}
+      {current === 'Campaigns' && <Campaigns go={go} tabs={tabs} />}
+      {current === 'Calendar' && <CalendarPage tabs={tabs} />}
       {/* Training's "new course" is a sibling view, not another page. */}
-      {current === 'Training' && <Training go={go} goView={setView} />}
+      {current === 'Training' && <Training go={go} goView={setView} tabs={tabs} />}
     </>
   );
 }

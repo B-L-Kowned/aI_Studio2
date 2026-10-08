@@ -1,3 +1,4 @@
+import { previewSrc } from './preview-cache.js';
 import { getDb } from '../db/index.js';
 import { presenterTabsFor, PRESENTER_TAB_INFO, hasProgram } from './programs.js';
 
@@ -15,7 +16,9 @@ function serialize(r) {
     name: r.name,
     program: r.program,
     description: r.description,
-    // Only a character has artwork; the tile style follows from the kind.
+    // Custom artwork is character-only. Every presenter may still show the
+    // preview of the exact provider avatar they are cast to; that is not
+    // invented artwork, it is the face the finished video will actually use.
     artworkUrl: r.artwork_url,
     hasArtwork: !!r.artwork_url,
     tagline: r.tagline ?? null,
@@ -24,7 +27,13 @@ function serialize(r) {
     persona: (() => { try { return r.persona ? JSON.parse(r.persona) : null; } catch { return null; } })(),
     isActive: !!r.is_active,
     personId: r.person_id,
-    avatar: a ? { id: a.id, remoteId: a.remote_id, name: a.name } : null,
+    avatar: a ? {
+      id: a.id,
+      remoteId: a.remote_id,
+      name: a.name,
+      previewUrl: previewSrc(a),
+      provider: a.provider,
+    } : null,
     voice: v ? { id: v.id, remoteId: v.remote_id, name: v.name } : null,
     // Castable only once a real avatar and voice back it.
     ready: !!a && !!v,

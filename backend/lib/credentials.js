@@ -66,10 +66,7 @@ export function saveCredential(provider, secret, verified = false) {
   return { provider, hint, verified };
 }
 
-/** Backend-only. Never route this through an HTTP response. */
-export function readCredential(provider) {
-  const row = getDb().prepare('SELECT * FROM credentials WHERE provider = ?').get(provider);
-  if (!row) return null;
+function decrypt(row) {
   const decipher = crypto.createDecipheriv(ALG, masterKey(), Buffer.from(row.iv, 'hex'));
   decipher.setAuthTag(Buffer.from(row.tag, 'hex'));
   return Buffer.concat([
@@ -78,11 +75,39 @@ export function readCredential(provider) {
   ]).toString('utf8');
 }
 
+const warned = new Set();
+
+/**
+ * Backend-only. Never route this through an HTTP response.
+ *
+ * A row that cannot be decrypted — credentials.key replaced, or a database
+ * restored without it — reads as NOT CONNECTED. It used to throw, and because
+ * the workspace asks every connection whether it is live, one unreadable row
+ * took the whole app down with "Unsupported state or unable to authenticate
+ * data". The row is kept so reconnecting simply overwrites it.
+ */
+export function readCredential(provider) {
+  const row = getDb().prepare('SELECT * FROM credentials WHERE provider = ?').get(provider);
+  if (!row) return null;
+  try {
+    return decrypt(row);
+  } catch {
+    if (!warned.has(provider)) {
+      warned.add(provider);
+      console.warn(`[warn] stored ${provider} credential cannot be decrypted with ${keyPath()} — treating it as not connected. Reconnect to replace it.`);
+    }
+    return null;
+  }
+}
+
 export function listCredentials() {
   return getDb()
-    .prepare('SELECT provider, hint, verified FROM credentials ORDER BY provider')
+    .prepare('SELECT * FROM credentials ORDER BY provider')
     .all()
-    .map((r) => ({ provider: r.provider, hint: r.hint, verified: !!r.verified }));
+    .map((r) => ({
+      provider: r.provider, hint: r.hint, verified: !!r.verified,
+      unreadable: readCredential(r.provider) === null,
+    }));
 }
 
 export function deleteCredential(provider) {

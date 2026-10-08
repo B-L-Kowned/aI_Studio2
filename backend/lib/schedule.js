@@ -2,6 +2,7 @@ import { getDb } from '../db/index.js';
 import { renderGate } from './segments.js';
 import { staleSummary } from './stale.js';
 import { ideaCounts } from './ideas.js';
+import { stageOf } from './calendar.js';
 
 // The production schedule.
 //
@@ -261,15 +262,12 @@ export function schedule({
     let nextDue = null;
 
     for (const p of g.items) {
-      const hasScript = db
-        .prepare("SELECT 1 FROM script_versions WHERE production_id = ? AND status = 'accepted'")
-        .get(p.id);
-      const hasRender = db
-        .prepare("SELECT 1 FROM render_versions WHERE production_id = ? AND status = 'complete'")
-        .get(p.id);
-      if (hasRender) stages.done++;
+      // The calendar's stageOf is the one definition of how far a production
+      // has got; these four buckets are a coarser view of it.
+      const stage = stageOf(p.id);
+      if (['rendered', 'exported', 'published'].includes(stage)) stages.done++;
       else if (flightIds.has(p.id)) stages.rendering++;
-      else if (hasScript) stages.scripted++;
+      else if (stage === 'scripted' || stage === 'ready') stages.scripted++;
       else stages.planning++;
 
       const d = days(p.due_at);

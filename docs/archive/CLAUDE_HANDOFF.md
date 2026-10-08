@@ -1,3 +1,5 @@
+> Archived 2026-09-29: superseded by `docs/HANDOFF.md` and `docs/ARCHITECTURE.md`. Paths below are as they were when written.
+
 # Claude implementation handoff — v0.3
 
 > Historical implementation brief. It is not the current handoff or architecture

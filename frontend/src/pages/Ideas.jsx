@@ -3,7 +3,8 @@ import { Plus, Flame, Archive, Trash2, ArrowUpRight, Check, Lightbulb } from 'lu
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { Section, PageHead, Empty } from '../components/Section.jsx';
-import NewProductionFlow from './NewProductionFlow.jsx';
+import { EnhanceButton, Suggestion, modelLabel } from '../components/Enhance.jsx';
+import NewProductionFlow from '../components/NewProductionFlow.jsx';
 
 /**
  * The parking lot.
@@ -22,13 +23,23 @@ const HEAT = {
   low: { label: 'Someday', tone: 'low' },
 };
 
-export default function Ideas({ go }) {
+// Colour, border and fill per heat. The hover border is a compound variant so it
+// out-specifies the generic `button:hover:not(:disabled)`, as the old rule did.
+const HEAT_BTN = 'border border-solid p-[5px] rounded-sm [&:hover:not(:disabled)]:border-line-2';
+const HEAT_TONE = {
+  hot: 'text-danger border-[#f2ccc9] bg-danger-soft',
+  low: 'text-faint border-line bg-surface',
+  '': 'text-line-2 border-line bg-surface',
+};
+
+export default function Ideas({ go, tabs }) {
   const { collections, mutate, production } = useStudio();
   const [data, setData] = useState(null);
   const [text, setText] = useState('');
   const [campaignId, setCampaignId] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [promoting, setPromoting] = useState(null);
+  const [shape, setShape] = useState(null); // { ideaId, busy } | suggestion | { ideaId, error }
 
   const load = useCallback(
     () => api.ideas(showArchived).then(setData),
@@ -49,14 +60,23 @@ export default function Ideas({ go }) {
     await run(() => api.addIdea(body));
   };
 
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <><PageHead title="Parking lot" tabs={tabs} /><p className="muted">Loading…</p></>;
   const { ideas, counts } = data;
   const live = ideas.filter((i) => !i.archivedAt);
+
+  const shapeIt = async (idea) => {
+    setShape({ ideaId: idea.id, busy: true });
+    try {
+      const r = await api.shapeIdea(idea.id);
+      setShape(r.data);
+    } catch (err) { setShape({ ideaId: idea.id, error: err.message }); }
+  };
 
   return (
     <>
       <PageHead
         title="Parking lot"
+        tabs={tabs}
         lead="Things you might make. No pipeline, no deadline, no place in the schedule until you commit."
         actions={
           <button onClick={() => setShowArchived((v) => !v)}>
@@ -67,13 +87,14 @@ export default function Ideas({ go }) {
 
       {/* One line, always in the same place. A capture box you have to go and
           find is a capture box nobody uses. */}
-      <form className="parkform" onSubmit={park}>
+      <form className="flex gap-[8px] m-[4px_0_18px]" onSubmit={park}>
         <input
+          className="flex-1 text-[13.5px] p-[9px_11px]"
           placeholder="Park an idea — a sentence is enough"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
-        <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
+        <select className="text-[12.5px] p-[8px]" value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
           <option value="">No company</option>
           {collections.campaigns.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
@@ -94,11 +115,15 @@ export default function Ideas({ go }) {
             Nothing parked. This is where a thought goes when it is not yet a production.
           </Empty>
         ) : (
-          <div className="parklist">
+          <div className="flex flex-col">
             {ideas.map((i) => (
-              <div className={'parkrow' + (i.archivedAt ? ' archived' : '')} key={i.id}>
+              <div
+                className={'flex flex-wrap items-center gap-[10px] p-[10px_14px] [border-top:1px_solid_var(--line)] first:[border-top:0]'
+                  + (i.archivedAt ? ' opacity-[.55]' : '')}
+                key={i.id}
+              >
                 <button
-                  className={'heatbtn ' + (HEAT[i.heat]?.tone ?? '')}
+                  className={HEAT_BTN + ' ' + HEAT_TONE[HEAT[i.heat]?.tone ?? '']}
                   title={`${HEAT[i.heat]?.label} — click to change`}
                   disabled={!!i.archivedAt}
                   onClick={() => run(() => api.updateIdea(i.id, {
@@ -108,9 +133,10 @@ export default function Ideas({ go }) {
                   <Flame size={13} />
                 </button>
 
-                <span className="parkmain">
-                  <b>{i.text}</b>
-                  <i>
+                <span className="flex-1 min-w-0 flex flex-col gap-[1px]">
+                  <b className="text-[13.5px] font-[550]">{i.text}</b>
+                  {i.note && <span className="text-[12px] text-muted whitespace-pre-line">{i.note}</span>}
+                  <i className="not-italic text-[11px] text-faint">
                     {i.campaign ?? 'No company'} · parked {i.ageDays === 0 ? 'today' : `${i.ageDays}d ago`}
                     {i.promotedTitle && ` · became "${i.promotedTitle}"`}
                   </i>
@@ -124,6 +150,9 @@ export default function Ideas({ go }) {
                   </button>
                 ) : (
                   <>
+                    <EnhanceButton compact label="Shape it" busy={shape?.ideaId === i.id && shape.busy}
+                      onPick={() => shapeIt(i)} options={[{ id: 'shape', label: 'Shape it',
+                        detail: 'A working title, who it is for and its one point — from the idea and what the company has already published.' }]} />
                     <button
                       className="primary"
                       title="Turn this into a production"
@@ -139,12 +168,21 @@ export default function Ideas({ go }) {
                       <Archive size={13} />
                     </button>
                     <button
-                      className="ghostbtn danger"
+                      className="ghostbtn text-faint hover:text-danger"
                       title="Delete for good"
                       onClick={() => run(() => api.deleteIdea(i.id))}
                     >
                       <Trash2 size={13} />
                     </button>
+                    {shape?.ideaId === i.id && shape.error && <span className="basis-full text-[12px] text-warn">{shape.error}</span>}
+                    {shape?.ideaId === i.id && shape.title && (
+                      <span className="basis-full">
+                        <Suggestion text={<><b className="block font-[600]">{shape.title}</b><span className="whitespace-pre-line text-[12.5px] text-ink-2">{shape.note}</span></>}
+                          flags={shape.flags} meta={modelLabel(shape.model)}
+                          onDismiss={() => setShape(null)}
+                          onUse={() => { run(() => api.updateIdea(i.id, { text: shape.title, note: shape.note })); setShape(null); }} />
+                      </span>
+                    )}
                   </>
                 )}
               </div>

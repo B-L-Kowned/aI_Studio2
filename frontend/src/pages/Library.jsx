@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Search, FileText, User, Mic, Image, Film, Video, Package, Trash2, Check, X } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import { toClock } from '../utils/format.js';
 import { Section, PageHead, Empty } from '../components/Section.jsx';
 
 // A library row should say what the thing IS. The old tiles were a 100px empty
@@ -17,8 +18,6 @@ const KIND = {
   heygen_video: { label: 'HeyGen',     icon: Video },
 };
 
-const clock = (sec) =>
-  `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
 
 export default function Library() {
   const { collections, refreshLibrary, mutate, notify } = useStudio();
@@ -57,7 +56,7 @@ export default function Library() {
     <>
       <PageHead
         title="Library"
-        lead="Avatars, voices, footage, backgrounds, templates, renders and exports — everything reusable across productions."
+        lead="Avatars, voices, footage, renders and exports — reusable across videos."
       />
 
       <Section
@@ -65,16 +64,21 @@ export default function Library() {
         meta={`${shown.length}${shown.length !== items.length ? ` of ${items.length}` : ''}`}
         actions={
           <>
-            <div className="searchbox">
+            <div className="flex items-center gap-[6px] border border-solid border-line-2 rounded p-[0_8px] bg-surface [&_svg]:text-faint [&_svg]:shrink-0">
               <Search size={13} />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" />
+              <input
+                className="[border:0] p-[5px_0] w-[130px] focus:[outline:0] focus:[box-shadow:none]"
+                aria-label="Search assets" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" />
             </div>
-            <select value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="all">All kinds</option>
-              {kinds.map((k) => (
-                <option key={k} value={k}>{KIND[k]?.label ?? k}</option>
+            {/* Kinds as chips with counts: what is here, at a glance, one click to narrow. */}
+            <span className="flex flex-wrap gap-[4px]" role="group" aria-label="Filter assets by kind">
+              {[['all', 'All', items.length], ...kinds.map((k) => [k, KIND[k]?.label ?? k, items.filter((a) => a.kind === k).length])].map(([id, label, n]) => (
+                <button key={id} type="button" onClick={() => setKind(id)}
+                  className={'text-[12px] p-[3px_10px] rounded-full ' + (kind === id ? 'bg-ink text-white border-ink' : 'bg-surface')}>
+                  {label} <span className={kind === id ? 'opacity-70' : 'text-faint'}>{n}</span>
+                </button>
               ))}
-            </select>
+            </span>
           </>
         }
         flush
@@ -86,35 +90,45 @@ export default function Library() {
               : 'Nothing matches that filter.'}
           </Empty>
         ) : (
-          <div className="assetlist">
+          // Columns on a wide screen: a one-column list of short names was
+          // mostly empty row. Hairline gaps make the grid read as one table.
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(440px,1fr))] overflow-hidden mb-[-1px] mr-[-1px]">
             {shown.map((a) => {
               const k = KIND[a.kind] ?? { label: a.kind, icon: Package };
               const Icon = k.icon;
               return (
-                <div className={'assetrow libraryrow' + (a.playable ? ' playable' : '')} key={a.id}>
-                  <span className="libicon"><Icon size={15} /></span>
+                // Flex, not grid: a row carries a duration, a warning or neither.
+                <div
+                  className={'group flex items-center gap-[10px] bg-surface [box-shadow:1px_0_0_var(--line),0_1px_0_var(--line)] p-[8px_14px] text-[13px] min-w-0 hover:bg-surface-2' + (a.playable ? ' playable cursor-default' : '')}
+                  key={a.id}
+                >
+                  <span className="w-[26px] h-[26px] rounded-sm bg-canvas border border-solid border-line grid place-items-center text-muted"><Icon size={15} /></span>
                   {/* A video you cannot play is a filename. These rows listed
                       seventeen real videos and did nothing when clicked. */}
                   {a.playable ? (
-                    <button className="libplay" onClick={() => play(a)} title="Play">
+                    <button
+                      className="flex-1 min-w-0 [border:0] [background:none] p-0 text-left text-[13.5px] font-[550] text-ink rounded-none truncate [&:hover:not(:disabled)]:[background:none] [&:hover:not(:disabled)]:text-accent [&:hover:not(:disabled)]:underline"
+                      onClick={() => play(a)} title="Play">
                       {a.name}
-                      {playing === a.id && <em className="libloading">opening…</em>}
+                      {playing === a.id && <em className="not-italic ml-[8px] text-[11px] text-faint">opening…</em>}
                     </button>
                   ) : (
-                    <b>{a.name}</b>
+                    <b className="flex-1 min-w-0 truncate text-[13.5px] font-[550]" title={a.name}>{a.name}</b>
                   )}
-                  <em className="libkind">{k.label}</em>
-                  {a.duration ? <em className="libmeta">{clock(a.duration)}</em> : null}
+                  <em className="not-italic text-[10.5px] text-muted border border-solid border-line rounded-[20px] p-[2px_9px]">{k.label}</em>
+                  {a.duration ? <em className="not-italic font-mono text-[11.5px] font-normal leading-[normal] text-faint">{toClock(a.duration)}</em> : null}
                   {a.kind === 'heygen_video' && !a.playable && (
-                    <em className="libmeta warn" title="Imported before the Library stored the video itself">
-                      nothing behind it
+                    <em
+                      className="warn not-italic [font-family:inherit] text-[11px] font-normal leading-[normal] text-warn"
+                      title="Imported before the Library stored the video itself">
+                      re-sync required
                     </em>
                   )}
                   {confirming === a.id ? (
-                    <span className="rowconfirm">
+                    <span className="inline-flex items-center gap-[6px] text-[11.5px] text-danger whitespace-nowrap">
                       Remove?
                       <button
-                        className="danger"
+                        className="danger p-[3px_8px] text-[11px] inline-flex items-center gap-[4px] border-danger text-danger [&:hover:not(:disabled)]:border-danger [&:hover:not(:disabled)]:bg-danger-soft"
                         onClick={async () => {
                           await mutate(() => api.deleteAsset(a.id), null);
                           setConfirming(null);
@@ -123,10 +137,17 @@ export default function Library() {
                       >
                         <Check size={12} /> Yes
                       </button>
-                      <button onClick={() => setConfirming(null)}><X size={12} /></button>
+                      <button
+                        className="p-[3px_8px] text-[11px] inline-flex items-center gap-[4px]"
+                        onClick={() => setConfirming(null)}
+                      >
+                        <X size={12} />
+                      </button>
                     </span>
                   ) : (
-                    <button className="rowdel" title="Remove from Library"
+                    <button
+                      className="[border:0] bg-transparent text-faint p-[4px_6px] opacity-0 [transition:opacity_.12s] group-hover:opacity-100 focus-visible:opacity-100 hover:text-danger hover:bg-danger-soft"
+                      title="Remove from Library"
                       onClick={() => setConfirming(a.id)}>
                       <Trash2 size={13} />
                     </button>

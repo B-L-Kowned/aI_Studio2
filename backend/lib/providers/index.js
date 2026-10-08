@@ -1,10 +1,14 @@
+import { previewSrc, cacheOwnedPreviews } from '../preview-cache.js';
 import * as heygen from './heygen.js';
+import { approvedLook } from '../appearance.js';
 import * as mcp from './heygen-mcp.js';
 import { getDb } from '../../db/index.js';
 import { isDryRun, canGenerateLive } from './mode.js';
 import { castingReadiness } from '../casting.js';
 import { chooseRenderPath } from './heygen-route.js';
-import { renderViaStudio } from './heygen-studio.js';
+import { renderViaStudio, buildStudioArgs } from './heygen-studio.js';
+import { uploadAudio } from './heygen-audio.js';
+import { approvedLines, audioRuns } from '../approved-audio.js';
 
 // Capability router. The UI asks for a capability; this decides who fulfils it.
 // PM_SPEC: "Frontend should request capabilities, not providers."
@@ -93,7 +97,9 @@ export async function syncProvider(id) {
       : [
           ['avatar', await provider.listAvatars()],
           ['voice', await provider.listVoices()],
-          ['template', await provider.listTemplates()],
+          // Unverified endpoint (see heygen.js). Its failure used to abort the
+          // whole sync, so avatars and voices were never stored either.
+          ['template', await provider.listTemplates().catch(() => [])],
         ];
 
     db.transaction(() => {
@@ -125,6 +131,8 @@ export async function syncProvider(id) {
          last_sync_at = excluded.last_sync_at, last_error = NULL`
     ).run(id, quota.remaining ?? null);
 
+    // Keep the pictures while their signed links still work.
+    cacheOwnedPreviews().catch(() => {});
     return { pulled, quota };
   } catch (err) {
     db.prepare(
@@ -147,7 +155,7 @@ export function localAssets(providerId, kind) {
         .all(providerId);
   return rows.map((r) => ({
     id: r.id, kind: r.kind, remoteId: r.remote_id, name: r.name,
-    previewUrl: r.preview_url, language: r.language, gender: r.gender, syncedAt: r.synced_at,
+    previewUrl: previewSrc(r), language: r.language, gender: r.gender, syncedAt: r.synced_at,
     // Whether THIS account owns it. The column was being written and then
     // dropped here, so every caller saw a catalogue with no sense of mine
     // versus HeyGen's — which is the only distinction that matters in a picker.
@@ -160,7 +168,7 @@ export function localAssets(providerId, kind) {
 }
 
 /** PUSH: hand a render to the routed provider and record the job locally. */
-export async function pushRenderJob({ productionId, renderVersionId, segments, title }) {
+export async function pushRenderJob({ productionId, renderVersionId, segments, title, audioFile }) {
   const db = getDb();
   const provider = routeCapability('render');
   const id = provider.meta.id;
@@ -190,14 +198,24 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
   const fallbackAvatar = firstOf('avatar');
   const fallbackVoice = firstOf('voice');
 
+  // The look each performer was APPROVED in for this video overrides their
+  // default avatar: outfit, background and frame are what was signed off.
+  const looks = new Map();
+  for (const s of readiness.speakers) {
+    if (s.presenterId) looks.set(s.speaker, approvedLook(productionId, s.presenterId));
+  }
   const castSegments = (segments ?? []).map((seg) => {
     const cast = bySpeaker.get(seg.speaker);
+    const look = looks.get(seg.speaker);
     return {
       ...seg,
-      avatarId: cast?.avatar?.remoteId ?? fallbackAvatar?.remote_id,
+      avatarId: look && !look.isPhoto ? look.remoteId : cast?.avatar?.remoteId ?? fallbackAvatar?.remote_id,
+      talkingPhotoId: look?.isPhoto ? look.remoteId : undefined,
+      background: look?.background,
       voiceId: cast?.voice?.remoteId ?? fallbackVoice?.remote_id,
     };
   });
+  const frame = [...looks.values()].find(Boolean);
 
   const uncast = readiness.speakers.filter((s) => s.missing).map((s) => s.speaker);
 
@@ -208,6 +226,7 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
     avatarId: fallbackAvatar?.remote_id,
     voiceId: fallbackVoice?.remote_id,
     testMode,
+    ...(frame ? { width: frame.width, height: frame.height } : {}),
   });
 
   // Which pocket. MCP spends the plan the user already pays for; the API key
@@ -217,7 +236,47 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
   if (route.path === 'none') {
     throw Object.assign(new Error(route.reason), { code: route.warning ?? 'NO_PATH' });
   }
+  // A local voice's remote id is a folder name on this Mac, not a HeyGen voice.
+  // So the approved audio itself goes up, and the avatar lip-syncs to it: one
+  // scene per run of one speaker, voiced by exactly the files the editor kit
+  // hands out. Only the plan path's studio tool takes uploaded audio per scene.
+  const localVoiced = readiness.speakers.filter((s) => s.voice?.provider === 'local').map((s) => s.speaker);
+  let audioScenes = null;
+  if (audioFile) {
+    // A recording you made, re-performed by the avatar: one scene, your audio.
+    if (route.path === 'key') {
+      throw Object.assign(new Error('An avatar video from your recording renders through your HeyGen plan connection (Settings → HeyGen), not the API key — nothing was sent.'),
+        { code: 'LOCAL_VOICE_RENDER' });
+    }
+    const [id] = await uploadAudio([audioFile], { title, simulate: route.path === 'fixtures' });
+    const speaker = castSegments[0]?.speaker ?? 'Pat';
+    audioScenes = [{
+      speaker, text: castSegments.map((c) => c.text).join(' '),
+      avatarId: looks.get(speaker)?.remoteId ?? castSegments[0]?.avatarId ?? fallbackAvatar?.remote_id, audioAssetId: id,
+    }];
+  } else if (localVoiced.length) {
+    if (route.path === 'key') {
+      throw Object.assign(
+        new Error(`${localVoiced.join(', ')} ${localVoiced.length === 1 ? 'uses' : 'use'} your local voice, which renders through your HeyGen plan connection (Settings → HeyGen), not the API key — nothing was sent.`),
+        { code: 'LOCAL_VOICE_RENDER' }
+      );
+    }
+    const lines = approvedLines(productionId);
+    const missing = lines.filter((l) => !l.file).length;
+    if (!lines.length || missing) {
+      throw Object.assign(new Error(`${missing || 'No'} line${missing === 1 ? ' has' : 's have'} no approved audio — approve every line in Segments first.`),
+        { code: 'UNHEARD' });
+    }
+    const runs = await audioRuns(productionId, lines);
+    const ids = await uploadAudio(runs.map((r) => r.file), { title, simulate: route.path === 'fixtures' });
+    const avatarFor = (speaker) => castSegments.find((c) => c.speaker === speaker)?.avatarId
+      ?? bySpeaker.get(speaker)?.avatar?.remoteId ?? fallbackAvatar?.remote_id;
+    audioScenes = runs.map((r, i) => ({
+      speaker: r.speaker, text: r.text, avatarId: looks.get(r.speaker)?.remoteId ?? avatarFor(r.speaker), audioAssetId: ids[i],
+    }));
+  }
   let result;
+  let sent = payload;
 
   if (route.path === 'mcp') {
     // The studio tool has no test flag, so the router only chooses it when the
@@ -230,13 +289,17 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
       );
     }
     result = await renderViaStudio({
-      segments: castSegments,
+      // The studio tool takes a look id as avatar_id whatever its type.
+      segments: castSegments.map((s) => ({ ...s, avatarId: s.talkingPhotoId ?? s.avatarId })),
+      runs: audioScenes ?? undefined,
       title,
-      aspectRatio: '16:9',
-      resolution: '1080p',
+      aspectRatio: frame?.aspect ?? '16:9',
+      resolution: frame?.resolution ?? '1080p',
     });
   } else {
     result = await provider.generateVideo(payload);
+    // Fixtures sends nothing, but records what the plan path WOULD have sent.
+    if (audioScenes) sent = buildStudioArgs({ runs: audioScenes, title }).args;
   }
 
   const dry = isDryRun();
@@ -248,7 +311,7 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
        VALUES (?,?,?,?,?,?,?,?)`
     )
     .run(route.path === 'mcp' ? 'heygen_mcp' : id, 'render', renderVersionId, productionId,
-         result.video_id, 'pending', dry ? 1 : 0, JSON.stringify(payload))
+         result.video_id, 'pending', dry ? 1 : 0, JSON.stringify(sent))
     .lastInsertRowid;
 
   return {
@@ -257,6 +320,7 @@ export async function pushRenderJob({ productionId, renderVersionId, segments, t
     path: route.path, tool: result.tool ?? null,
     dryRun: dry, testMode, note: result.note ?? route.reason,
     stats: result.stats ?? stats,
+    lipSyncedToYourAudio: !!audioScenes,
     casting: { speakers: readiness.speakers, uncast },
   };
 }
@@ -271,19 +335,57 @@ export async function pollJob(jobId) {
   const elapsed = (Date.now() - Date.parse(job.created_at + 'Z')) / 1000;
 
   try {
-    // A job pushed over MCP is polled over MCP; the key client cannot see it.
-    const s = job.provider === 'heygen_mcp'
-      ? await (await import('./heygen-studio.js')).studioStatus(job.remote_id)
-      : await PROVIDERS[job.provider].videoStatus(job.remote_id, elapsed);
+    const s = await remoteStatus(job.provider, job.remote_id, elapsed);
     db.prepare(
       `UPDATE provider_jobs SET status = ?, progress = ?, video_url = ?, thumbnail_url = ?,
-       duration = ?, credits_used = ?, last_polled_at = datetime('now') WHERE id = ?`
+       duration = ?, credits_used = ?, error = NULL, last_polled_at = datetime('now') WHERE id = ?`
     ).run(s.status, s.progress, s.video_url, s.thumbnail_url, s.duration, s.credits_used, jobId);
   } catch (err) {
-    db.prepare("UPDATE provider_jobs SET status = 'failed', error = ? WHERE id = ?").run(err.message, jobId);
+    // A failed POLL is not a failed RENDER. Marking the job failed here made a
+    // network blip or a token refresh permanently abandon a video that was
+    // paid for and still rendering — terminal jobs are never polled again.
+    // Only the provider saying "failed" ends a job.
+    db.prepare("UPDATE provider_jobs SET error = ?, last_polled_at = datetime('now') WHERE id = ?")
+      .run(err.message, jobId);
   }
 
   return serializeJob(db.prepare('SELECT * FROM provider_jobs WHERE id = ?').get(jobId));
+}
+
+/** The provider's view of one video. A job pushed over MCP is polled over MCP; the key client cannot see it. */
+async function remoteStatus(provider, remoteId, elapsedSeconds) {
+  if (provider === 'heygen_mcp') {
+    return (await import('./heygen-studio.js')).studioStatus(remoteId);
+  }
+  return PROVIDERS[provider].videoStatus(remoteId, elapsedSeconds);
+}
+
+/**
+ * PULL for single-line renders. They were inserted as `queued` and never looked
+ * at again, so a paid line render never got its video. Same rule as pollJob:
+ * only the provider ends a render; a failed poll is recorded and retried.
+ */
+export async function pollSegmentRenders(productionId) {
+  const db = getDb();
+  const moving = db
+    .prepare(
+      `SELECT sr.* FROM segment_renders sr JOIN segments s ON s.id = sr.segment_id
+        WHERE s.production_id = ? AND sr.remote_id IS NOT NULL
+          AND sr.status IN ('queued','pending','processing')`
+    )
+    .all(productionId);
+
+  for (const r of moving) {
+    const elapsed = (Date.now() - Date.parse(r.created_at + 'Z')) / 1000;
+    try {
+      const s = await remoteStatus(r.provider, r.remote_id, elapsed);
+      db.prepare(
+        'UPDATE segment_renders SET status = ?, progress = ?, video_url = COALESCE(?, video_url), error = NULL WHERE id = ?'
+      ).run(s.status, s.progress ?? 0, s.video_url ?? null, r.id);
+    } catch (err) {
+      db.prepare('UPDATE segment_renders SET error = ? WHERE id = ?').run(err.message, r.id);
+    }
+  }
 }
 
 export function serializeJob(j) {

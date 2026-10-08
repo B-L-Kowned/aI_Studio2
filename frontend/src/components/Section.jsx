@@ -11,31 +11,107 @@ import React from 'react';
  * A Section is a card whose heading belongs to it. A heading sitting on the
  * canvas above a card is not labelling anything — it is floating near it.
  */
+// Rules for children that callers pass in (header actions, and the lists and
+// tables a flush body holds) stay descendant selectors on the section/body so
+// their specificity matches the old `.card-section …` / `.card-body.flush …`
+// rules. The h2 keeps its (0,1,2) weight so a page's own `h2` rule cannot win.
+const SECTION = 'bg-surface border border-solid border-line rounded-lg m-[12px_0] overflow-hidden'
+  + ' [&>header_h2]:m-0 [&>header_h2]:text-[13px] [&>header_h2]:font-semibold'
+  + ' [&>header_select]:text-[12px] [&>header_select]:p-[5px_8px]'
+  + ' [&>header_input]:text-[12px] [&>header_input]:p-[5px_8px]';
+const BODY = 'p-[14px_16px] [&>.assetlist]:[border:0] [&>.assetlist]:rounded-none [&>.assetlist]:m-[-16px]';
+const BODY_FLUSH = 'flush p-0'
+  + ' [&&_.assetlist]:[border:0] [&&_.assetlist]:rounded-none [&&_.assetlist]:m-0'
+  + ' [&&_.sectionempty]:p-[16px]'
+  + ' [&&_.calendar]:[border:0] [&&_.calendar]:rounded-none'
+  + ' [&&_.camptable]:[border:0] [&&_.camptable]:rounded-none [&&_.camptable]:m-0';
+
 export function Section({ title, meta, actions, flush, children }) {
   return (
-    <section className="card-section">
+    <section className={SECTION}>
       {(title || actions) && (
-        <header>
+        <header className="flex items-baseline gap-[10px] p-[11px_16px] bg-surface-2 [border-bottom:1px_solid_var(--line)]">
           {title && <h2>{title}</h2>}
-          {meta && <span className="sectionmeta">{meta}</span>}
+          {meta && <span className="text-[11.5px] text-muted">{meta}</span>}
           {actions && <div className="sectionactions">{actions}</div>}
         </header>
       )}
-      <div className={'card-body' + (flush ? ' flush' : '')}>{children}</div>
+      <div className={flush ? BODY_FLUSH : BODY}>{children}</div>
     </section>
   );
 }
 
-/** Page title row: name on the left, actions on the right. */
-export function PageHead({ title, lead, actions }) {
+/**
+ * The page header — the same shape on every page.
+ *
+ *   breadcrumb (optional)
+ *   Title                                    actions
+ *   one-line lead
+ *   tabs (optional) ─────────────────────────────────
+ *
+ * The title names what you are looking at: the view ("Campaigns",
+ * "Characters") or the production, never the section of the app you are in —
+ * the top nav already says that. Pages used to draw this three different ways:
+ * tabs above the title on Plan and Cast, a black pill bar beside the title on
+ * Create, a bare heading elsewhere.
+ */
+export function PageHead({ eyebrow, title, titleHint, lead, actions, tabs, tabsBeside }) {
+  // tabsBeside: a short step strip (Create's five steps) shares the title row and
+  // its rule instead of taking a row of its own under the title.
+  const beside = tabs && tabsBeside;
   return (
-    <>
-      <div className="title">
-        <h1>{title}</h1>
+    <div className="mb-[12px]">
+      {eyebrow && <div className="mb-[3px]">{eyebrow}</div>}
+      {/* Wraps on narrow screens: the actions drop below rather than squeezing
+          the title to nothing. */}
+      <div
+        className={
+          'title flex-wrap gap-y-[10px] [&>.quickrow]:shrink [&>.quickrow]:min-w-0 [&>.quickrow]:max-w-full' +
+          (beside ? ' [box-shadow:inset_0_-1px_0_var(--line)]' : '')
+        }
+      >
+        {/* The lead sits beside the title, not under it: one row, not two. */}
+        <div className={'min-w-0 flex-[1_1_260px] flex flex-wrap items-baseline gap-x-[14px] gap-y-[2px]' + (beside ? ' pb-[9px]' : '')}>
+          <h1 className="whitespace-nowrap overflow-hidden text-ellipsis" title={titleHint}>{title}</h1>
+          {lead && <p className="text-muted text-[13px] m-0 min-w-0 max-w-[90ch]">{lead}</p>}
+        </div>
+        {beside && <div className="min-w-0 max-w-full shrink-0 [&>.subnav]:[box-shadow:none]">{tabs}</div>}
         {actions && <div className="quickrow">{actions}</div>}
       </div>
-      {lead && <p className="pagelead">{lead}</p>}
-    </>
+      {tabs && !beside && <div className="mt-[10px]">{tabs}</div>}
+    </div>
+  );
+}
+
+/**
+ * The one tab style: underlined, quiet, below the title. `stale` marks a view
+ * whose content is out of date with what feeds it.
+ */
+export function Tabs({ items, value, onChange }) {
+  return (
+    // One line that scrolls sideways on a phone, rather than wrapping tabs
+    // onto a second row that reads as a different set. The rule is an inset
+    // shadow, not a border, so the active underline sits inside the scroll box
+    // instead of being clipped by it.
+    <nav className="subnav mb-0 flex-nowrap overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [border-bottom:0] [box-shadow:inset_0_-1px_0_var(--line)] [&>button]:mb-0 [&>button]:shrink-0 [&>button]:whitespace-nowrap" role="tablist">
+      {items.map((t, i) => (
+        <React.Fragment key={t.id}>
+        {/* A quieter group (setup screens) starts after a rule. */}
+        {t.setup && !items[i - 1]?.setup && i > 0 && <span aria-hidden className="shrink-0 self-center w-px h-[14px] bg-line-2 mx-[8px]" />}
+        <button
+          role="tab"
+          aria-selected={value === t.id}
+          className={value === t.id ? 'on' : t.stale ? '!text-warn' : t.setup ? '!text-faint' : ''}
+          title={t.title ?? ''}
+          onClick={() => onChange(t.id)}
+        >
+          {t.label}
+          {t.count != null && <span className="tabcount">{t.count}</span>}
+          {t.stale && <i className="staledot" />}
+        </button>
+        </React.Fragment>
+      ))}
+    </nav>
   );
 }
 

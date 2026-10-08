@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Lock, AlertCircle, Upload, ArrowLeft } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
-import TemplatePicker from '../components/TemplatePicker.jsx';
+import TemplatePicker from './TemplatePicker.jsx';
 
 // The dialog asks for whatever the starting point actually needs, at the moment
 // it is named. "New production from an existing video" used to ask for a title,
@@ -28,7 +28,11 @@ const SOURCE = {
     needs: 'project',
     help: 'Brief, outline and scenes are copied. Scripts, renders and publications are not — those are work, not plan.',
   },
-  url: { label: 'a source URL', needs: 'unavailable' },
+  url: {
+    label: 'a source URL',
+    needs: 'url',
+    help: 'The app reads the public page, preserves the evidence and waits for your review before rendering.',
+  },
 };
 
 export default function NewProduction({
@@ -50,6 +54,7 @@ export default function NewProduction({
   const [videoFile, setVideoFile] = useState('');
   const [scriptText, setScriptText] = useState('');
   const [copyFromId, setCopyFromId] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
   // null = not creating one; a string = the name being typed.
   const [newCampaignName, setNewCampaignName] = useState(null);
   const [err, setErr] = useState(null);
@@ -68,7 +73,8 @@ export default function NewProduction({
     source.needs !== 'unavailable' &&
     (source.needs !== 'video' || !!videoFile.trim()) &&
     (source.needs !== 'script' || !!scriptText.trim()) &&
-    (source.needs !== 'project' || !!copyFromId);
+    (source.needs !== 'project' || !!copyFromId) &&
+    (source.needs !== 'url' || !!sourceUrl.trim());
 
   const submit = async (e) => {
     e.preventDefault();
@@ -91,6 +97,7 @@ export default function NewProduction({
         videoFile: videoFile.trim() || null,
         scriptText: scriptText.trim() || null,
         copyFromId: copyFromId ? Number(copyFromId) : null,
+        sourceUrl: sourceUrl.trim() || null,
       });
       onDone?.();
       onClose();
@@ -101,36 +108,22 @@ export default function NewProduction({
     }
   };
 
-  if (source.needs === 'unavailable') {
-    return (
-      <>
-        <div className="scrim" onClick={onClose} />
-        <div className="modal">
-          <div className="modalhead">
-            <b>Not built yet</b>
-            <button onClick={onClose}><X size={15} /></button>
-          </div>
-          <p className="muted">
-            Building a production from a URL means fetching the page, deciding what on it is
-            the content, and reading it — a real piece of work that is not done. Rather than
-            create a blank production and call it a URL import, this route says so.
-          </p>
-          <div className="actions">
-            <button className="primary" onClick={onClose}>Understood</button>
-          </div>
-        </div>
-      </>
-    );
-  }
-
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <div className={'modal' + (source.needs === 'script' ? ' wide' : '')}>
+      {/* A real catalogue, not a confirmation prompt: with the template picker it
+          gets the desktop canvas instead of the generic 460px dialog. */}
+      <div
+        className={'modal top-[6vh] max-h-[88vh] overflow-y-auto lte720:top-[20px] lte720:max-h-[calc(100vh_-_40px)]'
+          + (source.needs !== 'project'
+            ? ' group/tpm w-[min(820px,calc(100vw_-_48px))] lte720:w-[calc(100vw_-_32px)]'
+            : '')}
+      >
         <div className="modalhead">
           <b>
+            {/* `.modalhead button` sets border, fill, padding and colour; only the margin is ours. */}
             {onBack && (
-              <button className="backbtn" type="button" onClick={onBack} title="Choose a different starting point">
+              <button className="mr-[2px]" type="button" onClick={onBack} title="Choose a different starting point">
                 <ArrowLeft size={14} />
               </button>
             )}
@@ -145,11 +138,15 @@ export default function NewProduction({
             <label className="oblabel">
               The video
               {desktop ? (
-                <span className="pickrow">
+                <span className="flex flex-col gap-[6px] items-start">
                   <button type="button" onClick={chooseVideo}>
                     <Upload size={13} /> {videoFile ? 'Choose a different file' : 'Choose a video…'}
                   </button>
-                  {videoFile && <code>{videoFile}</code>}
+                  {videoFile && (
+                    <code className="font-mono text-[11px] not-italic font-normal leading-[normal] text-muted break-all">
+                      {videoFile}
+                    </code>
+                  )}
                 </span>
               ) : (
                 <input
@@ -160,7 +157,7 @@ export default function NewProduction({
                   autoFocus
                 />
               )}
-              <small className="obhelp">{source.help}</small>
+              <small className="block mt-[5px] text-faint text-[11.5px] leading-[1.5]">{source.help}</small>
             </label>
           )}
 
@@ -168,14 +165,30 @@ export default function NewProduction({
             <label className="oblabel">
               The script
               <textarea
-                className="obinput scriptbox"
+                className="obinput font-mono text-[12.5px] leading-[1.6] not-italic font-normal resize-y"
                 rows={10}
                 placeholder={'Pat: So the thing about agents is that they fail quietly.\nChristine: Which is the worst way to fail.'}
                 value={scriptText}
                 onChange={(e) => setScriptText(e.target.value)}
                 autoFocus
               />
-              <small className="obhelp">{source.help}</small>
+              <small className="block mt-[5px] text-faint text-[11.5px] leading-[1.5]">{source.help}</small>
+            </label>
+          )}
+
+          {source.needs === 'url' && (
+            <label className="oblabel">
+              Website URL
+              <input
+                className="obinput"
+                type="text"
+                inputMode="url"
+                placeholder="https://example.com"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                autoFocus
+              />
+              <small className="block mt-[5px] text-faint text-[11.5px] leading-[1.5]">{source.help}</small>
             </label>
           )}
 
@@ -195,7 +208,7 @@ export default function NewProduction({
                   </option>
                 ))}
               </select>
-              <small className="obhelp">{source.help}</small>
+              <small className="block mt-[5px] text-faint text-[11.5px] leading-[1.5]">{source.help}</small>
             </label>
           )}
 
@@ -262,7 +275,7 @@ export default function NewProduction({
             <button type="button" onClick={onClose}>Cancel</button>
             <button className="primary" type="submit" disabled={busy || !ready}>
               {busy
-                ? (source.needs === 'video' ? 'Measuring…' : 'Creating…')
+                ? (source.needs === 'video' ? 'Measuring…' : source.needs === 'url' ? 'Researching…' : 'Creating…')
                 : 'Create production'}
             </button>
           </div>

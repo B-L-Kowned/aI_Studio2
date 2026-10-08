@@ -8,7 +8,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 // Desktop installs keep the database in the OS user-data directory, not next to
 // the application bundle — an installed app's own directory is often read-only.
-// Under Electron this is replaced by app.getPath('userData').
+// The desktop shell passes this same path explicitly as STUDIO_DB_PATH, so dev
+// and desktop share one database unless STUDIO_DB_PATH points a checkout elsewhere.
 export function defaultDbPath() {
   if (process.env.STUDIO_DB_PATH) return resolve(process.env.STUDIO_DB_PATH);
 
@@ -92,6 +93,40 @@ const ADDED_COLUMNS = [
   // across fifty companies; the audience is free text because no enum survives
   // fifty companies, and it is the thing that actually changes the script.
   ['campaigns', 'company_id', 'INTEGER'],
+  // The portfolio group a company belongs to (Innovations, More Time…). Fifty
+  // companies in one list only scan when they fall into their verticals.
+  ['companies', 'group_name', 'TEXT'],
+  // A take synthesised on this machine keeps its file here (relative to the
+  // voices folder); a HeyGen take has only its remote audio_url.
+  ['takes', 'local_path', 'TEXT'],
+  // A take made by fixing another (a respelled name, a reworded sentence, a
+  // new reading): which take it was fixed from, and what was done — so the
+  // fix can be undone, and the line says what changed.
+  ['takes', 'origin_take_id', 'INTEGER'],
+  ['takes', 'fix_note', 'TEXT'],
+  // Which avatar GROUP a look belongs to, so a picker offers one person's
+  // looks (20 of Pat) and not every face the account owns. A photo avatar is
+  // sent to HeyGen as a talking photo, not an avatar, so the type is kept too.
+  ['provider_assets', 'group_id', 'TEXT'],
+  ['provider_assets', 'avatar_type', 'TEXT'],
+  ['provider_assets', 'orientation', 'TEXT'],
+  // An appearance proof that is a real render instruction, not prose: the
+  // exact look, background and frame HeyGen will be given once it is approved.
+  ['appearance_proofs', 'avatar_asset_id', 'INTEGER'],
+  ['appearance_proofs', 'background_kind', 'TEXT'],
+  ['appearance_proofs', 'background_value', 'TEXT'],
+  ['appearance_proofs', 'aspect', 'TEXT'],
+  ['appearance_proofs', 'resolution', 'TEXT'],
+  ['appearance_proofs', 'motion_prompt', 'TEXT'],
+  // How fast this video's narration runs, relative to the clone's natural
+  // pace (1 = natural). Set to fit the words to the target length.
+  ['productions', 'voice_speed', 'REAL'],
+  // A scene is a row of the shot list: what is on screen while a section of
+  // the script plays. `purpose` holds the shot detail.
+  ['scenes', 'shot_type', 'TEXT'],
+  ['scenes', 'onscreen_text', "TEXT NOT NULL DEFAULT ''"],
+  ['scenes', 'captured', 'INTEGER NOT NULL DEFAULT 0'],
+  ['scenes', 'recording_asset_id', 'INTEGER'],
   ['campaigns', 'purpose', 'TEXT'],
   ['campaigns', 'audience', 'TEXT'],
   // A library video attached to a production, and where it was saved.
@@ -101,6 +136,21 @@ const ADDED_COLUMNS = [
   ['sources', 'file_path', 'TEXT'],
   ['sources', 'analysis', 'TEXT'],
   ['sources', 'analysed_at', 'TEXT'],
+  // Audit which engine wrote each proposal. A generated script must not become
+  // indistinguishable from the deterministic offline fixture after the fact.
+  ['script_versions', 'generator_provider', "TEXT NOT NULL DEFAULT 'included'"],
+  ['script_versions', 'generator_model', 'TEXT'],
+  // Clean-up of a take you recorded: the words heard in it (with times) and the
+  // cuts proposed from them — fillers, long gaps, dead air — each one switchable.
+  ['line_takes', 'words', 'TEXT'],
+  ['line_takes', 'cuts', 'TEXT'],
+  // How this video is finished in the app: clean audio, look, frame, captions.
+  ['productions', 'edit_settings', 'TEXT'],
+  // A finished HeyGen render, saved into the video's folder: its link expires.
+  ['render_versions', 'local_path', 'TEXT'],
+  // The three dates your register is worked to: { P1, P2, P3 } as YYYY-MM-DD.
+  // A video is due by its priority's date unless it carries its own due_at.
+  ['workspace', 'deadlines', 'TEXT'],
 ];
 
 function migrate(db) {

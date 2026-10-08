@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { getDb } from '../db/index.js';
-import { saveCredential, deleteCredential } from '../lib/credentials.js';
 import {
   listProviders, syncProvider, localAssets, getProvider, pollJob, serializeJob,
 } from '../lib/providers/index.js';
 import { ok, fail, route } from '../utils/respond.js';
+import { createReadStream } from 'node:fs';
+import { cachedFile, cachePreview } from '../lib/preview-cache.js';
 
 const router = Router();
 
@@ -18,48 +19,8 @@ router.get(
   })
 );
 
-// Connect: test the key, store it encrypted, then immediately pull.
-router.post(
-  '/providers/:id/connect',
-  route(async (req, res) => {
-    const provider = getProvider(req.params.id);
-    if (!provider) return fail(res, 404, 'NOT_FOUND', 'Unknown provider');
-
-    const key = req.body?.key;
-    const test = await provider.testConnection(key);
-    if (!test.ok) return fail(res, 400, 'BAD_KEY', test.message);
-
-    const saved = saveCredential(req.params.id, key, true);
-    getDb()
-      .prepare(
-        `INSERT INTO provider_accounts (provider, status, hint)
-         VALUES (?, 'connected', ?)
-         ON CONFLICT(provider) DO UPDATE SET status = 'connected', hint = excluded.hint, last_error = NULL`
-      )
-      .run(req.params.id, saved.hint);
-
-    let sync = null;
-    try {
-      sync = await syncProvider(req.params.id);
-    } catch (err) {
-      return ok(res, { providers: listProviders(), syncError: err.message },
-        `${provider.meta.label} connected, but the first sync failed: ${err.message}`);
-    }
-    return ok(res, { providers: listProviders(), sync }, `${provider.meta.label} connected and synced`);
-  })
-);
-
-router.post(
-  '/providers/:id/disconnect',
-  route(async (req, res) => {
-    if (!getProvider(req.params.id)) return fail(res, 404, 'NOT_FOUND', 'Unknown provider');
-    deleteCredential(req.params.id);
-    getDb()
-      .prepare("UPDATE provider_accounts SET status = 'disconnected', quota_remaining = NULL WHERE provider = ?")
-      .run(req.params.id);
-    return ok(res, listProviders(), 'Disconnected');
-  })
-);
+// Connecting and disconnecting live at /connections/:id (routes/connections.js).
+// A second connect here stored keys as verified without checking the verdict.
 
 // PULL on demand.
 router.post(
@@ -75,6 +36,17 @@ router.post(
     }
   })
 );
+
+/** An asset's picture, from this Mac — fetched and kept the first time while its link works. */
+router.get('/provider-assets/:id/preview', route(async (req, res) => {
+  const row = getDb().prepare('SELECT * FROM provider_assets WHERE id = ?').get(Number(req.params.id));
+  if (!row) return fail(res, 404, 'NOT_FOUND', 'No such asset');
+  const hit = cachedFile(row.id) ?? await cachePreview(row);
+  if (!hit) return fail(res, 404, 'NO_PREVIEW', 'The preview link has expired — sync HeyGen to refresh it');
+  res.type(hit.type ?? 'image/jpeg');
+  res.set('Cache-Control', 'private, max-age=86400');
+  return createReadStream(hit.file).pipe(res);
+}));
 
 router.get(
   '/providers/:id/assets',

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Layers, X, Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
-import TemplatePicker from '../components/TemplatePicker.jsx';
+import TemplatePicker from './TemplatePicker.jsx';
 
 /**
  * Plan a whole series at once.
@@ -23,7 +23,8 @@ export default function NewSeries({ onClose, onDone, onBack }) {
   const [titles, setTitles] = useState([]);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { api.seriesMeta().then(setMeta); }, []);
+  // Without the catch a failure was an unhandled rejection; the form still works on defaults.
+  useEffect(() => { api.seriesMeta().then(setMeta).catch(() => setMeta(null)); }, []);
 
   const propose = async () => {
     // `post` returns the whole envelope while `get` unwraps to data — reading
@@ -53,8 +54,9 @@ export default function NewSeries({ onClose, onDone, onBack }) {
       <div className="modal wide">
         <div className="modalhead">
           <b>
+            {/* `.modalhead button` sets border, fill, padding and colour; only the margin is ours. */}
             {onBack && (
-              <button className="backbtn" type="button" onClick={onBack} title="Choose something else">
+              <button className="mr-[2px]" type="button" onClick={onBack} title="Choose something else">
                 <ArrowLeft size={14} />
               </button>
             )}
@@ -74,7 +76,7 @@ export default function NewSeries({ onClose, onDone, onBack }) {
         </label>
 
         <div className="formgrid">
-          <div className="serieslabel">Template
+          <div className="flex flex-col gap-[4px] text-[12px] text-muted">Template
             {/* Same picker as a single production. It was "{name} · {runtime}"
                 crammed into an <option> here too, and a series commits the
                 choice to every episode at once — so it is the one place worth
@@ -97,17 +99,17 @@ export default function NewSeries({ onClose, onDone, onBack }) {
           </label>
         </div>
 
-        <div className="seriesactions">
+        <div className="flex items-center gap-[12px] m-[4px_0_2px]">
           <button onClick={propose}>Suggest {count} titles</button>
-          <small>Suggestions are placeholders — rename them before you build.</small>
+          <small className="text-faint text-[11.5px]">Suggestions are placeholders — rename them before you build.</small>
         </div>
 
         {titles.length > 0 && (
-          <div className="serieslist">
+          <div className="flex flex-col gap-[6px] m-[10px_0] max-h-[260px] overflow-y-auto">
             {titles.map((t, i) => (
-              <div key={i}>
-                <span>{i + 1}</span>
-                <input value={t} onChange={(e) =>
+              <div className="grid grid-cols-[22px_1fr_auto] gap-[8px] items-center" key={i}>
+                <span className="font-mono text-[11px] not-italic font-normal leading-[normal] text-faint text-right">{i + 1}</span>
+                <input className="text-[13px] p-[5px_8px]" value={t} onChange={(e) =>
                   setTitles((list) => list.map((x, n) => (n === i ? e.target.value : x)))} />
                 <button title="Remove this episode"
                   onClick={() => setTitles((list) => list.filter((_, n) => n !== i))}>
@@ -115,7 +117,7 @@ export default function NewSeries({ onClose, onDone, onBack }) {
                 </button>
               </div>
             ))}
-            <button className="addep" onClick={() => setTitles((l) => [...l, ''])}>
+            <button className="self-start text-[12px]" onClick={() => setTitles((l) => [...l, ''])}>
               <Plus size={13} /> Add an episode
             </button>
           </div>

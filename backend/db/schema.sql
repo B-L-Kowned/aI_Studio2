@@ -108,6 +108,47 @@ CREATE TABLE IF NOT EXISTS sources (
   kind          TEXT NOT NULL DEFAULT 'video'
 );
 
+-- A URL is evidence, not merely a string pasted into the brief. Keep the
+-- fetched facts and the operator's review separately so a script can always
+-- show what it relied on and whether a person accepted that reading.
+CREATE TABLE IF NOT EXISTS website_research (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  production_id INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+  source_id     INTEGER REFERENCES sources(id) ON DELETE SET NULL,
+  url           TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (status IN ('pending','complete','failed')),
+  title         TEXT,
+  description   TEXT,
+  evidence      TEXT,
+  snapshot      TEXT,
+  suggested_brief TEXT,
+  reviewed      INTEGER NOT NULL DEFAULT 0,
+  error         TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  researched_at TEXT,
+  reviewed_at   TEXT
+);
+
+-- The exact visual proof approved before a personal or fictional performer is
+-- sent to video generation. Provider ids may change; this evidence stays with
+-- the production.
+CREATE TABLE IF NOT EXISTS appearance_proofs (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  production_id INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+  presenter_id  INTEGER REFERENCES presenters(id) ON DELETE SET NULL,
+  label         TEXT NOT NULL DEFAULT 'Appearance proof',
+  image_url     TEXT,
+  outfit        TEXT NOT NULL DEFAULT '',
+  background    TEXT NOT NULL DEFAULT '',
+  framing       TEXT NOT NULL DEFAULT '',
+  notes         TEXT NOT NULL DEFAULT '',
+  status        TEXT NOT NULL DEFAULT 'draft'
+                     CHECK (status IN ('draft','approved','rejected')),
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  approved_at   TEXT
+);
+
 CREATE TABLE IF NOT EXISTS people (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT NOT NULL,
@@ -147,6 +188,8 @@ CREATE TABLE IF NOT EXISTS script_versions (
                      CHECK (status IN ('proposed','accepted','rejected')),
   stale         INTEGER NOT NULL DEFAULT 0,
   stale_reason  TEXT,
+  generator_provider TEXT NOT NULL DEFAULT 'included',
+  generator_model TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -215,6 +258,8 @@ CREATE INDEX IF NOT EXISTS idx_outline_production ON outline_sections(production
 CREATE INDEX IF NOT EXISTS idx_scenes_production  ON scenes(production_id, position);
 CREATE INDEX IF NOT EXISTS idx_script_production  ON script_versions(production_id, version);
 CREATE INDEX IF NOT EXISTS idx_render_production  ON render_versions(production_id, version);
+CREATE INDEX IF NOT EXISTS idx_research_production ON website_research(production_id, id);
+CREATE INDEX IF NOT EXISTS idx_appearance_production ON appearance_proofs(production_id, presenter_id, id);
 
 -- Provider integration (HeyGen and any future generation provider).
 -- The UI never names a provider; the router in lib/providers/index.js does.
@@ -282,14 +327,14 @@ CREATE TABLE IF NOT EXISTS llm_routing (
 -- Presenters: who appears on screen. The comedy/content difference lives here,
 -- not in template lists.
 --
---   character  invented, belongs to funny, HAS artwork
---   avatar     stock roster of real people, belongs to content, NO artwork
---   personal   the user's own likeness, every plan, NO artwork
+--   character  invented, belongs to funny, MAY have custom artwork
+--   avatar     reusable presenter role, belongs to content, NO custom artwork
+--   personal   the user's own likeness, every plan, NO custom artwork
 --
--- The artwork rule is a product decision, not styling: a stock photo standing in
--- for "a real presenter" is a claim about a person who does not exist, and a
--- mocked-up "your face" is a promise about somebody we have never seen. The CHECK
--- makes it impossible to get wrong by accident.
+-- The artwork rule is a product decision, not styling: custom art belongs only
+-- to an invented character. `provider_assets.preview_url` is different — it is
+-- the exact assigned avatar that will perform this role, so the UI may show it
+-- for any kind without pretending it is independent character artwork.
 CREATE TABLE IF NOT EXISTS presenters (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   kind         TEXT NOT NULL CHECK (kind IN ('character','avatar','personal')),
@@ -418,4 +463,88 @@ CREATE TABLE IF NOT EXISTS companies (
   is_active  INTEGER NOT NULL DEFAULT 1,
   position   INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- How a word is SAID, for the local voice. The script keeps the brand as it is
+-- written; only the text sent to the speech model is rewritten. "Bialkowned"
+-- read cold comes out wrong, and it is in every one of 150 videos.
+CREATE TABLE IF NOT EXISTS pronunciations (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  term       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  say_as     TEXT NOT NULL,
+  note       TEXT NOT NULL DEFAULT '',
+  checked    INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- The look a kind of video starts from ("all company overviews in the
+-- quarter-zip"). Applying a default creates DRAFT proofs; each video's look is
+-- still approved on its own, because approval is of what that video shows.
+CREATE TABLE IF NOT EXISTS appearance_defaults (
+  scope            TEXT PRIMARY KEY,          -- 'all' or 'template:<template id>'
+  presenter_id     INTEGER REFERENCES presenters(id) ON DELETE CASCADE,
+  avatar_asset_id  INTEGER REFERENCES provider_assets(id) ON DELETE SET NULL,
+  background_kind  TEXT NOT NULL DEFAULT 'color',
+  background_value TEXT NOT NULL DEFAULT '#f6f6fc',
+  aspect           TEXT NOT NULL DEFAULT '9:16',
+  resolution       TEXT NOT NULL DEFAULT '1080p',
+  motion_prompt    TEXT NOT NULL DEFAULT '',
+  updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- A take of one script line that you recorded yourself: a file and the span of
+-- it that is the line. Teleprompter takes are whole files; a long recording
+-- uploaded from elsewhere is split by what was said, so many takes point into
+-- one file. `text` is the line as it read when recorded — if the script moves
+-- on, the take is kept and flagged rather than silently matched to new words.
+CREATE TABLE IF NOT EXISTS line_takes (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  production_id INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+  segment_id    INTEGER REFERENCES segments(id) ON DELETE SET NULL,
+  version       INTEGER NOT NULL,
+  source        TEXT NOT NULL DEFAULT 'teleprompter' CHECK (source IN ('teleprompter','upload','split')),
+  path          TEXT NOT NULL,
+  in_point      REAL NOT NULL DEFAULT 0,
+  out_point     REAL,
+  duration      REAL,
+  text          TEXT NOT NULL DEFAULT '',
+  said          TEXT,
+  chosen        INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_line_takes_segment ON line_takes(segment_id, version);
+
+-- Voice made in bulk, overnight: one row per video queued. It lives here, not
+-- in memory, so a restart in the night carries on where it stopped.
+CREATE TABLE IF NOT EXISTS voice_batch (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  production_id INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+  state         TEXT NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','running','done','failed','cancelled','skipped')),
+  done          INTEGER NOT NULL DEFAULT 0,
+  total         INTEGER NOT NULL DEFAULT 0,
+  failed        INTEGER NOT NULL DEFAULT 0,
+  note          TEXT,
+  queued_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at   TEXT
+);
+
+-- A company's own website, read once and kept for a week: the evidence a
+-- [CONFIRM] answer may quote. Only text is kept, never the page itself.
+CREATE TABLE IF NOT EXISTS company_evidence (
+  company_id INTEGER PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  url        TEXT NOT NULL,
+  text       TEXT NOT NULL DEFAULT '',
+  error      TEXT,
+  fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- What goes with the video when it is posted. Kept apart from the brief:
+-- brief edits mark scripts out of date, and post copy says nothing about them.
+CREATE TABLE IF NOT EXISTS post_copy (
+  production_id INTEGER PRIMARY KEY REFERENCES productions(id) ON DELETE CASCADE,
+  title         TEXT NOT NULL DEFAULT '',
+  description   TEXT NOT NULL DEFAULT '',
+  chapters      TEXT NOT NULL DEFAULT '',
+  hashtags      TEXT NOT NULL DEFAULT '',
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );

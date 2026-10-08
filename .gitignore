@@ -32,3 +32,8 @@ __pycache__/
 test-results/
 playwright-report/
 .claude-*cache.json
+
+# Local voice engine (Python venv, created by voice/README.md setup)
+voice/.venv/
+__pycache__/
+voice-compare/

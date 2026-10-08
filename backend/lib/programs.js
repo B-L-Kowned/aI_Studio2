@@ -80,13 +80,13 @@ export const PRESENTER_TAB_INFO = {
     id: 'characters',
     label: 'Characters',
     program: 'funny',
-    detail: 'Invented performers you write and cast yourself. Named tiles — no artwork exists.',
+    detail: 'Invented performers you write and cast yourself. Each card shows the character; the avatar that performs it is named underneath.',
   },
   avatars: {
     id: 'avatars',
     label: 'Presenters',
     program: 'content',
-    detail: 'The stock roster of real people. Typographic tiles, never stock photos.',
+    detail: 'Reusable presenter roles, cast to the exact synced avatar that will appear on screen.',
   },
   personal: {
     id: 'personal',

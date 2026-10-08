@@ -1,15 +1,24 @@
 import { Router } from 'express';
+import { syncVisualRows } from '../lib/visuals.js';
 import { getDb } from '../db/index.js';
 import { markStaleFrom, clearStale, staleSummary } from '../lib/stale.js';
-import { generateScript, estimateRuntime } from '../lib/script-generator.js';
+import {
+  generateScript, estimateRuntime, buildLlmScriptRequest, segmentsFromLlmScript,
+} from '../lib/script-generator.js';
+import { getRouting } from '../lib/llm.js';
+import { generateStructured, LlmRuntimeError } from '../lib/llm-runtime.js';
 import { publishTargets, publishChannels, editorTools } from '../data/fixtures.js';
-import { buildExport } from '../lib/exporter.js';
+import { buildExport, planEdits } from '../lib/exporter.js';
 import { audienceFor } from '../lib/companies.js';
 import * as artificialFunny from '../lib/publishers/artificial-funny.js';
 import { pushRenderJob, jobsForRender, pollJob } from '../lib/providers/index.js';
-import { isDryRun } from '../lib/providers/mode.js';
+import { isDryRun, providerMode, canGenerateLive } from '../lib/providers/mode.js';
 import { castingReadiness } from '../lib/casting.js';
 import { renderGate } from '../lib/segments.js';
+import { productionLock } from '../lib/production-lock.js';
+import { madeBy } from '../lib/made-by.js';
+import { cleanRecordingAudio } from '../lib/assemble.js';
+import { keepRenderLocally } from '../lib/render-keep.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -35,11 +44,13 @@ function scriptState(productionId) {
   return {
     versions: versions.map((v) => ({
       id: v.id, version: v.version, status: v.status,
+      generatorProvider: v.generator_provider, generatorModel: v.generator_model,
       stale: !!v.stale, staleReason: v.stale_reason, createdAt: v.created_at,
     })),
     latest: latest
       ? {
           id: latest.id, version: latest.version, status: latest.status,
+          generatorProvider: latest.generator_provider, generatorModel: latest.generator_model,
           stale: !!latest.stale, staleReason: latest.stale_reason,
           segments: segments.map((s) => ({
             id: s.id, speaker: s.speaker, text: s.text,
@@ -63,14 +74,25 @@ router.post(
     const p = db.prepare('SELECT * FROM productions WHERE id = ?').get(id);
     if (!p) return fail(res, 404, 'NOT_FOUND', 'Production not found');
 
+    const websiteSources = db
+      .prepare('SELECT status, reviewed FROM website_research WHERE production_id = ?')
+      .all(id);
+    if (websiteSources.some((source) => source.status !== 'complete' || !source.reviewed)) {
+      return fail(
+        res,
+        409,
+        'RESEARCH_NOT_APPROVED',
+        'Review and approve the website evidence in Plan · Sources before generating a script'
+      );
+    }
+
     // Script is downstream of an approved plan — the handoff makes this explicit.
     if (!p.outline_approved)
       return fail(res, 409, 'OUTLINE_NOT_APPROVED', 'Approve the outline before generating a script');
-    if (!p.scenes_approved)
-      return fail(res, 409, 'SCENES_NOT_APPROVED', 'Approve the scenes before generating a script');
-
+    // One shot-list row per section exists before any dialogue is written.
+    syncVisualRows(id);
     const scenes = db.prepare('SELECT * FROM scenes WHERE production_id = ? ORDER BY position').all(id);
-    if (!scenes.length) return fail(res, 409, 'NO_SCENES', 'Develop scenes before generating a script');
+    if (!scenes.length) return fail(res, 409, 'NO_SCENES', 'Add an outline section before generating a script');
 
     const nextVersion =
       (db.prepare('SELECT MAX(version) m FROM script_versions WHERE production_id = ?').get(id).m ?? 0) + 1;
@@ -90,12 +112,52 @@ router.post(
     // investors and to buyers, and a script that does not know which it is
     // doing is the reason one video has to be rewritten into the other.
     const track = audienceFor(id);
-    const segments = generateScript(scenes, p.title, personas, track);
+    // Approved website evidence is copied into the brief, but recording it is
+    // not enough: the script must actually receive it. The deterministic
+    // generator uses Source summary in the opening and CTA at the close.
+    const brief = Object.fromEntries(
+      db.prepare('SELECT label, value FROM brief_fields WHERE production_id = ? ORDER BY position')
+        .all(id)
+        .map((field) => [field.label, field.value])
+    );
+    const routedProvider = getRouting().script;
+    let generatorProvider = 'included';
+    let generatorModel = null;
+    let segments;
+
+    // Fixtures is an offline promise, even if a cloud route and key are saved.
+    // Local Ollama is allowed in Test because it stays on this machine and does
+    // not consume provider credits. Cloud text generation is allowed only in
+    // Live, the same explicit billing boundary used for finished renders.
+    if (providerMode() === 'fixtures' || routedProvider === 'included') {
+      segments = generateScript(scenes, p.title, personas, track, brief);
+    } else if (routedProvider !== 'ollama' && !canGenerateLive()) {
+      return fail(
+        res,
+        409,
+        'PAID_AI_DISABLED',
+        `Scripting is routed to ${routedProvider}, which may bill your provider account. Enable Live or route Scripting to Built-in deterministic or Local Ollama.`
+      );
+    } else {
+      const request = buildLlmScriptRequest(scenes, p.title, personas, track, brief);
+      try {
+        const generated = await generateStructured(routedProvider, request);
+        segments = segmentsFromLlmScript(generated.data, scenes);
+        generatorProvider = generated.provider;
+        generatorModel = generated.model;
+      } catch (err) {
+        const code = err instanceof LlmRuntimeError ? err.code : err.code ?? 'SCRIPT_GENERATION_FAILED';
+        const status = code === 'BAD_SCRIPT_SHAPE' ? 502 : code === 'NO_KEY' ? 409 : 502;
+        return fail(res, status, code, err.message || 'The selected model could not generate a valid script.');
+      }
+    }
 
     db.transaction(() => {
       const versionId = db
-        .prepare('INSERT INTO script_versions (production_id, version, status) VALUES (?,?,?)')
-        .run(id, nextVersion, 'proposed').lastInsertRowid;
+        .prepare(
+          'INSERT INTO script_versions (production_id, version, status, generator_provider, generator_model) VALUES (?,?,?,?,?)'
+        )
+        .run(id, nextVersion, 'proposed', generatorProvider, generatorModel).lastInsertRowid;
       const ins = db.prepare(
         'INSERT INTO script_segments (script_version_id, scene_id, position, speaker, text) VALUES (?,?,?,?,?)'
       );
@@ -105,7 +167,9 @@ router.post(
     return ok(
       res,
       { ...scriptState(id), stale: staleSummary(id) },
-      `Script v${nextVersion} proposed (dry run — deterministic, no paid call)`
+      generatorProvider === 'included'
+        ? `Script v${nextVersion} proposed (built-in deterministic · $0)`
+        : `Script v${nextVersion} proposed with ${generatorProvider}/${generatorModel}`
     );
   })
 );
@@ -127,6 +191,33 @@ router.post(
 
     const affected = action === 'accept' ? markStaleFrom(id, 'script', `Script v${v.version} accepted`) : {};
     return ok(res, { ...scriptState(id), stale: staleSummary(id), affected }, `Script v${v.version} ${action}ed`);
+  })
+);
+
+router.patch(
+  '/:id/script/:versionId/segments/:segmentId',
+  route(async (req, res) => {
+    const db = getDb();
+    const id = Number(req.params.id);
+    const version = db.prepare(
+      'SELECT * FROM script_versions WHERE id = ? AND production_id = ?'
+    ).get(req.params.versionId, id);
+    if (!version) return fail(res, 404, 'NOT_FOUND', 'Script version not found');
+    if (version.status !== 'proposed') {
+      return fail(res, 409, 'SCRIPT_LOCKED', 'Accepted and rejected scripts are immutable; regenerate to make a new proposal');
+    }
+    const segment = db.prepare(
+      'SELECT * FROM script_segments WHERE id = ? AND script_version_id = ?'
+    ).get(req.params.segmentId, version.id);
+    if (!segment) return fail(res, 404, 'NOT_FOUND', 'Script line not found');
+
+    const speaker = req.body?.speaker === undefined ? segment.speaker : String(req.body.speaker).trim();
+    const text = req.body?.text === undefined ? segment.text : String(req.body.text).trim();
+    if (!speaker) return fail(res, 400, 'SPEAKER_REQUIRED', 'A script line needs a speaker');
+    if (!text) return fail(res, 400, 'TEXT_REQUIRED', 'A script line cannot be empty');
+    db.prepare('UPDATE script_segments SET speaker = ?, text = ? WHERE id = ?')
+      .run(speaker.slice(0, 120), text.slice(0, 5000), segment.id);
+    return ok(res, scriptState(id), `Updated script v${version.version}`);
   })
 );
 
@@ -174,6 +265,7 @@ function clock(seconds) {
 
 const QUEUE_SECONDS = 2;
 const RENDER_SECONDS = 6;
+const PUSH_GRACE_SECONDS = 120;
 
 /**
  * Move live renders forward.
@@ -214,9 +306,21 @@ async function advanceRenders(productionId) {
       .prepare('SELECT * FROM provider_jobs WHERE render_version_id = ? ORDER BY id DESC LIMIT 1')
       .get(r.id);
     const real = job && !String(job.remote_id ?? '').startsWith('fx_');
+    const simulated = job ? !real : !!r.dry_run;
 
     let status;
     let progress;
+
+    if (!real && !simulated) {
+      // A paid render with no provider job never reached the provider. It is
+      // not "processing", and the clock below must never declare it complete.
+      // The grace period covers a poll that lands while the push is in flight.
+      const age = (Date.now() - Date.parse(r.started_at)) / 1000;
+      if (age < PUSH_GRACE_SECONDS) continue;
+      db.prepare("UPDATE render_versions SET status = 'failed', error = COALESCE(error, ?) WHERE id = ?")
+        .run('No provider job was recorded for this render.', r.id);
+      continue;
+    }
 
     if (real) {
       const polled = await pollJob(job.id).catch(() => null);
@@ -251,6 +355,7 @@ async function advanceRenders(productionId) {
       .run(progress, status, r.id);
 
     if (status === 'complete') {
+      keepRenderLocally(r.id);
       const exists = db.prepare('SELECT 1 FROM exports WHERE render_version_id = ?').get(r.id);
       if (!exists) {
         const n = (db.prepare('SELECT MAX(version) m FROM exports WHERE production_id = ?').get(productionId).m ?? 0) + 1;
@@ -322,12 +427,34 @@ router.post(
       .prepare("SELECT * FROM script_versions WHERE production_id = ? AND status = 'accepted' ORDER BY version DESC")
       .get(id);
     if (!accepted) return fail(res, 409, 'NO_ACCEPTED_SCRIPT', 'Accept a script version before rendering');
+    // Your own recording, re-performed by your avatar: the cleaned audio of
+    // your takes drives it, so the AI voice and its approvals do not apply.
+    const fromRecording = req.body?.fromRecording === true;
+    if (fromRecording && madeBy(id) !== 'self') {
+      return fail(res, 409, 'NOT_SELF_RECORDED', 'Only a video you recorded yourself can be turned into an avatar video.');
+    }
+
+    // Fixtures remains an explicit sandbox for exercising downstream export
+    // and publication code. Any path that can reach HeyGen — including Test's
+    // free, watermarked API-key route — must pass the whole approval chain.
+    const lock = productionLock(id);
+    const blockers = (lock?.blockers ?? []).filter((b) => !(fromRecording && b.key === 'voice'));
+    if (providerMode() !== 'fixtures' && blockers.length) {
+      return fail(
+        res,
+        409,
+        'PRODUCTION_LOCKED',
+        `Production Lock has ${blockers.length} blocker${blockers.length === 1 ? '' : 's'}: `
+          + blockers.slice(0, 4).map((item) => `${item.label} — ${item.detail}`).join('; ')
+          + (blockers.length > 4 ? '…' : '')
+      );
+    }
 
     // The hard gate applies to the whole production too: if segments exist, every
     // one of them must be cast and heard. Rendering the whole thing must not be a
     // way around a gate that stops you rendering one line of it.
     const gate = renderGate(id);
-    if (gate.total > 0 && !gate.ready) {
+    if (!fromRecording && gate.total > 0 && !gate.ready) {
       return fail(res, 409, 'UNHEARD',
         `${gate.blocked.length} of ${gate.total} segments are not ready: ` +
         gate.blocked.slice(0, 3).map((b) => `#${b.position + 1} (${b.reason})`).join(', ') +
@@ -340,10 +467,16 @@ router.post(
       return fail(res, 402, 'CONFIRMATION_REQUIRED', 'A paid render requires explicit confirmation');
     }
 
+    let audio = null;
+    if (fromRecording) {
+      try { audio = await cleanRecordingAudio(id); } catch (err) { return fail(res, 409, err.code ?? 'NO_TAKES', err.message); }
+    }
     const segments = db
       .prepare('SELECT text FROM script_segments WHERE script_version_id = ?')
       .all(accepted.id);
-    const duration = estimateRuntime(segments);
+    const duration = audio
+      ? `${Math.floor(audio.seconds / 60)}:${String(Math.round(audio.seconds % 60)).padStart(2, '0')}`
+      : estimateRuntime(segments);
     const minutes = duration.split(':').reduce((m, s, i) => (i === 0 ? Number(m) : Number(m) + Number(s) / 60), 0);
     const cost = Math.round(minutes * 1.4 * 100) / 100;
 
@@ -369,10 +502,15 @@ router.post(
         renderVersionId,
         segments: fullSegments,
         title: db.prepare('SELECT title FROM productions WHERE id = ?').get(id).title,
+        audioFile: audio?.file,
       });
     } catch (err) {
+      // Failed, not queued: a queued row with no provider job is what the
+      // simulated clock below advances, so a rejected render used to be marked
+      // complete eight seconds later, with an export for a video nobody made.
       pushError = err.message;
-      db.prepare('UPDATE render_versions SET error = ? WHERE id = ?').run(err.message, renderVersionId);
+      db.prepare("UPDATE render_versions SET status = 'failed', error = ? WHERE id = ?")
+        .run(err.message, renderVersionId);
     }
 
     return ok(
@@ -413,6 +551,15 @@ router.post(
     if (!render) return fail(res, 404, 'NOT_FOUND', 'Render not found');
     if (render.status !== 'complete')
       return fail(res, 409, 'RENDER_INCOMPLETE', 'Edits apply to a completed render');
+
+    const supported = new Set(['Trim / Cut', 'Create Short Clip']);
+    if (!supported.has(kind)) {
+      return fail(res, 501, 'NOT_IMPLEMENTED', `${kind} is visible on the editor roadmap but is not built yet`);
+    }
+    const planned = planEdits([{ kind, target, note }]);
+    if (!planned.applied.length) {
+      return fail(res, 400, 'BAD_RANGE', 'Enter a valid time range such as 0:05-0:12; the end must be after the start');
+    }
 
     // Non-destructive: the edit is recorded as a decision; the render is untouched.
     db.prepare('INSERT INTO edit_decisions (render_version_id, kind, target, note) VALUES (?,?,?,?)')
@@ -481,11 +628,10 @@ router.get(
     const id = Number(req.params.id);
     const rows = db.prepare('SELECT * FROM publications WHERE production_id = ?').all(id);
     const realConnections = { artificialFunny: await artificialFunny.isConnected() };
-    const connections = Object.fromEntries(
-      db.prepare('SELECT platform, status FROM publishing_connections').all().map((c) => [c.platform, c.status])
-    );
+    // Only an export with a file can be published: a finished render files a
+    // placeholder export row before its file is built.
     const latestExport = db
-      .prepare('SELECT * FROM exports WHERE production_id = ? ORDER BY version DESC')
+      .prepare('SELECT * FROM exports WHERE production_id = ? AND file_path IS NOT NULL ORDER BY version DESC')
       .get(id);
 
     return ok(res, {
@@ -501,11 +647,14 @@ router.get(
           // For a platform this build can actually reach, "connected" means a
           // key that works — not a row in a seeded table. The card used to say
           // Connected next to a Publish button that could only ever refuse.
-          connected: channel.platform === artificialFunny.PLATFORM
-            ? realConnections.artificialFunny
-            : connections[platform] === 'connected',
+          connected: channel.platform === artificialFunny.PLATFORM && realConnections.artificialFunny,
           canReallyPublish: channel.platform === artificialFunny.PLATFORM,
-          mode: row?.mode ?? 'prepare',
+          availableModes: channel.platform === artificialFunny.PLATFORM && realConnections.artificialFunny
+            ? ['prepare', 'schedule', 'publish']
+            : ['prepare'],
+          mode: channel.platform === artificialFunny.PLATFORM && realConnections.artificialFunny
+            ? (row?.mode ?? 'prepare')
+            : 'prepare',
           status: row?.status ?? 'not_prepared',
           stale: !!row?.stale,
           staleReason: row?.stale_reason ?? null,
@@ -535,25 +684,24 @@ router.post(
       return fail(res, 400, 'BAD_MODE', 'Mode must be prepare, schedule or publish');
 
     const latestExport = db
-      .prepare('SELECT * FROM exports WHERE production_id = ? ORDER BY version DESC')
+      .prepare('SELECT * FROM exports WHERE production_id = ? AND file_path IS NOT NULL ORDER BY version DESC')
       .get(id);
     if (!latestExport) return fail(res, 409, 'NO_EXPORT', 'Create an export before preparing a publication');
 
     // A platform this build can actually reach decides for itself whether it is
     // connected. The fixtures table only ever knew what it was seeded with.
     const canReallyPublish = platform === artificialFunny.PLATFORM;
-    const connected = canReallyPublish
-      ? await artificialFunny.isConnected()
-      : db.prepare('SELECT status FROM publishing_connections WHERE platform = ?')
-          .get(platform)?.status === 'connected';
+    const connected = canReallyPublish && await artificialFunny.isConnected();
 
     // Publishing philosophy: an unavailable connection degrades to Prepare only,
     // it never blocks the export.
     let effectiveMode = mode;
     let message = `${platform}: ${mode}`;
-    if (mode !== 'prepare' && !connected) {
+    if (mode !== 'prepare' && (!canReallyPublish || !connected)) {
       effectiveMode = 'prepare';
-      message = `${platform} is not connected — prepared a package instead (never blocks export)`;
+      message = canReallyPublish
+        ? `${platform} is not connected — prepared a package instead (never blocks export)`
+        : `${platform} direct publishing is not built — prepared a package for manual upload`;
     }
 
     let postId = null;

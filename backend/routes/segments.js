@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { getDb } from '../db/index.js';
+import { approvedLook } from '../lib/appearance.js';
 import {
   segmentsFor, buildSegments, updateSegment, auditionSegment, markHeard, renderGate,
-  speakers, auditionPending,
+  speakers, auditionPending, auditionSpends,
 } from '../lib/segments.js';
+import { pollSegmentRenders } from '../lib/providers/index.js';
 import { renderViaStudio } from '../lib/providers/heygen-studio.js';
 import { renderViaKey } from '../lib/providers/heygen-key-render.js';
 import { chooseRenderPath } from '../lib/providers/heygen-route.js';
@@ -14,15 +16,30 @@ import { createReadStream, existsSync } from 'node:fs';
 const router = Router();
 
 /** Everything a segment view needs, assembled the same way for every route. */
-const view = (id) => ({ segments: segmentsFor(id), gate: renderGate(id), speakers: speakers(id) });
+// `auditionSpends` is said up front so the page can ask before the click, not
+// learn from a 402 after it.
+const view = (id) => {
+  const segments = segmentsFor(id);
+  // Lines cast with your local voice cost nothing, so the page only asks when
+  // a line still waiting on a take would go to HeyGen.
+  const spends = auditionSpends()
+    && segments.some((s) => s.needsAudition && s.presenter?.voice && s.presenter.voice.provider !== 'local');
+  return { segments, gate: renderGate(id, segments), speakers: speakers(id), auditionSpends: spends };
+};
+// Known refusals by code; anything else from an audition is the provider failing.
+const STATUS = {
+  NOT_FOUND: 404, NO_SCRIPT: 409, CONFIRMATION_REQUIRED: 402,
+  EMPTY: 400, NO_PRESENTER: 409, NO_VOICE: 409, NO_AUDIO: 409, STALE: 409,
+  TOO_LONG: 400, VOICE_OFFLINE: 503, VOICE_FAILED: 502, UNCONFIRMED: 409,
+};
 const bad = (res, err, fallback = 400) =>
-  fail(res, err.code === 'NOT_FOUND' ? 404 : err.code === 'NO_SCRIPT' ? 409 : fallback,
-       err.code ?? 'ERROR', err.message);
+  fail(res, STATUS[err.code] ?? fallback, err.code ?? 'ERROR', err.message);
 
 router.get(
   '/:id/segments',
   route(async (req, res) => {
     const id = Number(req.params.id);
+    await pollSegmentRenders(id);
     return ok(res, view(id));
   })
 );
@@ -58,12 +75,15 @@ router.post(
   route(async (req, res) => {
     const id = Number(req.params.id);
     try {
-      const result = await auditionSegment(Number(req.params.segmentId), req.body ?? {});
+      const { speed, ssml, confirmPaid } = req.body ?? {};
+      const result = await auditionSegment(Number(req.params.segmentId), { speed, ssml, confirmPaid });
       return ok(res, { ...result, ...view(id) },
-        result.synthesised
+        result.local
+          ? `Auditioned in ${result.voice.name} — on this Mac, nothing spent`
+          : result.synthesised
           ? `Auditioned in ${result.voice.name}`
           : 'Take created, but nothing was synthesised in Fixtures mode — switch to Test to hear it');
-    } catch (err) { return bad(res, err); }
+    } catch (err) { return bad(res, err, 502); }
   })
 );
 
@@ -89,8 +109,16 @@ router.post(
   '/:id/segments/audition-all',
   route(async (req, res) => {
     const id = Number(req.params.id);
-    const { done, failedAt, error } = await auditionPending(id);
+    let result;
+    try {
+      result = await auditionPending(id, {
+        confirmPaid: req.body?.confirmPaid,
+        limit: req.body?.limit == null ? null : Number(req.body.limit),
+      });
+    } catch (err) { return bad(res, err); }
+    const { done, failedAt, error } = result;
     const made = done.filter((d) => d.synthesised).length;
+    const local = done.filter((d) => d.local).length;
 
     if (error) {
       return fail(res, 502, 'AUDITION_FAILED',
@@ -100,7 +128,9 @@ router.post(
       return ok(res, view(id), 'Nothing to audition — every line is cast and heard, or waiting on a presenter.');
     }
     return ok(res, view(id), made
-      ? `Auditioned ${made} line${made === 1 ? '' : 's'} on your HeyGen plan. Listen to each before approving.`
+      ? `Auditioned ${made} line${made === 1 ? '' : 's'}` +
+        (local === made ? ' in your local voice — nothing spent.' : local ? ` (${local} local, ${made - local} on your HeyGen plan).` : ' on your HeyGen plan.') +
+        ' Listen to each before approving.'
       : 'Nothing was synthesised in Fixtures mode — switch to Test to hear these.');
   })
 );
@@ -135,6 +165,10 @@ router.post(
     if (path.path === 'none') {
       return fail(res, 409, path.warning ?? 'NO_PATH', path.reason);
     }
+    if (path.path !== 'fixtures' && seg.presenter.voice?.provider === 'local') {
+      return fail(res, 409, 'LOCAL_VOICE_RENDER',
+        'This line uses your local voice. Render the whole video from Render — it lip-syncs the avatar to your approved audio, and each line\'s clip is cut from it in Edit → Editor kit. Nothing was sent.');
+    }
     // The same confirmation the whole-production render demands. Without it
     // here, rendering the five lines one at a time was a way around the gate
     // that renders the same video and asks nothing.
@@ -146,17 +180,20 @@ router.post(
     const version =
       (db.prepare('SELECT MAX(version) m FROM segment_renders WHERE segment_id = ?').get(segmentId).m ?? 0) + 1;
 
+    // The look approved for this video, not the presenter's default avatar.
+    const look = approvedLook(id, seg.presenter.id);
     const line = {
       speaker: seg.speaker, text: seg.text,
-      avatarId: seg.presenter.avatar.remoteId,
+      avatarId: look?.remoteId ?? seg.presenter.avatar.remoteId,
       voiceId: seg.presenter.voice?.remoteId ?? null,
+      ...(look ? { background: look.background } : {}),
     };
     const resolution = seg.quality === 'final' ? '1080p' : '720p';
     const title = `${seg.speaker} — line ${seg.position + 1}`;
 
     try {
       const result = path.path === 'mcp'
-        ? await renderViaStudio({ segments: [line], title, resolution })
+        ? await renderViaStudio({ segments: [line], title, resolution, ...(look ? { aspectRatio: look.aspect } : {}) })
         : await renderViaKey({ segments: [line], title, resolution, testMode: path.testMode });
 
       db.prepare(

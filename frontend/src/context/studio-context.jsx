@@ -7,6 +7,8 @@ export function StudioProvider({ children }) {
   const mutateRef = React.useRef(null);
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState(null);
+  // Sections that failed to load, as [{ name, message }]. Non-fatal by design.
+  const [loadErrors, setLoadErrors] = useState([]);
   const [workspace, setWorkspace] = useState(null);
   const [production, setProduction] = useState(null);
   const [productions, setProductions] = useState([]);
@@ -89,29 +91,53 @@ export function StudioProvider({ children }) {
   const load = useCallback(async () => {
     setStatus('loading');
     setError(null);
+    setLoadErrors([]);
+    // Only the workspace is fatal: without it there is no licence, no program
+    // and no onboarding state to render. Everything else loads on its own, so
+    // one failing endpoint (a calendar, an editor-tools list) degrades one
+    // section instead of replacing the whole studio with "Could not reach the API".
+    let w;
     try {
-      const [w, h] = await Promise.all([api.workspace(), api.health()]);
-      setWorkspace(w);
-      setHealth(h);
-
-      // Nothing else is fetched until the workspace is licensed and set up —
-      // an un-onboarded install has no business loading a production.
-      if (w.onboarded) {
-        const [prod, list, people, campaigns, library, calendar, setup, startSources, editorTools, publishTargets] =
-          await Promise.all([
-            api.currentProduction(), api.listProductions(), api.people(), api.campaigns(), api.library(),
-            api.calendar(), api.setup(), api.startSources(), api.editorTools(), api.publishTargets(),
-          ]);
-        setProduction(prod);
-        setProductions(list);
-        setCollections({ people, campaigns, library, calendar });
-        setMeta({ setup, startSources, editorTools, publishTargets });
-      }
-      setStatus('ready');
+      w = await api.workspace();
     } catch (err) {
       setError(err.message);
       setStatus('error');
+      return;
     }
+    setWorkspace(w);
+    api.health().then(setHealth).catch(() => setHealth(null));
+
+    // Nothing else is fetched until the workspace is licensed and set up —
+    // an un-onboarded install has no business loading a production.
+    if (w.onboarded) {
+      const parts = {
+        production: [api.currentProduction, null],
+        productions: [api.listProductions, []],
+        people: [api.people, []],
+        campaigns: [api.campaigns, []],
+        library: [api.library, []],
+        calendar: [api.calendar, null],
+        setup: [api.setup, null],
+        startSources: [api.startSources, []],
+        editorTools: [api.editorTools, []],
+        publishTargets: [api.publishTargets, []],
+      };
+      const names = Object.keys(parts);
+      const settled = await Promise.allSettled(names.map((n) => parts[n][0]()));
+      const got = {};
+      const failed = [];
+      settled.forEach((r, i) => {
+        const name = names[i];
+        if (r.status === 'fulfilled') got[name] = r.value;
+        else { got[name] = parts[name][1]; failed.push({ name, message: r.reason?.message ?? 'failed' }); }
+      });
+      setProduction(got.production);
+      setProductions(got.productions);
+      setCollections({ people: got.people, campaigns: got.campaigns, library: got.library, calendar: got.calendar });
+      setMeta({ setup: got.setup, startSources: got.startSources, editorTools: got.editorTools, publishTargets: got.publishTargets });
+      setLoadErrors(failed);
+    }
+    setStatus('ready');
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -179,7 +205,7 @@ export function StudioProvider({ children }) {
   mutateRef.current = mutate;
 
   const value = {
-    status, error, reload: load,
+    status, error, loadErrors, reload: load,
     // Where to land when a production is opened from somewhere that knows which
     // stage the work is actually stuck at. Consumed once, then cleared, so it
     // never hijacks a later navigation.
@@ -212,10 +238,3 @@ export function useStudio() {
   return ctx;
 }
 
-export const toSeconds = (t) => {
-  const [m, s] = String(t).split(':').map(Number);
-  return (m || 0) * 60 + (s || 0);
-};
-
-export const toClock = (secs) =>
-  `${Math.floor(secs / 60)}:${String(Math.max(0, secs) % 60).padStart(2, '0')}`;

@@ -1,3 +1,5 @@
+> Archived 2026-09-29: superseded by `docs/ARCHITECTURE.md` §2 and §10 (object model and action contract). Paths below are as they were when written.
+
 # Frontend contract (backend-agnostic)
 
 Core objects: Workspace, Entitlement, CredentialRef, StorageProvider, **Company**,

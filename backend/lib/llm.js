@@ -2,29 +2,31 @@ import { getDb } from '../db/index.js';
 import { listCredentials } from './credentials.js';
 
 // Planning capabilities that can each be routed to a different model. The
-// included model is always available and needs no key, so it is the fallback
-// for anything unrouted.
+// deterministic engine is always available and needs no key, so it is the
+// fallback for anything unrouted. It is deliberately not called an LLM: the
+// old label implied a local model existed when the code was only templates.
 export const LLM_CAPABILITIES = [
-  { key: 'plan',    label: 'Planning',      detail: 'Brief, outline and scene structure' },
-  { key: 'clarify', label: 'Clarification', detail: 'Producer questions and assessments' },
-  { key: 'script',  label: 'Scripting',     detail: 'Dialogue generation from an approved plan' },
+  { key: 'plan',    label: 'Planning',      detail: 'Brief, outline and scene structure', active: false },
+  { key: 'clarify', label: 'Clarification', detail: 'Producer questions and assessments', active: false },
+  { key: 'script',  label: 'Scripting',     detail: 'Dialogue generation from an approved plan', active: true },
 ];
 
 export const LLM_PROVIDERS = [
-  { id: 'included',  label: 'Included LLM', needsKey: false },
-  { id: 'openai',    label: 'ChatGPT (OpenAI)', needsKey: true },
-  { id: 'anthropic', label: 'Claude (Anthropic)', needsKey: true },
-  { id: 'xai',       label: 'Grok (xAI)', needsKey: true },
-  { id: 'groq',      label: 'Groq', needsKey: true },
+  { id: 'included',  label: 'Built-in deterministic', needsKey: false, kind: 'deterministic', cost: 'none' },
+  { id: 'ollama',    label: 'Local Ollama', needsKey: false, kind: 'local', cost: 'local' },
+  { id: 'openai',    label: 'ChatGPT (OpenAI)', needsKey: true, kind: 'cloud', cost: 'provider' },
+  { id: 'anthropic', label: 'Claude (Anthropic)', needsKey: true, kind: 'cloud', cost: 'provider' },
+  { id: 'xai',       label: 'Grok (xAI)', needsKey: true, kind: 'cloud', cost: 'provider' },
+  { id: 'groq',      label: 'Groq', needsKey: true, kind: 'cloud', cost: 'provider' },
 ];
 
 export function isLlmProvider(id) {
   return LLM_PROVIDERS.some((p) => p.id === id);
 }
 
-/** Providers that can actually be used right now: included, plus any with a stored key. */
+/** Providers that can be selected: built-in/local, plus cloud providers with a stored key. */
 export function availableProviders() {
-  const withKeys = new Set(listCredentials().map((c) => c.provider));
+  const withKeys = new Set(listCredentials().filter((c) => !c.unreadable).map((c) => c.provider));
   return LLM_PROVIDERS
     .filter((p) => !p.needsKey || withKeys.has(p.id))
     .map((p) => ({ ...p, hasKey: withKeys.has(p.id) }));
@@ -52,7 +54,7 @@ export function setRouting(capability, provider) {
   }
   if (!availableProviders().some((p) => p.id === provider)) {
     throw Object.assign(
-      new Error(`${provider} has no stored key — add one before routing work to it`),
+      new Error(`${provider} is not available — add its key before routing work to it`),
       { code: 'NO_KEY' }
     );
   }
@@ -69,8 +71,10 @@ export function setRouting(capability, provider) {
 export function llmState() {
   return {
     capabilities: LLM_CAPABILITIES,
-    providers: availableProviders().map(({ id, label, hasKey, needsKey }) => ({ id, label, hasKey, needsKey })),
-    all: LLM_PROVIDERS.map(({ id, label, needsKey }) => ({ id, label, needsKey })),
+    providers: availableProviders().map(({ id, label, hasKey, needsKey, kind, cost }) => (
+      { id, label, hasKey, needsKey, kind, cost }
+    )),
+    all: LLM_PROVIDERS.map(({ id, label, needsKey, kind, cost }) => ({ id, label, needsKey, kind, cost })),
     routing: getRouting(),
   };
 }

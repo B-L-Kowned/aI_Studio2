@@ -14,13 +14,13 @@ import { mcpStatus } from './providers/heygen-mcp.js';
 
 export const CONNECTIONS = [
   { id: 'openai',     role: 'llm',   label: 'ChatGPT',    vendor: 'OpenAI',
-    detail: 'Planning, clarification and scripting' },
+    detail: 'Connected cloud model for script generation' },
   { id: 'anthropic',  role: 'llm',   label: 'Claude',     vendor: 'Anthropic',
-    detail: 'Planning, clarification and scripting' },
+    detail: 'Connected cloud model for script generation' },
   { id: 'groq',       role: 'llm',   label: 'Groq',       vendor: 'Groq',
-    detail: 'Fast inference for planning work' },
+    detail: 'Fast connected model for script generation' },
   { id: 'xai',        role: 'llm',   label: 'Grok',       vendor: 'xAI',
-    detail: 'Planning, clarification and scripting' },
+    detail: 'Connected cloud model for script generation' },
   { id: 'elevenlabs', role: 'voice', label: 'ElevenLabs', vendor: 'ElevenLabs',
     detail: 'Voice synthesis for drafts and finals' },
   { id: 'heygen',     role: 'video', label: 'HeyGen',     vendor: 'HeyGen',
@@ -48,7 +48,11 @@ export function connectionById(id) {
 
 /** Every connection with its stored state. Never includes a secret. */
 export function listConnections() {
-  const stored = Object.fromEntries(listCredentials().map((c) => [c.provider, c]));
+  // An unreadable key is not a connection; it is reported so the page can say
+  // "reconnect" instead of showing a connection that fails on first use.
+  const all = listCredentials();
+  const unreadable = new Set(all.filter((c) => c.unreadable).map((c) => c.provider));
+  const stored = Object.fromEntries(all.filter((c) => !c.unreadable).map((c) => [c.provider, c]));
   const db = getDb();
 
   // HeyGen has two ways in. Reading only `credentials` meant an OAuth sign-in
@@ -67,14 +71,14 @@ export function listConnections() {
     return {
       ...c,
       connected: !!cred || viaMcp,
+      unreadable: unreadable.has(c.id),
       verified: !!cred?.verified || viaMcp,
       hint: viaMcp ? 'signed in' : cred?.hint ?? null,
       // `pocket` reported ONE of the two, MCP winning, so a stored API key was
-      // invisible the moment you were also signed in. They are not
-      // alternatives: the plan path (MCP) renders on your subscription and has
-      // no test mode, and the key path renders watermarked test videos for
-      // free. You want BOTH, and the render router already reads them
-      // independently — only this report pretended otherwise.
+      // invisible the moment you were also signed in. Either path may stand on
+      // its own: MCP covers normal Live production; the optional key adds a
+      // free watermarked Test-render path and can be a Live fallback. The
+      // router reads them independently, so the report must too.
       pocket: c.id === 'heygen' ? (viaMcp ? 'mcp' : cred ? 'key' : 'none') : null,
       pockets: c.id === 'heygen'
         ? {
@@ -109,7 +113,11 @@ export async function connect(id, key) {
   const test = await testCredential(id, key);
   if (!test.ok) throw Object.assign(new Error(test.message), { code: 'BAD_KEY' });
 
-  saveCredential(id, key, test.verdict === 'ok');
+  try {
+    saveCredential(id, key, test.verdict === 'ok');
+  } catch (err) {
+    throw Object.assign(err, { code: 'BAD_KEY' });
+  }
   return { verdict: test.verdict, message: test.message };
 }
 

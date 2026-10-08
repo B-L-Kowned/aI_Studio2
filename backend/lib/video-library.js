@@ -158,3 +158,69 @@ export async function attachToProduction(assetId, productionId, { download = tru
   db.prepare('UPDATE assets SET local_path = ? WHERE id = ?').run(dest, assetId);
   return { attached: true, downloaded: true, path: dest, bytes: size };
 }
+
+/**
+ * Bring a video file from this machine into a production: copy it (the
+ * original is left where it was) to Company / Track / Production in your
+ * storage, measure it, and record it in the Library. If the Library already
+ * knows this video (the same name — usually its HeyGen record), that record is
+ * reused and linked, rather than a second row appearing for one video.
+ */
+export async function importLocalVideo({ path, productionId, name }) {
+  const { existsSync, statSync } = await import('node:fs');
+  const { copyFile, mkdir } = await import('node:fs/promises');
+  const { join, basename, extname, resolve } = await import('node:path');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const run = promisify(execFile);
+  const db = getDb();
+
+  const src = resolve(String(path ?? ''));
+  if (!path || !existsSync(src) || !statSync(src).isFile()) {
+    throw Object.assign(new Error('That file does not exist.'), { code: 'NOT_FOUND' });
+  }
+  if (!['.mp4', '.mov', '.m4v', '.webm'].includes(extname(src).toLowerCase())) {
+    throw Object.assign(new Error('Only video files (mp4, mov, m4v, webm) can be imported.'), { code: 'BAD_TYPE' });
+  }
+  if (!db.prepare('SELECT 1 FROM productions WHERE id = ?').get(productionId)) {
+    throw Object.assign(new Error('No such production.'), { code: 'NOT_FOUND' });
+  }
+  let probe;
+  try {
+    const { stdout } = await run('ffprobe', ['-v', 'error', '-show_entries',
+      'format=duration:stream=codec_type,width,height', '-of', 'json', src]);
+    probe = JSON.parse(stdout);
+  } catch {
+    throw Object.assign(new Error('That file could not be read as video.'), { code: 'BAD_VIDEO' });
+  }
+  const video = probe.streams?.find((s) => s.codec_type === 'video');
+  if (!video) throw Object.assign(new Error('That file has no video track.'), { code: 'BAD_VIDEO' });
+  const duration = Number(probe.format?.duration) || null;
+
+  const title = String(name || basename(src, extname(src))).trim().slice(0, 160);
+  const { folderFor } = await import('./storage.js');
+  const { storageRoot } = await import('./exporter.js');
+  const shape = folderFor(productionId);
+  const dir = join(storageRoot(), ...(shape ? shape.parts : [`production-${productionId}`]));
+  await mkdir(dir, { recursive: true });
+  const safe = title.replace(/[/\\:*?"<>|]/g, '-').slice(0, 80) || 'video';
+  const dest = join(dir, `${safe}${extname(src).toLowerCase()}`);
+  if (resolve(dest) !== src) await copyFile(src, dest);
+  const bytes = statSync(dest).size;
+  if (bytes !== statSync(src).size) throw Object.assign(new Error('The copy is incomplete.'), { code: 'COPY_FAILED' });
+
+  const existing = db.prepare("SELECT * FROM assets WHERE name = ? AND kind = 'video' ORDER BY remote_id IS NULL, id LIMIT 1").get(title)
+    ?? db.prepare('SELECT * FROM assets WHERE name = ? ORDER BY remote_id IS NULL, id LIMIT 1').get(title);
+  let id;
+  if (existing) {
+    db.prepare(`UPDATE assets SET production_id = ?, local_path = ?, duration = COALESCE(?, duration),
+                  status = 'completed', kind = 'video' WHERE id = ?`).run(productionId, dest, duration, existing.id);
+    id = existing.id;
+  } else {
+    id = db.prepare(
+      `INSERT INTO assets (name, kind, position, provider, duration, status, created_at, production_id, local_path)
+       VALUES (?, 'video', (SELECT COUNT(*) FROM assets), 'local', ?, 'completed', datetime('now'), ?, ?)`
+    ).run(title, duration, productionId, dest).lastInsertRowid;
+  }
+  return { id, name: title, path: dest, bytes, duration, width: video.width, height: video.height, reusedRecord: !!existing };
+}

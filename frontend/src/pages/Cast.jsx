@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Presenters from './Presenters.jsx';
-import PeoplePage from './PeoplePage.jsx';
+import PeoplePage from '../components/PeoplePage.jsx';
 import { useStudio } from '../context/studio-context.jsx';
+import { Tabs } from '../components/Section.jsx';
 
 /**
  * Cast — everyone involved, in ONE bar.
@@ -31,28 +32,26 @@ export default function Cast() {
 
   const current = view ?? tabForScope ?? tabs[0]?.id ?? null;
 
+  // Drawn by whichever view is showing, under that view's own title.
+  const bar = (
+    <Tabs
+      items={[
+        ...tabs.map((t) => ({ id: t.id, label: t.label, count: t.presenters.length })),
+        { id: 'collaborators', label: 'Collaborators' },
+      ]}
+      value={current}
+      onChange={setView}
+    />
+  );
+
   return (
     <>
-      <div className="subnav">
-        {tabs.map((t) => (
-          <button key={t.id} className={current === t.id ? 'on' : ''} onClick={() => setView(t.id)}>
-            {t.label} <span className="tabcount">{t.presenters.length}</span>
-          </button>
-        ))}
-        <button
-          className={current === 'collaborators' ? 'on' : ''}
-          onClick={() => setView('collaborators')}
-        >
-          Collaborators
-        </button>
-      </div>
-
       {/* Presenters stays mounted so its roster list survives switching to
           Collaborators and back, and so it keeps reporting the tabs. */}
       <div hidden={current === 'collaborators'}>
-        <Presenters tab={current === 'collaborators' ? null : current} onTabs={setTabs} />
+        <Presenters tab={current === 'collaborators' ? null : current} onTabs={setTabs} tabs={bar} />
       </div>
-      {current === 'collaborators' && <PeoplePage />}
+      {current === 'collaborators' && <PeoplePage tabs={bar} />}
     </>
   );
 }

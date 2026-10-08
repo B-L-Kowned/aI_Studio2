@@ -22,7 +22,8 @@ router.post(
     try {
       result = await connect(req.params.id, req.body?.key);
     } catch (err) {
-      return fail(res, err.code === 'BAD_KEY' ? 400 : 404, err.code ?? 'ERROR', err.message);
+      const status = { BAD_KEY: 400, UNKNOWN: 404 }[err.code] ?? 502;
+      return fail(res, status, err.code ?? 'ERROR', err.message);
     }
 
     // A generation provider is only useful once its catalogue is local, so the

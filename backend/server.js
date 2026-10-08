@@ -19,6 +19,23 @@ import scheduleRoutes from './routes/schedule.js';
 import ideas from './routes/ideas.js';
 import companies from './routes/companies.js';
 import storage from './routes/storage.js';
+import workflow from './routes/workflow.js';
+import voices from './routes/voices.js';
+import register from './routes/register.js';
+import appearance from './routes/appearance.js';
+import scriptTools from './routes/script-tools.js';
+import editorKit from './routes/editor-kit.js';
+import enhance from './routes/enhance.js';
+import recording from './routes/recording.js';
+import steps from './routes/steps.js';
+import edit from './routes/edit.js';
+import review from './routes/review.js';
+import voiceBatch from './routes/voice-batch.js';
+import music from './routes/music.js';
+import managerRoutes from './routes/manager.js';
+import lineFixRoutes from './routes/line-fix.js';
+import { cacheOwnedPreviews } from './lib/preview-cache.js';
+import { resume as resumeVoiceBatch } from './lib/voice-batch.js';
 import { modeSummary } from './lib/providers/mode.js';
 import { ok, fail } from './utils/respond.js';
 import { existsSync } from 'node:fs';
@@ -53,12 +70,27 @@ app.use('/api/productions', pipeline);
 app.use('/api/productions', segments);
 app.use('/api/training', training);
 app.use('/api/productions', analysis);
+app.use('/api/productions', workflow);
+app.use('/api/productions', scriptTools);
+app.use('/api/productions', editorKit);
+app.use('/api/productions', enhance);
+app.use('/api/productions', recording);
+app.use('/api/productions', steps);
+app.use('/api/productions', edit);
 app.use('/api/series', series);
 app.use('/api', roster);
 app.use('/api', scheduleRoutes);
 app.use('/api', ideas);
 app.use('/api', companies);
 app.use('/api', storage);
+app.use('/api', voices);
+app.use('/api', register);
+app.use('/api', review);
+app.use('/api', voiceBatch);
+app.use('/api', music);
+app.use('/api', managerRoutes);
+app.use('/api', lineFixRoutes);
+app.use('/api', appearance);
 
 // ------------------------------------------------------- the app itself ---
 //
@@ -104,7 +136,10 @@ app.use((err, _req, res, _next) => {
 
 const MODE = modeSummary();
 if (MODE.generatesLive) {
-  console.warn('[warn] PROVIDER_MODE=live — generation calls are real and billable.');
+  // The effective mode comes from the workspace, not the env; naming the env
+  // var here sent readers to .env when the stored setting was the cause.
+  console.warn(`[warn] provider mode "${MODE.mode}" — generation calls are real and billable. `
+    + `(env default: ${MODE.envDefault}; the stored workspace setting wins.)`);
 }
 
 // Bound to the loopback interface: this is a single-user desktop app, and a
@@ -114,7 +149,11 @@ const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`[db]  ${dbPath}`);
   console.log(`[web] ${packaged ? webRoot : 'not built — use the dev server for the UI'}`);
   console.log(`[api] listening on http://localhost:${actual}  mode=${MODE.mode}`);
+  // A voice batch the last run was in the middle of carries on.
+  resumeVoiceBatch();
   // One machine-readable line, so a parent process never has to parse prose
   // that was written for a person.
   console.log(`STUDIO_READY ${JSON.stringify({ port: actual, packaged, dbPath })}`);
+  // Avatar pictures are signed links that expire; keep yours while they work.
+  cacheOwnedPreviews().catch(() => {});
 });

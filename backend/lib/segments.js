@@ -2,6 +2,8 @@ import { getDb } from '../db/index.js';
 import { resolveSpeaker, presenterCasting } from './casting.js';
 import * as mcp from './providers/heygen-mcp.js';
 import { canReadLive } from './providers/mode.js';
+import { LOCAL, speakLocal } from './local-voice.js';
+import { wordsFor } from './line-words.js';
 
 // The segment is the unit of script, take, presenter, shot, quality and render.
 //
@@ -17,6 +19,8 @@ function serializeTake(t) {
     id: t.id, version: t.version, text: t.text,
     audioUrl: t.audio_url, duration: t.duration,
     heard: !!t.heard, stale: !!t.stale, staleReason: t.stale_reason,
+    // A take made by fixing another can be undone back to it.
+    fixNote: t.fix_note ?? null, fixed: !!t.origin_take_id, local: !!t.local_path,
     createdAt: t.created_at,
   };
 }
@@ -145,7 +149,13 @@ export function invalidateTakes(segmentId, reason) {
   return res.changes;
 }
 
-export function updateSegment(segmentId, { text, presenterId, quality, shot, applyToSpeaker }) {
+// One edit is one change: a half-applied speaker recast (some lines moved, the
+// rest not) is worse than either outcome, so the whole update is a transaction.
+export function updateSegment(segmentId, changes) {
+  return getDb().transaction(() => applySegmentUpdate(segmentId, changes))();
+}
+
+function applySegmentUpdate(segmentId, { text, presenterId, quality, shot, applyToSpeaker }) {
   const db = getDb();
   const seg = db.prepare('SELECT * FROM segments WHERE id = ?').get(segmentId);
   if (!seg) throw Object.assign(new Error('Segment not found'), { code: 'NOT_FOUND' });
@@ -166,7 +176,7 @@ export function updateSegment(segmentId, { text, presenterId, quality, shot, app
   }
   if (text !== undefined && text !== seg.text) {
     db.prepare("UPDATE segments SET text = ?, updated_at = datetime('now') WHERE id = ?").run(text, segmentId);
-    invalidated = invalidateTakes(segmentId, 'The line was edited after this take was approved');
+    invalidated += invalidateTakes(segmentId, 'The line was edited after this take was approved');
   }
   if (presenterId !== undefined) {
     db.prepare('UPDATE segments SET presenter_id = ? WHERE id = ?').run(presenterId, segmentId);
@@ -186,16 +196,31 @@ export function updateSegment(segmentId, { text, presenterId, quality, shot, app
 }
 
 /**
+ * Will an audition right now be real speech on the connected plan? True in Test
+ * as well as Live — there is no free audition anywhere.
+ */
+export const auditionSpends = () => canReadLive() && mcp.isConnected();
+
+const confirmationRequired = (message) =>
+  Object.assign(new Error(message), { code: 'CONFIRMATION_REQUIRED' });
+
+/**
  * The voice gate: audio-only synthesis in the voice that will actually render.
  * Costs credits on the connected plan — it is a real synthesis, which is the
- * point: a stand-in voice approves a sound the video never makes.
+ * point: a stand-in voice approves a sound the video never makes. Refused
+ * without `confirmPaid` whenever it would spend, so no caller can charge the
+ * plan by forgetting to ask.
  */
-export async function auditionSegment(segmentId, { speed = 1.0, ssml = false } = {}) {
+export async function auditionSegment(segmentId, { speed = 1.0, ssml = false, confirmPaid = false } = {}) {
   const db = getDb();
   const seg = db.prepare('SELECT * FROM segments WHERE id = ?').get(segmentId);
   if (!seg) throw Object.assign(new Error('Segment not found'), { code: 'NOT_FOUND' });
   if (!String(seg.text).trim()) {
     throw Object.assign(new Error('Nothing to say — the line is empty.'), { code: 'EMPTY' });
+  }
+  // A placeholder for a fact someone still has to check must never be spoken.
+  if (/\[CONFIRM/i.test(seg.text)) {
+    throw Object.assign(new Error('This line still has a [CONFIRM: …] placeholder — resolve it before auditioning.'), { code: 'UNCONFIRMED' });
   }
 
   const presenter = seg.presenter_id
@@ -215,10 +240,37 @@ export async function auditionSegment(segmentId, { speed = 1.0, ssml = false } =
   const version =
     (db.prepare('SELECT MAX(version) m FROM takes WHERE segment_id = ?').get(segmentId).m ?? 0) + 1;
 
+  // Your local voice: synthesised on this machine, free in every mode, and the
+  // file it writes is the audio the video will use.
+  if (cast.voice.provider === LOCAL) {
+    const out = `takes/${seg.production_id}/${segmentId}-v${version}.wav`;
+    const speed = db.prepare('SELECT voice_speed FROM productions WHERE id = ?').get(seg.production_id)?.voice_speed ?? undefined;
+    const spoken = await speakLocal(cast.voice.id, seg.text, out, { speed });
+    const id = db
+      .prepare(
+        `INSERT INTO takes (segment_id, version, text, voice_asset_id, audio_url, duration, local_path)
+         VALUES (?,?,?,?,?,?,?)`
+      )
+      .run(segmentId, version, seg.text, cast.voice.id, null, spoken.duration, out).lastInsertRowid;
+    db.prepare('UPDATE takes SET audio_url = ? WHERE id = ?').run(`/api/takes/${id}/audio`, id);
+    // Check the words now, on the CPU, while the next line is made on the GPU:
+    // "Check every line" and click-a-word are then instant for this take.
+    wordsFor(spoken.file, seg.text).catch(() => {});
+    return {
+      take: serializeTake(db.prepare('SELECT * FROM takes WHERE id = ?').get(id)),
+      synthesised: true,
+      local: true,
+      voice: cast.voice,
+    };
+  }
+
   let audioUrl = null;
   let duration = null;
 
-  if (canReadLive() && mcp.isConnected()) {
+  if (auditionSpends()) {
+    if (confirmPaid !== true) {
+      throw confirmationRequired('This audition is real speech charged to your HeyGen plan. Confirm to continue.');
+    }
     const res = await mcp.synthesize(seg.text, cast.voice.remoteId, { speed, ssml });
     audioUrl = res?.audio_url ?? res?.url ?? res?.data?.audio_url ?? null;
     duration = res?.duration ?? null;
@@ -264,9 +316,11 @@ export function markHeard(takeId, heard = true) {
   return serializeTake(db.prepare('SELECT * FROM takes WHERE id = ?').get(takeId));
 }
 
-/** Can this production render? Every segment must be cast and heard. */
-export function renderGate(productionId) {
-  const segs = segmentsFor(productionId);
+/**
+ * Can this production render? Every segment must be cast and heard. Pass the
+ * segments when you already have them — each one costs several queries.
+ */
+export function renderGate(productionId, segs = segmentsFor(productionId)) {
   const blocked = segs.filter((s) => s.blockedBy);
   return {
     total: segs.length,
@@ -315,19 +369,32 @@ export function speakers(productionId) {
 /**
  * Audition every line that is waiting only on a take.
  *
- * Real synthesis on the connected plan, so it reports what it will cost before
- * it runs and stops at the first failure rather than burning credits on a
- * misconfiguration N more times.
+ * Real synthesis on the connected plan, so it refuses without confirmation and
+ * stops at the first failure rather than burning credits on a misconfiguration
+ * N more times. `limit` is the number of lines the user was shown when they
+ * confirmed: lines that became pending since then are not charged on that yes.
  */
-export async function auditionPending(productionId) {
+export async function auditionPending(productionId, { confirmPaid = false, limit = null } = {}) {
   // Cast and in need of a take — including the ones holding a stale one.
   const pending = segmentsFor(productionId)
-    .filter((s) => s.needsAudition && s.presenter?.avatar && s.presenter?.voice);
+    .filter((s) => s.needsAudition && s.presenter?.voice
+      && (s.presenter.avatar || s.presenter.voice.provider === LOCAL));
+  // Local-voice lines cost nothing; only HeyGen lines need a yes.
+  const spends = auditionSpends() && pending.some((s) => s.presenter.voice.provider !== LOCAL);
+  if (spends && confirmPaid !== true) {
+    throw Object.assign(
+      confirmationRequired(
+        `Auditioning ${pending.length} line${pending.length === 1 ? '' : 's'} is real speech charged to your HeyGen plan. Confirm to continue.`
+      ),
+      { pending: pending.length }
+    );
+  }
+  const batch = spends && Number.isInteger(limit) && limit >= 0 ? pending.slice(0, limit) : pending;
   const done = [];
-  for (const seg of pending) {
+  for (const seg of batch) {
     try {
-      const r = await auditionSegment(seg.id);
-      done.push({ id: seg.id, position: seg.position, synthesised: r.synthesised });
+      const r = await auditionSegment(seg.id, { confirmPaid });
+      done.push({ id: seg.id, position: seg.position, synthesised: r.synthesised, local: !!r.local });
       if (!r.synthesised) break; // Fixtures: the rest would be the same no-op.
     } catch (err) {
       return { done, failedAt: seg.position + 1, error: err.message };

@@ -1,7 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, shell, Menu } = require('electron');
 const { spawn } = require('node:child_process');
-const { join, resolve } = require('node:path');
-const { existsSync } = require('node:fs');
+const { join, resolve, dirname, isAbsolute, sep } = require('node:path');
+const { existsSync, realpathSync } = require('node:fs');
 
 // The desktop shell.
 //
@@ -45,6 +45,19 @@ const root = isDev ? resolve(__dirname, '..') : resolve(process.resourcesPath, '
 const backendEntry = join(root, 'backend', 'server.js');
 const webRoot = join(root, 'frontend', 'dist');
 
+// Where the backend has always put the database when nothing overrode it
+// (backend/db/index.js defaultDbPath). Passed explicitly so a dev server run
+// with its own STUDIO_DB_PATH and this app never have to agree by accident —
+// and kept at the old location so upgrading does not orphan anyone's data.
+// Linux differs from appData on purpose: the backend uses XDG_DATA_HOME there.
+function studioDbPath() {
+  if (process.env.STUDIO_DB_PATH) return resolve(process.env.STUDIO_DB_PATH);
+  const base = process.platform === 'linux'
+    ? process.env.XDG_DATA_HOME || join(app.getPath('home'), '.local', 'share')
+    : app.getPath('appData');
+  return join(base, 'AIVideoStudio', 'studio.db');
+}
+
 let backend = null;
 let win = null;
 let ready = null; // { port, packaged, dbPath }
@@ -59,7 +72,11 @@ function startBackend() {
     backend = spawn(process.execPath, [backendEntry], {
       cwd: join(root, 'backend'),
       env: {
+        // Inherited for PATH, FFMPEG_PATH and friends. This also carries any
+        // provider-mode default from a dev shell, which is intended: the
+        // stored workspace setting still wins over the env default.
         ...process.env,
+        STUDIO_DB_PATH: studioDbPath(),
         // Port 0 asks the OS for a free one. A fixed port collides with whatever
         // else is on the machine, and with a second copy of this app.
         PORT: '0',
@@ -104,6 +121,26 @@ function startBackend() {
   });
 }
 
+// Exact origin, not a prefix: `http://127.0.0.1:5000` is a prefix of
+// `http://127.0.0.1:50001`, which is someone else's server.
+function isInternal(url, port) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' && u.hostname === '127.0.0.1' && u.port === String(port);
+  } catch {
+    return false;
+  }
+}
+
+// Only web links leave the app. file:, custom schemes and the like would hand
+// the OS a URL the page chose, so they are dropped rather than opened.
+function openOutside(url) {
+  try {
+    const { protocol } = new URL(url);
+    if (protocol === 'http:' || protocol === 'https:') shell.openExternal(url);
+  } catch { /* not a URL — nothing to open */ }
+}
+
 function createWindow(port) {
   win = new BrowserWindow({
     width: 1400,
@@ -119,7 +156,10 @@ function createWindow(port) {
       // reason to hand it Node.
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // The preload only uses contextBridge and ipcRenderer, both available
+      // to a sandboxed preload.
+      sandbox: true,
+      devTools: isDev,
     },
   });
 
@@ -129,13 +169,13 @@ function createWindow(port) {
   // A link to somewhere else is somewhere else: open it in the real browser
   // rather than turning this window into one.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) shell.openExternal(url);
+    if (!isInternal(url, port)) openOutside(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith(`http://127.0.0.1:${port}`)) {
+    if (!isInternal(url, port)) {
       e.preventDefault();
-      shell.openExternal(url);
+      openOutside(url);
     }
   });
 }
@@ -165,8 +205,29 @@ ipcMain.handle('studio:pick-folder', async () => {
   return r.canceled ? null : r.filePaths[0];
 });
 
+// Reveal is the one call that takes a path FROM the page, so it is confined to
+// what the app itself writes: its data directories and the export storage root.
+// The storage root lives in the database, so the backend is asked for it.
+async function revealRoots() {
+  const roots = [app.getPath('userData')];
+  if (ready?.dbPath) roots.push(dirname(ready.dbPath));
+  try {
+    const r = await fetch(`http://127.0.0.1:${ready.port}/api/storage`,
+      { signal: AbortSignal.timeout(2000) });
+    const current = (await r.json())?.data?.current?.path;
+    if (typeof current === 'string' && isAbsolute(current)) roots.push(current);
+  } catch { /* backend unreachable — the local roots still apply */ }
+  return roots.flatMap((p) => { try { return [realpathSync(p)]; } catch { return []; } });
+}
+
 ipcMain.handle('studio:reveal', async (_e, path) => {
-  if (typeof path === 'string' && path.startsWith('/')) shell.showItemInFolder(path);
+  if (typeof path !== 'string' || !isAbsolute(path) || !ready) return false;
+  let target;
+  try { target = realpathSync(resolve(path)); } catch { return false; } // must exist
+  const roots = await revealRoots();
+  if (!roots.some((root) => target === root || target.startsWith(root + sep))) return false;
+  shell.showItemInFolder(target);
+  return true;
 });
 
 ipcMain.handle('studio:info', async () => ({
@@ -215,7 +276,9 @@ app.whenReady().then(async () => {
             && w.webContents.navigationHistory.goForward(),
         },
         { type: 'separator' },
-        { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' },
+        { role: 'reload' },
+        ...(isDev ? [{ role: 'toggleDevTools' }] : []),
+        { type: 'separator' },
         { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
         { type: 'separator' }, { role: 'togglefullscreen' },
       ],

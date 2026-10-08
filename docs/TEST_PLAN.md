@@ -10,7 +10,7 @@ reports leftover state as failures and silently changes your provider mode.
 > `DRY_RUN=true`". One flag forced you to arm paid generation just to read your
 > own avatars, so it was replaced by three modes — `fixtures` / `live_read`
 > (Test) / `live` — which separate *reading* from *spending*. `DRY_RUN=false` is
-> still honoured as a legacy alias for `live`. See `frontend/docs/ARCHITECTURE.md` §4.
+> still honoured as a legacy alias for `live`. See `ARCHITECTURE.md` §4.
 
 1. License: Comedy, Content, Both; upgrade entitlement without reinstall/migration.
 2. Onboarding: Local/Drive/Dropbox selection; Included LLM; mocked BYO OpenAI/Claude/Grok validation; skip and resume.

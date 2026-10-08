@@ -191,12 +191,40 @@ router.get(
           url: a.url ?? null, thumbnailUrl: a.thumbnail_url ?? null,
           duration: a.duration ?? null, status: a.status ?? null,
           createdAt: a.created_at ?? null,
+          productionId: a.production_id ?? null,
+          localPath: a.local_path ?? null,
           // A row with a remote id can be fetched and played; one without is a
           // leftover from when importing stored only a name.
-          playable: !!a.remote_id,
+          playable: !!a.remote_id || !!a.local_path,
+          fileUrl: a.local_path ? `/api/library/${a.id}/file` : null,
         }))
     )
   )
+);
+
+/** A video file from this machine, copied into a production's folder. */
+router.post(
+  '/library/import-local',
+  route(async (req, res) => {
+    try {
+      const { importLocalVideo } = await import('../lib/video-library.js');
+      const r = await importLocalVideo({ path: req.body?.path, productionId: Number(req.body?.productionId), name: req.body?.name });
+      return ok(res, r, `Saved "${r.name}" (${(r.bytes / 1e6).toFixed(1)} MB, ${Math.round(r.duration ?? 0)}s) to the production`);
+    } catch (err) {
+      return fail(res, { NOT_FOUND: 404, BAD_TYPE: 400, BAD_VIDEO: 400 }[err.code] ?? 500, err.code ?? 'ERROR', err.message);
+    }
+  })
+);
+
+/** Play a video stored on this machine. */
+router.get(
+  '/library/:id/file',
+  route(async (req, res) => {
+    const row = getDb().prepare('SELECT local_path FROM assets WHERE id = ?').get(Number(req.params.id));
+    const { existsSync } = await import('node:fs');
+    if (!row?.local_path || !existsSync(row.local_path)) return fail(res, 404, 'NOT_FOUND', 'No local file for this video');
+    return res.sendFile(row.local_path);
+  })
 );
 
 router.delete(
