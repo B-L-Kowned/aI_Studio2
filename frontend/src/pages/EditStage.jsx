@@ -7,6 +7,7 @@ import { useResource } from '../hooks/use-resource.js';
 import LoadState from '../components/LoadState.jsx';
 import { madeByOf, needsRender } from '../utils/made-by.js';
 import HeyGenLook from '../components/HeyGenLook.jsx';
+import UploadDrop from '../components/UploadDrop.jsx';
 import PaidConfirm from '../components/PaidConfirm.jsx';
 
 const SUPPORTED = new Set(['Trim / Cut', 'Create Short Clip']);
@@ -125,7 +126,7 @@ function AvatarFromRecording({ production, onFinished }) {
   const playable = latest?.videoUrl && /^https?:|^\/api\//.test(latest.videoUrl);
 
   return (
-    <section className="border border-solid border-line rounded-lg bg-surface p-[14px_16px] mt-[12px]" aria-label="Avatar from your recording">
+    <section className="border border-solid border-line rounded-lg bg-surface p-[12px_14px] mt-[10px]" aria-label="Avatar from your recording">
       <div className="flex flex-wrap items-baseline gap-x-[12px]">
         <b className="text-[13.5px]">Turn it into an avatar video</b>
         <span className="text-muted text-[12px]">Your avatar, speaking with your recorded voice — cleaned up as above. Renders on HeyGen.</span>
@@ -173,7 +174,9 @@ function FinishInApp({ production, goToStage }) {
   const { mutate } = useStudio();
   const [st, setSt] = useState(null);
   const [open, setOpen] = useState(null);
+  const [tracks, setTracks] = useState([]);
   const player = React.useRef({});
+  useEffect(() => { api.musicTracks().then(setTracks).catch(() => setTracks([])); }, []);
   const load = useCallback(() => api.editState(production.id).then(setSt).catch(() => {}), [production.id]);
   useEffect(() => { load(); }, [load]);
   const busy = st?.analysis?.state === 'running' || st?.job?.state === 'running';
@@ -210,28 +213,27 @@ function FinishInApp({ production, goToStage }) {
   );
 
   return (
-    <section className="border border-solid border-line rounded-lg bg-surface p-[14px_16px]" aria-label="Finish in the app">
-      <div className="flex flex-wrap items-baseline gap-x-[12px]">
+    <section className="border border-solid border-line rounded-lg bg-surface p-[12px_14px]" aria-label="Finish in the app">
+      {/* One header line: what this is, where it stands, and the one action that
+          starts it. The action used to sit alone on a row of its own. */}
+      <div className="flex flex-wrap items-center gap-x-[12px] gap-y-[6px]">
         <b className="text-[13.5px]">Finish it here</b>
         <span className="text-muted text-[12px]">
           {self ? `${recorded} of ${lines.length} lines recorded` : 'Your approved audio, with each section\'s recording or a title card'}
         </span>
+        {self && st.analysis?.state === 'running' && <span className="text-warn text-[12.5px]"><RefreshCw size={12} className="inline animate-spin" /> Listening to {st.analysis.total} takes…</span>}
+        {self && st.analysis?.state === 'failed' && <span className="text-danger text-[12.5px]">{st.analysis.error}</span>}
+        {self && analyzed && st.analysis?.state !== 'running' && (
+          <span className="text-[12.5px] text-ink-2">{cutsOn.length} cuts on — saves {secs(saving)}. Click a cut to keep that bit.</span>
+        )}
+        {self && (
+          <button className="ml-auto text-[12.5px] p-[4px_10px]" onClick={() => act(() => api.analyzeTakes(production.id))} disabled={busy || !recorded}>
+            <Wand2 size={13} /> {analyzed ? 'Listen again' : 'Listen for fillers and pauses'}
+          </button>
+        )}
       </div>
 
-      {self && (
-        <div className="flex flex-wrap items-center gap-[10px] mt-[12px]">
-          <button onClick={() => act(() => api.analyzeTakes(production.id))} disabled={busy || !recorded}>
-            <Wand2 size={14} /> {analyzed ? 'Listen again' : 'Listen for fillers and pauses'}
-          </button>
-          {st.analysis?.state === 'running' && <span className="text-warn text-[12.5px]"><RefreshCw size={12} className="inline animate-spin" /> Listening to {st.analysis.total} takes…</span>}
-          {st.analysis?.state === 'failed' && <span className="text-danger text-[12.5px]">{st.analysis.error}</span>}
-          {analyzed && st.analysis?.state !== 'running' && (
-            <span className="text-[12.5px] text-ink-2">{cutsOn.length} cuts on — saves {secs(saving)}. Click a cut to keep that bit.</span>
-          )}
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-x-[16px] gap-y-[8px] mt-[12px] p-[10px_12px] rounded-md bg-surface-2">
+      <div className="flex flex-wrap gap-x-[16px] gap-y-[6px] mt-[10px] p-[8px_12px] rounded-md bg-surface-2">
         {self && check('removeFillers', 'Cut fillers', 'um, uh, hmm…')}
         {self && check('tightenGaps', 'Shorten long pauses')}
         {self && check('trimEnds', 'Trim dead air at each end')}
@@ -257,10 +259,25 @@ function FinishInApp({ production, goToStage }) {
             );
           })}
         </span>
+        <span className="flex flex-wrap items-center gap-[6px] text-[12.5px]">
+          Music
+          <select className="text-[12px] max-w-[220px]" value={s.music ?? ''} aria-label="Background music"
+            onChange={(e) => set({ music: e.target.value || null })}>
+            <option value="">None</option>
+            {tracks.map((t) => <option key={t.name} value={t.name}>{t.name}{t.seconds ? ` (${Math.round(t.seconds)}s)` : ''}</option>)}
+          </select>
+          {s.music && ['low', 'medium', 'high'].map((l) => (
+            <button key={l} type="button" onClick={() => set({ musicLevel: l })}
+              className={'text-[11.5px] p-[2px_9px] rounded-full ' + (s.musicLevel === l ? 'bg-ink text-[#fff] border-ink' : '')}>{l}</button>
+          ))}
+          <UploadDrop compact accept="audio/*" label="Add a track"
+            upload={(f, p) => api.uploadMusic(f, p)} onDone={(r) => { setTracks(r.data.tracks); set({ music: r.data.saved }); }} />
+        </span>
       </div>
+      <p className="text-faint text-[11px] m-[4px_0_0]">Music sits under your voice and dips while you speak. Use tracks you have the rights to — they are kept in your storage's Music folder for every video.</p>
 
       {self && (
-        <ol className="list-none p-0 m-[12px_0_0] border border-solid border-line rounded-md">
+        <ol className="list-none p-0 m-[10px_0_0] border border-solid border-line rounded-md">
           {lines.map((l) => {
             const t = chosen(l);
             return (
@@ -305,7 +322,7 @@ function FinishInApp({ production, goToStage }) {
         </ol>
       )}
 
-      <div className="flex flex-wrap items-center gap-[10px] mt-[14px]">
+      <div className="flex flex-wrap items-center gap-[10px] mt-[12px]">
         <button onClick={() => act(() => api.previewEdit(production.id))} disabled={busy}><Film size={14} /> Preview</button>
         <button className="primary" onClick={() => act(() => api.exportEdit(production.id))} disabled={busy}><Check size={14} /> Export the finished video</button>
         {st.job?.state === 'running' && <span className="text-warn text-[12.5px]"><RefreshCw size={12} className="inline animate-spin" /> {st.job.preview ? 'Building a preview…' : st.job.step ?? 'Exporting at full size…'}</span>}
@@ -319,7 +336,7 @@ function FinishInApp({ production, goToStage }) {
         <video key={st.preview.url} className="w-full max-w-[560px] mt-[10px] rounded-md bg-ink" src={st.preview.url} controls preload="metadata" />
       )}
       {st.job?.state === 'done' && st.job.preview && (
-        <p className="text-faint text-[11.5px] m-[6px_0_0]">Preview: {secs(st.job.duration ?? 0)}, {st.job.pieces} pieces{st.job.cutaways ? `, ${st.job.cutaways} screen cutaway${st.job.cutaways === 1 ? '' : 's'}` : ''}{st.job.captions ? `, ${st.job.captions} captions` : ''}{st.job.missing?.length ? ` — line ${st.job.missing.join(', ')} not recorded yet` : ''}.</p>
+        <p className="text-faint text-[11.5px] m-[6px_0_0]">Preview: {secs(st.job.duration ?? 0)}, {st.job.pieces} pieces{st.job.cutaways ? `, ${st.job.cutaways} screen cutaway${st.job.cutaways === 1 ? '' : 's'}` : ''}{st.job.captions ? `, ${st.job.captions} captions` : ''}{st.job.music ? ', music' : ''}{st.job.missing?.length ? ` — line ${st.job.missing.join(', ')} not recorded yet` : ''}.</p>
       )}
     </section>
   );

@@ -12,6 +12,7 @@ import { editSettings, keptSpans, PYTHON, MEDIA_TOOLS } from './cleanup.js';
 import { recordFinal } from './media.js';
 import { importLocalVideo } from './video-library.js';
 import { visualsFor } from './visuals.js';
+import { addMusic, trackPath } from './music.js';
 
 const run = promisify(execFile);
 const SIZE = { '16:9': [1920, 1080], '9:16': [1080, 1920], '1:1': [1080, 1080] };
@@ -99,6 +100,15 @@ async function burnCaptions(src, dest, chunks, W, H, dir) {
   { timeout: 60 * 60 * 1000 });
 }
 
+/** The last passes, in order: captions on the picture, then music under the voice. */
+async function finish(src, out, chunks, settings, W, H, dir) {
+  const track = trackPath(settings.music);
+  const captioned = track ? join(dir, 'captioned.mp4') : out;
+  if (chunks.length) await burnCaptions(src, captioned, chunks, W, H, dir);
+  else await run('/bin/mv', [src, captioned]);
+  if (track) await addMusic(captioned, out, track, settings.musicLevel, { normalize: settings.cleanAudio });
+}
+
 // ---------------------------------------------------------------- the two paths
 /** You on camera: the chosen take of each line, minus its cuts, in order. */
 async function selfPlan(productionId, settings, preview) {
@@ -172,9 +182,8 @@ async function selfBuild(productionId, settings, preview, dir, out) {
     }
     chunks = chunk(timeline);
   }
-  if (chunks.length) await burnCaptions(cut.file, out, chunks, W, H, dir);
-  else await run('/bin/mv', [cut.file, out]);
-  return { pieces: pieces.length, missing, captions: chunks.length, cutaways: cut.count };
+  await finish(cut.file, out, chunks, settings, W, H, dir);
+  return { pieces: pieces.length, missing, captions: chunks.length, cutaways: cut.count, music: !!trackPath(settings.music) };
 }
 
 /**
@@ -246,9 +255,8 @@ async function voiceBuild(productionId, settings, preview, dir, out) {
     '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', body], { timeout: 2 * 60 * 60 * 1000 });
 
   const chunks = settings.captions ? chunk(kit.lines.flatMap((l) => spread(l.text, l.start, l.start + l.length))) : [];
-  if (chunks.length) await burnCaptions(body, out, chunks, W, H, dir);
-  else await run('/bin/mv', [body, out]);
-  return { pieces: spans.length, missing: [], captions: chunks.length };
+  await finish(body, out, chunks, settings, W, H, dir);
+  return { pieces: spans.length, missing: [], captions: chunks.length, music: !!trackPath(settings.music) };
 }
 
 /**

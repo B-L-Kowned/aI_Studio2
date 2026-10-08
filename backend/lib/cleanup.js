@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { getDb } from '../db/index.js';
+import { trackPath } from './music.js';
 
 const run = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -25,6 +26,8 @@ export const DEFAULT_SETTINGS = {
   cleanAudio: true, look: 'auto', aspect: '16:9', reframe: 'face', captions: false,
   // Other shapes made by the same export — 9:16 for Shorts, Reels and TikTok.
   alsoExport: [],
+  // A track from the shared Music folder, ducked under your voice.
+  music: null, musicLevel: 'medium',
 };
 
 export function editSettings(productionId) {
@@ -35,10 +38,15 @@ export function editSettings(productionId) {
 export function saveEditSettings(productionId, patch) {
   const allowed = {
     removeFillers: 'boolean', tightenGaps: 'boolean', trimEnds: 'boolean', cleanAudio: 'boolean', captions: 'boolean',
-    look: ['auto', 'off'], aspect: ['16:9', '9:16', '1:1'], reframe: ['face', 'center'],
+    look: ['auto', 'off'], aspect: ['16:9', '9:16', '1:1'], reframe: ['face', 'center'], musicLevel: ['low', 'medium', 'high'],
   };
   const next = editSettings(productionId);
   for (const [k, v] of Object.entries(patch ?? {})) {
+    if (k === 'music') {
+      if (v !== null && !trackPath(v)) throw Object.assign(new Error(`There is no track called "${v}" in the Music folder.`), { code: 'BAD_SETTING' });
+      next.music = v;
+      continue;
+    }
     if (k === 'alsoExport') {
       if (!Array.isArray(v) || v.some((a) => !['16:9', '9:16', '1:1'].includes(a))) {
         throw Object.assign(new Error('alsoExport takes a list of 16:9, 9:16 and 1:1.'), { code: 'BAD_SETTING' });

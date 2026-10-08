@@ -242,6 +242,8 @@ export const api = {
   previewEdit: (id) => post(`/productions/${id}/edit/preview`),
   exportEdit: (id) => post(`/productions/${id}/edit/export`),
   useRender: (id) => post(`/productions/${id}/edit/use-render`),
+  musicTracks: () => get('/music'),
+  uploadMusic: (file, onProgress) => uploadFile('/music', file, onProgress),
   // Recording it yourself: a take per line, or a whole recording split into lines.
   lineTakes: (id) => get(`/productions/${id}/line-takes`),
   uploadLineTake: (id, segmentId, file, onProgress, source = 'teleprompter') =>
