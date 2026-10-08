@@ -51,7 +51,7 @@ function initials(name = '') {
  * a small thumbnail, so a cast roster never reads as a list of bare names.
  * Presenter and personal cards ARE people, so they keep the avatar photo.
  */
-export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, onePage = false, after = null }) {
+export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, onePage = false, after = null, show = null }) {
   const { mutate, scopeMode } = useStudio();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState(null);
@@ -129,14 +129,15 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
         <PageHead title="Cast" lead={comedy
           ? 'Who appears in your comedy — you, your characters, and who has approved their likeness.'
           : 'Who appears in your videos — you, anyone else on camera, and who has approved their likeness.'}
-          actions={<button onClick={() => setShowRetired((v) => !v)}>{showRetired ? 'Hide retired' : 'Show retired'}</button>} />
+          actions={<button onClick={() => setShowRetired((v) => !v)}>{showRetired ? 'Hide retired' : 'Show retired'}</button>}
+          tabs={tabsNode} />
         {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
-        {you && (
+        {you && (!show || show === 'you') && (
           <Section title="You" meta={`${you.presenters.length} look${you.presenters.length === 1 ? '' : 's'}`}>
             {you.presenters.length ? rowsOf(you.presenters) : <p className="sectionempty">No looks of you yet.</p>}
           </Section>
         )}
-        {others && (
+        {others && (!show || show === 'cast') && (
           <Section title={comedy ? 'Characters' : 'Other presenters'} meta={others.presenters.length ? `${others.presenters.length}` : 'none'}
             actions={<>
               {others.presenters.length > 12 && (
@@ -168,7 +169,7 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
                 : 'Every video in your register is presented by you. Add someone here only when another person appears on camera.'}</p>}
           </Section>
         )}
-        {browsing && <HeyGenBrowser onUse={useAvatar} />}
+        {browsing && (!show || show === 'cast') && <HeyGenBrowser onUse={useAvatar} />}
         {after}
         {adding && <NewPresenter kind={comedy ? 'character' : 'avatar'} onClose={() => setAdding(false)} onDone={load} />}
       </>
