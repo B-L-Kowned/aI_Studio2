@@ -318,8 +318,27 @@ In rough priority order. Items 1–3 are about not spending money by accident.
     the real database. Signing in also refreshes avatar pictures: 6 of the 26
     owned avatars show initials until then (their links had expired).
 17. **Set the P1/P2/P3 deadlines** on Today; until then pace reads "no date".
-18. Show 12 items in Today's "Work on next" (the server returns 6), and check
-    the "Bialkowned" pronunciation — it read "buyelkkowned" on 2026-10-08.
+18. Check the "Bialkowned" pronunciation — it read "buyelkkowned" on
+    2026-10-08. (Work on next now shows 12.)
+19. **Install size for customers (measured 2026-10-08, not started).** Customers
+    download this to their own machine, and today it would be ~15–20 GB:
+
+    | piece | size | needed for |
+    |---|---|---|
+    | app (code + built UI) | ~2 MB | everything |
+    | Node deps (prod) / runtime if bundled | ~130 MB / +~100–250 MB | everything |
+    | Python voice env (torch) | 1.6 GB | voice, checks, transcripts |
+    | Chatterbox voice model | 3.2 GB (5.9 GB cache) | your voice |
+    | Whisper small | 0.46 GB | word checks, line fixing |
+    | Whisper medium.en | 2.9 GB | transcripts — small may be enough; measure |
+    | Writing model (qwen2.5-coder 14B) | 9 GB | Enhance |
+    | Chatterbox Turbo (proposed) | +4 GB | faster readings |
+
+    Direction: a small installer (app + runtime, a few hundred MB) and every
+    model downloaded on first use of its feature, with its size stated before
+    it starts; one model per job (one Whisper, one voice model, one writing
+    model — a 7B is ~4.7 GB); Enhance optional or cloud-routable. Also decide
+    Windows/Intel: the voice runs on Apple GPUs (MPS) and is ~3× slower on CPU.
 
 ---
 
