@@ -3,6 +3,7 @@ import { resolveSpeaker, presenterCasting } from './casting.js';
 import * as mcp from './providers/heygen-mcp.js';
 import { canReadLive } from './providers/mode.js';
 import { LOCAL, speakLocal } from './local-voice.js';
+import { wordsFor } from './line-words.js';
 
 // The segment is the unit of script, take, presenter, shot, quality and render.
 //
@@ -252,6 +253,9 @@ export async function auditionSegment(segmentId, { speed = 1.0, ssml = false, co
       )
       .run(segmentId, version, seg.text, cast.voice.id, null, spoken.duration, out).lastInsertRowid;
     db.prepare('UPDATE takes SET audio_url = ? WHERE id = ?').run(`/api/takes/${id}/audio`, id);
+    // Check the words now, on the CPU, while the next line is made on the GPU:
+    // "Check every line" and click-a-word are then instant for this take.
+    wordsFor(spoken.file, seg.text).catch(() => {});
     return {
       take: serializeTake(db.prepare('SELECT * FROM takes WHERE id = ?').get(id)),
       synthesised: true,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Check, AlertCircle, Play, Square, Volume2, RefreshCw, Lock, Film, User, Users, Headphones, X, Pencil, RotateCcw } from 'lucide-react';
+import { Check, AlertCircle, Play, Square, Volume2, RefreshCw, Lock, Film, User, Users, Headphones, X, Pencil, RotateCcw, ScanSearch } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
@@ -40,6 +40,19 @@ function LocalVoice({ data, optional, castable, run, production, busy, reload })
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState('');
   const [changing, setChanging] = useState(false);
+  // Every line heard by Whisper: the words it could not find, to listen to first.
+  const [check, setCheck] = useState(null); // null | 'busy' | { checked, lines, words, seconds }
+  const [checkAt, setCheckAt] = useState(0);
+  const runCheck = async () => {
+    setCheck('busy');
+    try { setCheck(await api.voiceCheck(production.id)); setCheckAt(0); } catch { setCheck(null); }
+  };
+  const suspectsOf = (id) => (check && check !== 'busy' ? check.lines.find((l) => l.segmentId === id)?.suspects.map((x) => x.i) : undefined);
+  const goSuspect = (k) => {
+    const l = check.lines[k % check.lines.length];
+    document.getElementById(`line-${l.segmentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setCheckAt(k + 1);
+  };
 
   const made = segments.filter((s) => s.take?.audioUrl && !s.needsAudition);
   const approved = segments.filter((s) => s.heard);
@@ -95,6 +108,12 @@ function LocalVoice({ data, optional, castable, run, production, busy, reload })
                 <Volume2 size={14} /> Make {missing.length === segments.length ? 'all' : 'the missing'} {missing.length}
               </button>
             )}
+            {made.length > 0 && (
+              <button onClick={runCheck} disabled={check === 'busy'}
+                title="Whisper listens to every line and marks words it could not hear clearly — skipped, slurred or said wrong. On this Mac, a second or so a line.">
+                {check === 'busy' ? <RefreshCw size={14} className="animate-spin" /> : <ScanSearch size={14} />} {check === 'busy' ? 'Checking…' : 'Check every line'}
+              </button>
+            )}
             {made.length > 0 && (through == null
               ? <button className={unapproved.length && !heardAll ? 'primary' : ''} onClick={() => { setHeardAll(false); listenThrough(0); }}><Headphones size={14} /> Listen through</button>
               : <button onClick={stop}><Square size={13} /> Stop</button>)}
@@ -116,6 +135,22 @@ function LocalVoice({ data, optional, castable, run, production, busy, reload })
           ))}
         </div>
 
+        {check && check !== 'busy' && (
+          <div className={'flex flex-wrap items-center gap-[10px] p-[8px_18px] text-[12.5px] [border-bottom:1px_solid_var(--line)] '
+            + (check.words ? 'bg-warn-soft text-ink-2' : 'bg-ok-soft text-ok')}>
+            {check.words ? (
+              <>
+                <span><b className="font-[600]">{check.words} word{check.words === 1 ? '' : 's'}</b> in {check.lines.length} line{check.lines.length === 1 ? '' : 's'} may not be said clearly — marked with a wavy line. Play it; if it sounds wrong, click the word to fix it.</span>
+                <button className="text-[12px] p-[3px_10px]" onClick={() => goSuspect(checkAt)}>{checkAt ? 'Next' : 'Go to the first'}</button>
+              </>
+            ) : (
+              <span><Check size={13} className="inline -mt-[2px]" /> Every word was heard clearly in {check.checked} line{check.checked === 1 ? '' : 's'}.</span>
+            )}
+            <span className="ml-auto text-[11.5px] text-muted">checked in {check.seconds}s</span>
+            <button className="ghostbtn p-0 text-[12px] text-muted" onClick={() => setCheck(null)}>Hide</button>
+          </div>
+        )}
+
         <ol className="list-none m-0 p-[2px_18px_6px]">
           {segments.map((s, i) => {
             const isMade = s.take?.audioUrl && !s.needsAudition;
@@ -133,7 +168,7 @@ function LocalVoice({ data, optional, castable, run, production, busy, reload })
                     </div>
                   </div>
                 ) : (
-                  <LineVoice text={s.text} dim={!isMade}
+                  <LineVoice text={s.text} dim={!isMade} suspects={suspectsOf(s.id)}
                     audio={isMade ? { url: s.take.audioUrl, takeId: s.take.local ? s.take.id : null, duration: s.take.duration } : null}
                     segmentId={isMade && s.take.local ? s.id : null} take={s.take}
                     making={busy === `a${s.id}`}

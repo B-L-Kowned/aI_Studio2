@@ -12,6 +12,10 @@ trust them.
     GET  /health   {"ok", "device", "loaded", "busy"}
     POST /speak    {"text", "reference", "out", "exaggeration"?, "cfg_weight"?, "seed"?}
                    -> {"out", "duration", "seconds_taken"}
+    POST /align    {"file"} -> {"duration", "segments": [{"words": [{"start","end","word"}]}], "seconds_taken"}
+
+Whisper for /align is loaded once, on first use, and kept: started fresh for
+every line it cost ~6s of loading for ~0.5s of work.
 """
 
 from __future__ import annotations
@@ -38,6 +42,9 @@ model = None
 load_error: str | None = None
 conditioned: tuple[str, float, float] | None = None  # (reference, exaggeration, mtime) last prepared
 lock = threading.Lock()
+aligner = None  # faster-whisper, loaded on first /align
+align_lock = threading.Lock()  # on the CPU, so it runs beside speech on the GPU
+ALIGN_MODEL = os.environ.get("ALIGN_MODEL", "small")
 
 
 def load() -> None:
@@ -98,6 +105,23 @@ def speak(body: dict) -> dict:
     return {"out": str(out), "duration": round(duration, 2), "seconds_taken": round(taken, 1)}
 
 
+def align(body: dict) -> dict:
+    global aligner
+    file = inside_root(str(body.get("file") or ""))
+    if not file.exists():
+        raise ValueError("no such file")
+    with align_lock:
+        started = time.time()
+        if aligner is None:
+            from faster_whisper import WhisperModel
+            aligner = WhisperModel(ALIGN_MODEL, device="cpu", compute_type="int8")
+            print(f"[voice] aligner ({ALIGN_MODEL}) loaded in {time.time() - started:.1f}s", flush=True)
+        from transcribe import transcribe
+        result = transcribe(aligner, str(file), words=True)
+        result["seconds_taken"] = round(time.time() - started, 2)
+        return result
+
+
 class Handler(BaseHTTPRequestHandler):
     def reply(self, status: int, payload: dict) -> None:
         data = json.dumps(payload).encode()
@@ -116,12 +140,12 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/speak":
+        if self.path not in ("/speak", "/align"):
             return self.reply(404, {"error": "not found"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length) or b"{}")
-            self.reply(200, speak(body))
+            self.reply(200, speak(body) if self.path == "/speak" else align(body))
         except ValueError as exc:
             self.reply(400, {"error": str(exc)})
         except Exception as exc:

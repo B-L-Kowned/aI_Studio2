@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { createReadStream } from 'node:fs';
 import { getDb } from '../db/index.js';
-import { localFile } from '../lib/local-voice.js';
+import { localFile, listPronunciations } from '../lib/local-voice.js';
 import { wordsFor } from '../lib/line-words.js';
 import {
-  startFix, fixJob, variantFile, applyFix, revertFix, discardFix, othersSaying, remakeOthers,
+  startFix, anotherReading, fixJob, variantFile, applyFix, revertFix, discardFix, othersSaying, remakeOthers,
 } from '../lib/line-fix.js';
 import { segmentsFor } from '../lib/segments.js';
 import { ok, fail, route } from '../utils/respond.js';
@@ -46,9 +46,13 @@ router.post('/line-fix/:segmentId', route(async (req, res) => {
   try {
     const job = await startFix(req.params.segmentId, req.body ?? {});
     return ok(res, job, job.scope === 'sentence'
-      ? 'Making new readings of that sentence — about 10 seconds each'
-      : 'Making new readings of the line — about 30 seconds each');
+      ? 'Making a new reading of that sentence — about 10 seconds'
+      : 'Making a new reading of the line — about 20 seconds');
   } catch (e) { return bad(res, e); }
+}));
+
+router.post('/line-fix/:segmentId/more', route(async (req, res) => {
+  try { return ok(res, anotherReading(req.params.segmentId), 'Making another reading'); } catch (e) { return bad(res, e); }
 }));
 
 router.get('/line-fix/:segmentId/audio/:n', route(async (req, res) => {
@@ -91,6 +95,32 @@ router.post('/pronunciation-uses/remake', route(async (req, res) => {
   return ok(res, r, r.lines
     ? `Remaking ${r.lines} line${r.lines === 1 ? '' : 's'} in ${r.videos} video${r.videos === 1 ? '' : 's'} — they will be in Voices to approve`
     : 'No other lines say it');
+}));
+
+/**
+ * Listen to every line of a video the way a proofreader would: Whisper hears
+ * each take, and any script word it could not find is where to listen first —
+ * a skipped word, a slur, a name said wrong. Numbers ("2" / "two") and words
+ * with a saved pronunciation (respelled on purpose) are not flagged.
+ */
+router.get('/productions/:id/voice-check', route(async (req, res) => {
+  const started = Date.now();
+  const respelled = new Set(listPronunciations().flatMap((p) => p.term.toLowerCase().split(/\s+/)));
+  const plain = (w) => w.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, '');
+  const lines = [];
+  let checked = 0;
+  for (const seg of segmentsFor(Number(req.params.id))) {
+    const take = seg.take;
+    const file = take?.local && !take.stale ? localFile(getDb().prepare('SELECT local_path FROM takes WHERE id = ?').get(take.id)?.local_path ?? '') : null;
+    if (!file) continue;
+    const { words, source } = await wordsFor(file, seg.text);
+    if (source !== 'whisper') continue;
+    checked++;
+    const suspects = words.map((w, i) => ({ i, w: w.w, start: w.start, end: w.end, heard: w.heard }))
+      .filter((w) => w.heard === false && !/\d/.test(w.w) && plain(w.w) && !respelled.has(plain(w.w)));
+    if (suspects.length) lines.push({ segmentId: seg.id, text: seg.text, suspects });
+  }
+  return ok(res, { checked, lines, words: lines.reduce((n, l) => n + l.suspects.length, 0), seconds: Math.round((Date.now() - started) / 100) / 10 });
 }));
 
 export default router;

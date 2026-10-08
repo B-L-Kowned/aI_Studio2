@@ -28,7 +28,10 @@ const RATE = 24000;
 const MIN_GAP = 0.08;            // a pause shorter than this is not a pause
 const MARGIN = 0.02;             // how far into a pause a cut sits from the word
 export const DELIVERY = { calmer: 0.35, natural: undefined, energy: 0.8 };
-const VARIANTS = { sentence: 3, line: 2 };
+// One reading first — you hear it in ~10s instead of waiting ~40s for three.
+// "Another reading" makes the next one only when it is wanted.
+const VARIANTS = { sentence: 1, line: 1 };
+const MAX_READINGS = 5;
 
 const jobs = new Map();          // segmentId → job
 const err = (message, code) => Object.assign(new Error(message), { code });
@@ -197,29 +200,48 @@ export async function startFix(segmentId, body = {}) {
   if (kind === 'pronounce') job.others = othersSaying(term, id);
   jobs.set(id, job);
 
+  // What a reading needs, kept on the job so "Another reading" makes one more the same way.
+  job.gen = { dir: `takes/${seg.production_id}/fix`, voiceId: voice.id, say, span, file, scope, speed,
+    exaggeration: kind === 'delivery' ? DELIVERY[body.delivery] : undefined };
+  readings(job, job.total);
+  return view(job);
+}
+
+/** Make `count` more readings for a job, one after another, in the background. */
+function readings(job, count) {
+  const g = job.gen;
+  job.state = 'running';
   (async () => {
-    const dir = `takes/${seg.production_id}/fix`;
-    mkdirSync(join(voicesDir(), dir), { recursive: true });
-    for (let n = 1; n <= job.total; n++) {
+    mkdirSync(join(voicesDir(), g.dir), { recursive: true });
+    for (let k = 0; k < count; k++) {
       // Chosen or closed: stop making readings nobody will hear.
       if (job.cancelled) break;
-      const raw = `${dir}/${id}-${job.id}-${n}-raw.wav`;
-      const out = `${dir}/${id}-${job.id}-${n}.wav`;
-      const seed = Math.floor(Math.random() * 2 ** 31);
-      const opts = { speed, seed, exaggeration: kind === 'delivery' ? DELIVERY[body.delivery] : undefined };
-      if (scope === 'line') {
-        const spoken = await speakLocal(voice.id, say, out, opts);
+      const n = job.variants.length + 1;
+      const raw = `${g.dir}/${job.segmentId}-${job.id}-${n}-raw.wav`;
+      const out = `${g.dir}/${job.segmentId}-${job.id}-${n}.wav`;
+      const opts = { speed: g.speed, seed: Math.floor(Math.random() * 2 ** 31), exaggeration: g.exaggeration };
+      if (g.scope === 'line') {
+        const spoken = await speakLocal(g.voiceId, g.say, out, opts);
         job.variants.push({ n, rel: out, duration: r2(spoken.duration), from: 0, to: r2(spoken.duration) });
       } else {
-        await speakLocal(voice.id, say, raw, opts);
-        const at = await splice(file, localFile(raw), span, join(voicesDir(), out));
+        await speakLocal(g.voiceId, g.say, raw, opts);
+        const at = await splice(g.file, localFile(raw), g.span, join(voicesDir(), out));
         rmSync(localFile(raw), { force: true });
         job.variants.push({ n, rel: out, duration: at.total, from: at.from, to: at.to });
       }
     }
     job.state = 'done';
   })().catch((e) => { job.state = job.variants.length ? 'done' : 'failed'; job.error = e.message; });
+}
 
+/** One more reading of the same fix. */
+export function anotherReading(segmentId) {
+  const job = jobs.get(Number(segmentId));
+  if (!job?.gen) throw err('Start a fix first.', 'NOT_FOUND');
+  if (job.state === 'running') throw err('A reading is already being made.', 'BUSY');
+  if (job.variants.length >= MAX_READINGS) throw err(`That is ${MAX_READINGS} readings — pick one, or try something else.`, 'LIMIT');
+  job.total = job.variants.length + 1;
+  readings(job, 1);
   return view(job);
 }
 

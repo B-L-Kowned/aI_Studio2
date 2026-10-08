@@ -307,6 +307,8 @@ export const api = {
   cacheWords: (key, lineId) => get(`/listen-cache/${key}/words?line=${lineId}`),
   lineFix: (segmentId) => get(`/line-fix/${segmentId}`),
   startLineFix: (segmentId, body) => post(`/line-fix/${segmentId}`, body),
+  voiceCheck: (id) => get(`/productions/${id}/voice-check`),
+  anotherLineFix: (segmentId) => post(`/line-fix/${segmentId}/more`),
   applyLineFix: (segmentId, n) => post(`/line-fix/${segmentId}/apply`, { n }),
   revertLineFix: (segmentId) => post(`/line-fix/${segmentId}/revert`),
   discardLineFix: (segmentId) => del(`/line-fix/${segmentId}`),

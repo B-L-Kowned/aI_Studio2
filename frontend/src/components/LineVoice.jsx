@@ -19,7 +19,7 @@ const claim = (audio) => { if (playingNow && playingNow !== audio) playingNow.pa
  *   onChange   called with the updated line after a fix or an undo
  *   aside      what sits to the right (length, approve, …)
  */
-export default function LineVoice({ text, audio: given, getAudio, segmentId, take, onChange, onPlayed, aside, dim, making, current: lit }) {
+export default function LineVoice({ text, audio: given, getAudio, segmentId, take, onChange, onPlayed, aside, dim, making, current: lit, suspects }) {
   const toks = useMemo(() => tokens(text), [text]);
   const [audio, setAudio] = useState(given ?? null);
   const [busy, setBusy] = useState(false);
@@ -104,6 +104,8 @@ export default function LineVoice({ text, audio: given, getAudio, segmentId, tak
         <p className="m-0 max-w-[68ch] text-[15px] leading-[1.7] text-ink [text-wrap:pretty]" onMouseUp={onMouseUp}>
           {toks.map((t, i) => {
             const on = i === current;
+            // Whisper could not find this word in the take: listen here first.
+            const unsure = !on && ((timed && timed[i]?.heard === false && !/\d/.test(t.w)) || suspects?.includes(i));
             const chosen = fix && (fix.term.includes(' ') ? toks[i].s === toks[fix.index].s && fix.term.toLowerCase().includes(termOf(t.w).toLowerCase()) : i === fix.index);
             return (
               <React.Fragment key={i}>
@@ -112,7 +114,9 @@ export default function LineVoice({ text, audio: given, getAudio, segmentId, tak
                     + (on ? 'bg-ink text-white ' : chosen ? 'bg-accent-soft text-accent [box-shadow:inset_0_-2px_0_var(--accent)] '
                       // The sentence the fix will remake, so you can see how much changes.
                       : fix && t.s === toks[fix.index]?.s ? '[box-shadow:inset_0_-1px_0_var(--accent-line)] hover:bg-accent-soft ' : 'hover:bg-accent-soft ')
-                    + (playing && current > i ? 'text-ink' : playing && !on ? 'text-ink-2' : '')}>
+                    + (playing && current > i ? 'text-ink' : playing && !on ? 'text-ink-2' : '')
+                    + (unsure ? ' [text-decoration:underline_wavy_var(--warn)] [text-underline-offset:3px]' : '')}
+                  title={unsure ? 'The voice may not have said this clearly — play it, then click to fix' : undefined}>
                   {t.w}
                 </span>{' '}
               </React.Fragment>
@@ -366,10 +370,16 @@ function LineFixer({ text, toks, at, term: initialTerm, segmentId, onClose, onAp
             {Array.from({ length: pending }, (_, i) => (
               <div key={`p${i}`} className="flex items-center gap-[10px] p-[8px_10px] rounded text-[12.5px] text-faint">
                 <RefreshCw size={13} className="animate-spin" /> Making reading {ready.length + i + 1}…
-                {i === 0 && <span className="text-[11.5px]">{job.scope === 'sentence' ? 'about 10 seconds' : 'about 30 seconds'}</span>}
+                {i === 0 && <span className="text-[11.5px]">{job.scope === 'sentence' ? 'about 10 seconds' : 'about 20 seconds'}</span>}
               </div>
             ))}
             <div className="flex items-center gap-[10px] pt-[6px]">
+              {job.state !== 'running' && ready.length > 0 && ready.length < 5 && (
+                <button type="button" className="text-[12px] p-[4px_10px]"
+                  onClick={() => api.anotherLineFix(segmentId).then((r) => r?.data && setJob(r.data)).catch(() => {})}>
+                  <RefreshCw size={12} /> Another reading
+                </button>
+              )}
               <button type="button" className="ghostbtn text-[12px] text-muted p-0" disabled={job.state === 'running'} onClick={() => setJob(null)}>
                 Try something else
               </button>
