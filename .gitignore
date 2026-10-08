@@ -36,3 +36,4 @@ playwright-report/
 # Local voice engine (Python venv, created by voice/README.md setup)
 voice/.venv/
 __pycache__/
+voice-compare/

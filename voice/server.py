@@ -20,6 +20,7 @@ every line it cost ~6s of loading for ~0.5s of work.
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 import threading
@@ -98,6 +99,15 @@ def speak(body: dict) -> dict:
         out.parent.mkdir(parents=True, exist_ok=True)
         torchaudio.save(str(out), wav, model.sr)
         taken = time.time() - started
+        wav = wav.detach().cpu()
+        # PyTorch keeps every GPU buffer it has used, and on Apple Silicon that
+        # memory is the machine's own: without this the service grew to 22 GB
+        # in a few minutes, macOS swapped the model out, and a reading that
+        # takes ~12s took ~45s.
+        if device == "mps":
+            torch.mps.synchronize()
+            torch.mps.empty_cache()
+        gc.collect()
 
     duration = wav.shape[-1] / model.sr
     if out.stat().st_size < 1000 or duration <= 0:
