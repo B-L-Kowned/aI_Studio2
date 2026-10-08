@@ -27,7 +27,7 @@ export default function PersonaChooser({ onChange }) {
     if (r?.data) { setCurrent(r.data); onChange?.(r.data); }
   };
   return (
-    <label className="relative inline-flex items-center text-[12.5px] text-ink-2 font-[560] cursor-pointer" title="The persona presenting this video">
+    <label className="relative inline-flex items-center text-[12.5px] text-ink-2 font-[560] cursor-pointer" title={current.chosen ? "Chosen for this video" : `Picked automatically — ${current.why}. Choose another for this video.`}>
       <span>{current.name}</span>
       <ChevronDown size={12} className="ml-[3px] text-muted" />
       <select className="absolute inset-0 opacity-0 cursor-pointer" value={current.id} onChange={(e) => pick(e.target.value)} aria-label="Persona">

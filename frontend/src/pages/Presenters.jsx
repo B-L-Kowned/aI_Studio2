@@ -133,11 +133,35 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
           actions={<button onClick={() => setShowRetired((v) => !v)}>{showRetired ? 'Hide retired' : 'Show retired'}</button>}
           tabs={tabsNode} />
         {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
-        {you && (!show || show === 'you') && (
-          <Section title="You" meta={`${you.presenters.length} look${you.presenters.length === 1 ? '' : 's'}`}>
-            {you.presenters.length ? rowsOf(you.presenters) : <p className="sectionempty">No looks of you yet.</p>}
-          </Section>
-        )}
+        {you && (!show || show === 'you') && (() => {
+          const likeness = you.presenters.filter((p) => !p.persona);
+          return (
+            <Section title="You" meta="your likeness — the face and voice every persona is built on">
+              {likeness.length ? rowsOf(likeness) : <p className="sectionempty">No likeness of you yet.</p>}
+            </Section>
+          );
+        })()}
+        {you && show === 'personas' && (() => {
+          const personas = you.presenters.filter((p) => p.persona);
+          return (
+            <Section title="Personas" meta={`${personas.length} — who you play, and which videos each presents`}
+              actions={<button onClick={async () => {
+                const name = window.prompt('Name the persona (for example "Pat the Coach")');
+                if (!name?.trim()) return;
+                await run(async () => {
+                  const r = await api.createPresenter({ kind: 'personal', name: name.trim(), description: '' });
+                  await api.savePresenterPersona(r.data.id, { persona: { voice: '' } });
+                  return r;
+                });
+              }}><Plus size={14} /> New persona</button>}>
+              {personas.length ? (
+                <div className="border border-solid border-line rounded-lg bg-surface overflow-clip">
+                  {personas.map((p) => <PersonaCard key={p.id} presenter={p} onChanged={load} />)}
+                </div>
+              ) : <p className="sectionempty">No personas yet. A persona is you in a role — its personality, outfits, pace, and the videos it presents.</p>}
+            </Section>
+          );
+        })()}
         {others && (!show || show === 'cast') && (
           <Section title={comedy ? 'Characters' : 'Other presenters'} meta={others.presenters.length ? `${others.presenters.length}` : 'none'}
             actions={<>
@@ -418,6 +442,104 @@ function HeyGenBrowser({ onUse }) {
         </>
       )}
     </Section>
+  );
+}
+
+/**
+ * A persona, whole: who they are, how they speak, what they wear, how fast,
+ * and which videos they present when a video does not choose for itself.
+ */
+function PersonaCard({ presenter: p, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [meta, setMeta] = useState(null);   // workstreams + companies to choose from
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const useFor = p.useFor ?? { workstreams: [], companies: [] };
+  const edit = async () => {
+    if (open) { setOpen(false); return; }
+    const d = await api.presenterPersona(p.id).catch(() => null);
+    if (!d) return;
+    setMeta(d);
+    setForm({ name: p.name, tagline: p.tagline ?? p.description ?? '', persona: { voice: '', signatureOpening: '', signOff: '', neverClaim: '', ...(p.persona ?? {}) }, useFor: d.useFor });
+    setOpen(true);
+  };
+  const toggle = (key, v) => setForm((f) => {
+    const list = f.useFor[key];
+    return { ...f, useFor: { ...f.useFor, [key]: list.includes(v) ? list.filter((x) => x !== v) : [...list, v] } };
+  });
+  const save = async () => {
+    setSaving(true);
+    try { await api.savePresenterPersona(p.id, form); onChanged?.(); setOpen(false); } finally { setSaving(false); }
+  };
+  const image = p.avatar?.previewUrl;
+  const used = [...useFor.workstreams, ...useFor.companies];
+  const FIELD = 'flex flex-col gap-[3px] text-[11px] font-semibold text-muted';
+  return (
+    <div className="[&+&]:[border-top:1px_solid_var(--line)]">
+      <div className="grid grid-cols-[44px_minmax(220px,1fr)_minmax(200px,1fr)_auto] gap-[14px] items-center p-[10px_14px] lte960:grid-cols-[44px_1fr]">
+        {image ? <img className="w-[44px] h-[44px] rounded-[8px] object-cover object-[center_22%] bg-surface-2" src={image} alt="" loading="lazy" />
+          : <b className="w-[44px] h-[44px] grid place-items-center rounded-[8px] bg-surface-2 border border-solid border-line text-[12px]">{initials(p.name)}</b>}
+        <div className="min-w-0">
+          <b className="block text-[13.5px] font-[580] truncate">{p.name}</b>
+          <span className="block truncate text-[12px] text-muted">{p.tagline || p.description || 'No description yet'}</span>
+        </div>
+        <div className="min-w-0 text-[12px] lte960:col-span-2">
+          <span className="text-muted">Presents: </span>
+          {used.length ? <span className="text-ink-2">{used.join(' · ')}</span> : <span className="text-faint">only when chosen for a video</span>}
+          <span className="block text-faint">{p.looks?.length || 0} look{p.looks?.length === 1 ? '' : 's'} · {p.speed ? `${p.speed.toFixed(2)}×` : 'natural pace'}</span>
+        </div>
+        <button className="text-[12px] p-[4px_11px] lte960:col-span-2 lte960:justify-self-end" onClick={edit} aria-expanded={open}>
+          {open ? 'Close' : 'Edit'}
+        </button>
+      </div>
+      {open && form && meta && (
+        <div className="p-[4px_14px_16px_72px] grid gap-[16px] lte960:p-[4px_14px_16px]">
+          <div className="grid grid-cols-[1fr_2fr] gap-[12px] lte800:grid-cols-[1fr]">
+            <label className={FIELD}>Name<input className="font-normal text-[13px]" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+            <label className={FIELD}>Who they are, in a line<input className="font-normal text-[13px]" value={form.tagline} onChange={(e) => setForm({ ...form, tagline: e.target.value })} /></label>
+          </div>
+          <div className="grid grid-cols-[1fr_1fr] gap-[12px] lte800:grid-cols-[1fr]">
+            {[['voice', 'How they speak'], ['signatureOpening', 'How they open'], ['signOff', 'How they close'], ['neverClaim', 'What they never claim']].map(([k, l]) => (
+              <label key={k} className={FIELD}>{l}
+                <textarea className="font-normal text-[12.5px] leading-[1.5] min-h-[56px]" value={form.persona[k] ?? ''}
+                  onChange={(e) => setForm({ ...form, persona: { ...form.persona, [k]: e.target.value } })} />
+              </label>
+            ))}
+          </div>
+          <div>
+            <span className={FIELD}>Presents by default — when a video does not choose its persona</span>
+            <div className="flex flex-wrap gap-[5px] mt-[6px]">
+              {meta.workstreams.map((w) => (
+                <button key={w} type="button" onClick={() => toggle('workstreams', w)}
+                  className={'text-[12px] p-[3px_10px] rounded-full border border-solid ' + (form.useFor.workstreams.includes(w) ? 'bg-ink text-white border-ink' : 'bg-surface text-ink-2 border-line')}>
+                  {w}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-[5px] mt-[6px]">
+              {form.useFor.companies.map((c) => (
+                <span key={c} className="text-[12px] p-[3px_6px_3px_10px] rounded-full bg-ink text-white inline-flex items-center gap-[4px]">
+                  {c}<button type="button" className="[border:0] bg-transparent text-white p-0" aria-label={`Remove ${c}`} onClick={() => toggle('companies', c)}><X size={11} /></button>
+                </span>
+              ))}
+              <select className="text-[12px] p-[3px_8px]" value="" onChange={(e) => e.target.value && toggle('companies', e.target.value)} aria-label="Add a company">
+                <option value="">+ a company…</option>
+                {meta.companies.filter((c) => !form.useFor.companies.includes(c)).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <p className="m-[6px_0_0] text-[11.5px] text-faint">A company outranks a kind of video: a Fixology investor briefing goes to whoever presents Fixology.</p>
+          </div>
+          <div className="flex gap-[8px]">
+            <button className="primary text-[12.5px]" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
+            <button className="text-[12.5px]" onClick={() => setOpen(false)}>Cancel</button>
+          </div>
+          <div>
+            <span className={FIELD}>Outfits and pace</span>
+            <div className="mt-[6px] mx-[-72px] lte960:mx-0"><PersonaStyle presenter={p} onSaved={onChanged} /></div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

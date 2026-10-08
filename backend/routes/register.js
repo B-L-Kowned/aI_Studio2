@@ -10,7 +10,8 @@ const router = Router();
 const secs = (rt) => { const [m, s] = String(rt ?? '').split(':').map(Number); return (m || 0) * 60 + (s || 0); };
 const REGISTER_ID = /^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*) — (.*)$/;
 const WORKSTREAM = { V: 'Company', O: 'Outreach', T: 'Training', L: 'Wrapper', A: 'Editions', I: 'Investor', GTM: 'GTM masters', SRC: 'Training' };
-const streamOf = (id) => WORKSTREAM[/^(GTM|SRC)-/.exec(id)?.[1] ?? id[0]] ?? 'Other';
+export const streamOf = (id) => WORKSTREAM[/^(GTM|SRC)-/.exec(id)?.[1] ?? id[0]] ?? 'Other';
+export const WORKSTREAMS = [...new Set(Object.values(WORKSTREAM))];
 // Read the furthest true step, in the order the work actually happens.
 // A draft splits by whether it still holds [CONFIRM: …] checks: one with none
 // only needs your yes.

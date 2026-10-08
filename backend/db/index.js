@@ -124,6 +124,8 @@ const ADDED_COLUMNS = [
   // A persona's own pace (1 = the clone's natural), used by every video it
   // presents unless that video sets its own speed.
   ['presenters', 'speed', 'REAL'],
+  // Which videos a persona presents by default: {workstreams: [], companies: []}.
+  ['presenters', 'use_for', 'TEXT'],
   // Which of your personas presents this video; null = your likeness.
   ['productions', 'persona_id', 'INTEGER'],
   // A scene is a row of the shot list: what is on screen while a section of
