@@ -184,8 +184,14 @@ router.get(
       // Everything the Library knows about each item. It used to return the
       // name and the kind, which is why a "HeyGen video" in here could not be
       // played, dated or told apart from any other.
-      getDb().prepare('SELECT * FROM assets ORDER BY position, id').all()
+      getDb().prepare(`SELECT a.*, p.title AS production_title, p.mode AS production_mode
+          FROM assets a LEFT JOIN productions p ON p.id = a.production_id ORDER BY a.position, a.id`).all()
         .map((a) => ({
+          // Which program it belongs to, for the Content / Comedy switch: its
+          // video's, else anything from HeyGen is your business work, and the
+          // rest are the sample podcast items that came with the app.
+          program: a.production_mode ?? (a.provider === 'heygen' ? 'content' : 'comedy'),
+          productionTitle: a.production_title ?? null,
           id: a.id, name: a.name, kind: a.kind,
           provider: a.provider ?? null, remoteId: a.remote_id ?? null,
           url: a.url ?? null, thumbnailUrl: a.thumbnail_url ?? null,

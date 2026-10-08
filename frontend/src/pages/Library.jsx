@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, FileText, User, Mic, Image, Film, Video, Package, Trash2, Check, X } from 'lucide-react';
+import { Search, FileText, User, Mic, Image, Film, Video, Package, Trash2, Check, X, ExternalLink, Copy } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { toClock } from '../utils/format.js';
@@ -16,11 +16,14 @@ const KIND = {
   footage:      { label: 'Footage',    icon: Film },
   render:       { label: 'Render',     icon: Video },
   heygen_video: { label: 'HeyGen',     icon: Video },
+  video:        { label: 'Video',      icon: Video },
 };
+const SOURCE = { heygen: 'HeyGen', local: 'This Mac' };
 
 
-export default function Library() {
-  const { collections, refreshLibrary, mutate, notify } = useStudio();
+export default function Library({ go }) {
+  const { collections, refreshLibrary, mutate, notify, scopeMode, openProduction } = useStudio();
+  const [open, setOpen] = useState(null); // the asset whose details are showing
   const [q, setQ] = useState('');
   const [kind, setKind] = useState('all');
   // Removing is destructive, so it asks once in place rather than firing on a
@@ -43,7 +46,9 @@ export default function Library() {
     }
   };
 
-  const items = collections.library;
+  // Only what belongs to the program chosen at the top: your business videos in
+  // Content, the sample podcast pieces in Comedy.
+  const items = collections.library.filter((a) => !scopeMode || !a.program || a.program === scopeMode || a.program === 'both');
   const kinds = [...new Set(items.map((a) => a.kind))];
 
   const shown = items.filter(
@@ -99,22 +104,15 @@ export default function Library() {
               return (
                 // Flex, not grid: a row carries a duration, a warning or neither.
                 <div
-                  className={'group flex items-center gap-[10px] bg-surface [box-shadow:1px_0_0_var(--line),0_1px_0_var(--line)] p-[8px_14px] text-[13px] min-w-0 hover:bg-surface-2' + (a.playable ? ' playable cursor-default' : '')}
+                  role="button" tabIndex={0} onClick={(e) => { if (!e.target.closest('button')) setOpen(a); }}
+                  onKeyDown={(e) => e.key === 'Enter' && setOpen(a)}
+                  className={'group flex items-center gap-[10px] bg-surface [box-shadow:1px_0_0_var(--line),0_1px_0_var(--line)] p-[8px_14px] text-[13px] min-w-0 cursor-pointer hover:bg-surface-2' + (open?.id === a.id ? ' bg-accent-soft' : '')}
                   key={a.id}
                 >
                   <span className="w-[26px] h-[26px] rounded-sm bg-canvas border border-solid border-line grid place-items-center text-muted"><Icon size={15} /></span>
                   {/* A video you cannot play is a filename. These rows listed
                       seventeen real videos and did nothing when clicked. */}
-                  {a.playable ? (
-                    <button
-                      className="flex-1 min-w-0 [border:0] [background:none] p-0 text-left text-[13.5px] font-[550] text-ink rounded-none truncate [&:hover:not(:disabled)]:[background:none] [&:hover:not(:disabled)]:text-accent [&:hover:not(:disabled)]:underline"
-                      onClick={() => play(a)} title="Play">
-                      {a.name}
-                      {playing === a.id && <em className="not-italic ml-[8px] text-[11px] text-faint">opening…</em>}
-                    </button>
-                  ) : (
-                    <b className="flex-1 min-w-0 truncate text-[13.5px] font-[550]" title={a.name}>{a.name}</b>
-                  )}
+                  <b className="flex-1 min-w-0 truncate text-[13.5px] font-[550]" title={a.name}>{a.name}</b>
                   <em className="not-italic text-[10.5px] text-muted border border-solid border-line rounded-[20px] p-[2px_9px]">{k.label}</em>
                   {a.duration ? <em className="not-italic font-mono text-[11.5px] font-normal leading-[normal] text-faint">{toClock(a.duration)}</em> : null}
                   {a.kind === 'heygen_video' && !a.playable && (
@@ -158,6 +156,60 @@ export default function Library() {
           </div>
         )}
       </Section>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30 bg-[rgba(0,0,0,.18)]" onClick={() => setOpen(null)} />
+          <aside className="fixed z-40 top-0 right-0 bottom-0 w-[min(440px,100vw)] bg-surface [border-left:1px_solid_var(--line)] [box-shadow:-12px_0_30px_rgba(0,0,0,.08)] overflow-y-auto p-[18px_20px]" aria-label="Asset details">
+            <div className="flex items-start gap-[10px]">
+              <b className="flex-1 text-[15px] leading-[1.35]">{open.name}</b>
+              <button className="ghostbtn p-[4px]" aria-label="Close" onClick={() => setOpen(null)}><X size={15} /></button>
+            </div>
+            <div className="mt-[12px] rounded-md overflow-hidden bg-canvas border border-solid border-line">
+              {open.fileUrl ? (
+                <video className="block w-full max-h-[260px] bg-ink" src={open.fileUrl} controls preload="metadata" />
+              ) : open.thumbnailUrl ? (
+                <img className="block w-full" src={open.thumbnailUrl} alt="" />
+              ) : (
+                <p className="m-0 p-[22px] text-center text-[12.5px] text-muted">
+                  {open.playable ? 'Kept on HeyGen, not downloaded to this Mac.' : 'Nothing to preview.'}
+                </p>
+              )}
+            </div>
+            {!open.fileUrl && open.playable && (
+              <button className="mt-[8px] text-[12.5px]" disabled={playing === open.id} onClick={() => play(open)}>
+                <Video size={13} /> {playing === open.id ? 'Opening…' : 'Play from HeyGen'}
+              </button>
+            )}
+            <dl className="m-[14px_0_0] grid grid-cols-[96px_1fr] gap-[6px_10px] text-[12.5px]">
+              <dt className="text-muted">Type</dt><dd className="m-0">{KIND[open.kind]?.label ?? open.kind}</dd>
+              {open.duration ? <><dt className="text-muted">Length</dt><dd className="m-0 [font-variant-numeric:tabular-nums]">{toClock(open.duration)}</dd></> : null}
+              <dt className="text-muted">From</dt><dd className="m-0">{SOURCE[open.provider] ?? (open.program === 'comedy' ? 'Sample, came with the app' : 'Added here')}</dd>
+              <dt className="text-muted">Used in</dt>
+              <dd className="m-0">{open.productionTitle ?? <span className="text-faint">No video yet</span>}</dd>
+              {open.localPath && (
+                <>
+                  <dt className="text-muted">File</dt>
+                  <dd className="m-0 min-w-0">
+                    <span className="block truncate text-ink-2" title={open.localPath}>{open.localPath.split('/').pop()}</span>
+                    <button className="ghostbtn p-0 text-[12px] text-accent" onClick={() => navigator.clipboard?.writeText(open.localPath).then(() => notify('Path copied'), () => {})}>
+                      <Copy size={11} /> Copy where it is
+                    </button>
+                  </dd>
+                </>
+              )}
+            </dl>
+            <div className="flex flex-wrap gap-[8px] mt-[16px]">
+              {open.productionId && (
+                <button className="primary text-[12.5px]" onClick={async () => { await openProduction(open.productionId); go?.('Create'); }}>
+                  <ExternalLink size={13} /> Open the video
+                </button>
+              )}
+              {open.fileUrl && <a className="text-[12.5px] self-center text-accent" href={open.fileUrl} target="_blank" rel="noreferrer">Open the file</a>}
+            </div>
+          </aside>
+        </>
+      )}
 
       {watching && (
         <>

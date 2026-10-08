@@ -173,7 +173,7 @@ function App() {
           {current === 'Plan' && <Plan go={setPage} />}
           {current === 'Create' && <Create go={setPage} />}
           {current === 'Cast' && <Cast />}
-          {current === 'Library' && <Library />}
+          {current === 'Library' && <Library go={setPage} />}
           {current === 'Settings' && <Setup />}
         </ErrorBoundary>
       </main>
