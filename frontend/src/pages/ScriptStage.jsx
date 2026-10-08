@@ -168,6 +168,8 @@ export default function ScriptStage({ goToStage }) {
   };
 
   const tone = !target ? 'text-muted' : within ? 'text-ok' : 'text-warn';
+  // One voice throughout: naming the speaker on every line says nothing.
+  const oneSpeaker = new Set(lines.map((l) => l.speaker)).size <= 1;
   const barPct = target ? Math.min(100, (total / Math.max(total, target)) * 100) : 0;
   const targetPct = target ? Math.min(100, (target / Math.max(total, target)) * 100) : 0;
 
@@ -349,9 +351,12 @@ export default function ScriptStage({ goToStage }) {
                   {g.title && (
                     <header className="flex items-baseline gap-[10px] pb-[6px] mb-[6px] [border-bottom:1px_solid_var(--line)]">
                       <b className="text-[11px] tracking-[.06em] uppercase text-ink-2">{g.title}</b>
-                      <span className={`text-[11.5px] [font-variant-numeric:tabular-nums] ${off ? 'text-warn' : 'text-muted'}`}>
-                        {clock(written)} of {clock(g.seconds)}
-                      </span>
+                      {/* Estimates mean nothing beside a finished video's real length. */}
+                      {!published && (
+                        <span className={`text-[11.5px] [font-variant-numeric:tabular-nums] ${off ? 'text-warn' : 'text-muted'}`}>
+                          {clock(written)} of {clock(g.seconds)}
+                        </span>
+                      )}
                       {gi === 0 && !latest.segments.some((s) => s.sceneRef) && (
                         <span className="text-faint text-[11px] ml-auto" title="Imported lines carry no section; they are placed by where they fall in the running time.">≈ placed by timing</span>
                       )}
@@ -359,8 +364,8 @@ export default function ScriptStage({ goToStage }) {
                   )}
                   {g.lines.length === 0 && <p className="text-faint text-[12px] m-[4px_0_8px]">Nothing written for this section yet.</p>}
                   {g.lines.map((l) => (
-                    <div key={l.id} className="grid grid-cols-[84px_1fr_92px] gap-[10px] p-[4px_0] items-start lte800:grid-cols-[1fr]">
-                      {editable ? (
+                    <div key={l.id} className={'grid gap-[10px] p-[4px_0] items-start lte800:grid-cols-[1fr] ' + (oneSpeaker && !editable ? 'grid-cols-[1fr_92px]' : 'grid-cols-[84px_1fr_92px]')}>
+                      {oneSpeaker && !editable ? null : editable ? (
                         <select className="text-[12px] p-[6px_6px]" value={SPEAKERS.some(([v]) => v === l.speaker) ? l.speaker : ''}
                           aria-label="Speaker" onChange={(e) => e.target.value && saveLine(l, { speaker: e.target.value })}>
                           {!SPEAKERS.some(([v]) => v === l.speaker) && <option value="">{l.speaker}</option>}
@@ -391,7 +396,7 @@ export default function ScriptStage({ goToStage }) {
                         {listening?.id === l.id && listening.url && <audio className="w-full h-[30px] mt-[4px]" src={listening.url} controls autoPlay />}
                       </div>
                       <div className="flex flex-col items-end gap-[3px] text-[11px] text-muted [font-variant-numeric:tabular-nums] lte800:flex-row lte800:justify-start">
-                        <span>{clock(secsAt(l.words))} · {l.words}w</span>
+                        <span>{published ? `${l.words} words` : `${clock(secsAt(l.words))} · ${l.words}w`}</span>
                         <button className="ghostbtn text-[11px] p-[2px_6px]" disabled={l.checks > 0 || listening?.busy}
                           title={l.checks ? 'Resolve the check first' : 'Hear it in your voice — free'} onClick={() => listen(l)}>
                           <Play size={11} /> {listening?.id === l.id && listening.busy ? '…' : 'Hear'}

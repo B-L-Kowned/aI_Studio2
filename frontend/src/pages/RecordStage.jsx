@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Circle, Square, ChevronLeft, ChevronRight, Headphones, Check, Trash2, Play, AlertCircle, RefreshCw } from 'lucide-react';
+import { Circle, Square, ChevronLeft, ChevronRight, Headphones, Check, Trash2, Play, AlertCircle, RefreshCw, RotateCcw, Upload } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
@@ -36,6 +36,12 @@ export default function RecordStage({ goToStage }) {
   const [useCountdown, setUseCountdown] = useState(true);
   const [level, setLevel] = useState(0);
   const [open, setOpen] = useState(null); // segmentId whose takes are shown
+  const [lastTake, setLastTake] = useState(null); // { lineIndex, n, take } — the one you just recorded
+  const [showUpload, setShowUpload] = useState(false);
+  const [watching, setWatching] = useState(false);
+  // Prompter size, remembered: reading distance differs per setup.
+  const [size, setSizeState] = useState(() => { try { return Number(localStorage.getItem('prompter-size')) || 30; } catch { return 30; } });
+  const setSize = (n) => { const v = Math.min(52, Math.max(20, n)); setSizeState(v); try { localStorage.setItem('prompter-size', String(v)); } catch { /* storage blocked */ } };
   const video = useRef(null);
   const recorder = useRef(null);
   const chunks = useRef([]);
@@ -120,7 +126,8 @@ export default function RecordStage({ goToStage }) {
       const base = (r.mimeType || 'video/webm').split(';')[0];
       const file = new File(chunks.current, `line-${line.n}.${base.endsWith('mp4') ? 'mp4' : 'webm'}`, { type: base });
       try {
-        await mutate(() => api.uploadLineTake(production.id, line.segmentId, file), null, { silent: true });
+        const saved = await mutate(() => api.uploadLineTake(production.id, line.segmentId, file), null, { silent: true });
+        setLastTake({ lineIndex: at, n: line.n, take: saved.data });
         const d = await load();
         // On to the next line that has no take yet.
         const next = d.lines.findIndex((l, i) => i > at && !l.takes.length);
@@ -179,10 +186,19 @@ export default function RecordStage({ goToStage }) {
   return (
     <div className="stagepane">
       {/* The teleprompter: first thing on the page, nearest the camera. */}
-      <section aria-label="Teleprompter" className="rounded-lg bg-ink text-[#fff] p-[18px_24px] text-center">
-        <div className="text-[11px] tracking-[.08em] uppercase opacity-60 mb-[8px]">Line {line.n} of {lines.length}</div>
-        <p className="text-[28px] leading-[1.35] font-[520] m-0 lte800:text-[21px]">{line.text}</p>
-        {lines[at + 1] && <p className="text-[15px] leading-[1.4] opacity-45 m-[12px_0_0]">{lines[at + 1].text}</p>}
+      <section aria-label="Teleprompter" className="relative rounded-lg bg-ink p-[18px_56px_20px] text-center">
+        <div className="text-[11px] tracking-[.08em] uppercase text-[rgba(255,255,255,.55)] mb-[10px]">
+          Line {line.n} of {lines.length}{state === 'recording' && <span className="text-[#ff8a80]"> · recording</span>}
+        </div>
+        {/* Colours are explicit: the page's paragraph colour would grey this out. */}
+        <p className="m-0 font-[540] text-[#fff] mx-auto max-w-[34ch]" style={{ fontSize: size, lineHeight: 1.32 }}>{line.text}</p>
+        {lines[at + 1] && <p className="m-[14px_auto_0] max-w-[60ch] text-[rgba(255,255,255,.42)]" style={{ fontSize: Math.round(size * 0.5), lineHeight: 1.4 }}>Next: {lines[at + 1].text}</p>}
+        <span className="absolute top-[10px] right-[10px] flex flex-col gap-[4px]">
+          <button type="button" aria-label="Larger text" onClick={() => setSize(size + 3)}
+            className="w-[30px] h-[26px] p-0 grid place-items-center rounded-md bg-[rgba(255,255,255,.08)] text-[#fff] [border:0] text-[13px] font-semibold">A+</button>
+          <button type="button" aria-label="Smaller text" onClick={() => setSize(size - 3)}
+            className="w-[30px] h-[26px] p-0 grid place-items-center rounded-md bg-[rgba(255,255,255,.08)] text-[#fff] [border:0] text-[11px] font-semibold">A−</button>
+        </span>
       </section>
 
       <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(260px,1fr)] gap-[16px] mt-[14px] lte960:grid-cols-[1fr]">
@@ -218,6 +234,22 @@ export default function RecordStage({ goToStage }) {
               <input type="checkbox" checked={useCountdown} onChange={(e) => setUseCountdown(e.target.checked)} /> 3-2-1
             </label>
           </div>
+          {lastTake && state === 'idle' && (
+            <div className="flex flex-wrap items-center gap-[8px] mt-[10px] p-[8px_10px] rounded-md bg-surface-2 text-[12.5px]">
+              <Check size={14} className="text-ok" />
+              <span>Line {lastTake.n}, take {lastTake.take?.version} saved{lastTake.take?.duration ? ` (${clock(lastTake.take.duration)})` : ''}.</span>
+              <button className="text-[12px] p-[3px_9px]" onClick={() => setWatching((w) => !w)}>
+                <Play size={12} /> {watching ? 'Hide' : 'Watch it'}
+              </button>
+              <button className="text-[12px] p-[3px_9px]" onClick={() => { setAt(lastTake.lineIndex); setLastTake(null); }}>
+                <RotateCcw size={12} /> Retake line {lastTake.n}
+              </button>
+              <button className="ghostbtn text-[12px] text-muted p-0 ml-auto" onClick={() => { setLastTake(null); setWatching(false); }}>Dismiss</button>
+              {watching && lastTake.take?.url && (
+                <video key={lastTake.take.id} className="basis-full w-full max-w-[420px] rounded-md bg-ink mt-[4px]" src={lastTake.take.url} controls autoPlay />
+              )}
+            </div>
+          )}
           <p className="text-faint text-[11.5px] m-[6px_0_0]">Space records and stops · ← → change line · keep this window at the top of the screen, under your camera.</p>
 
           <div className="flex flex-wrap gap-[8px] mt-[10px]">
@@ -278,8 +310,12 @@ export default function RecordStage({ goToStage }) {
       </div>
 
       <section className="mt-[18px]">
-        <b className="text-[13px]">Recorded it somewhere else?</b>
-        {split?.state === 'running' ? (
+        {!showUpload && split?.state !== 'running' && !split ? (
+          <button className="ghostbtn text-[12.5px] text-accent p-0" onClick={() => setShowUpload(true)}>
+            <Upload size={13} /> Recorded it on your phone or camera instead? Upload the whole recording
+          </button>
+        ) : <b className="text-[13px]">Recorded it somewhere else?</b>}
+        {(showUpload || split) && (split?.state === 'running' ? (
           <p className="text-[12.5px] text-warn m-[6px_0_0]"><RefreshCw size={12} className="inline animate-spin" /> {split.step}…</p>
         ) : (
           <div className="mt-[6px]">
@@ -287,7 +323,7 @@ export default function RecordStage({ goToStage }) {
               hint="Phone, camera or screen — read the script straight through, retakes and all. It's matched to the script by what you said; each line gets a take, and where you said a line twice, the last reading is used."
               upload={(f, p) => api.splitRecording(production.id, f, p)} onDone={() => load()} />
           </div>
-        )}
+        ))}
         {split?.state === 'done' && (
           <p className="text-[12.5px] m-[6px_0_0] text-ink-2">
             Split {split.name ? `"${split.name}"` : 'your recording'}: found {split.found} of {split.lines} lines

@@ -55,20 +55,29 @@ export function Section({ title, meta, actions, flush, children }) {
  * tabs above the title on Plan and Cast, a black pill bar beside the title on
  * Create, a bare heading elsewhere.
  */
-export function PageHead({ eyebrow, title, titleHint, lead, actions, tabs }) {
+export function PageHead({ eyebrow, title, titleHint, lead, actions, tabs, tabsBeside }) {
+  // tabsBeside: a short step strip (Create's five steps) shares the title row and
+  // its rule instead of taking a row of its own under the title.
+  const beside = tabs && tabsBeside;
   return (
-    <div className="mb-[18px]">
+    <div className="mb-[14px]">
       {eyebrow && <div className="mb-[3px]">{eyebrow}</div>}
       {/* Wraps on narrow screens: the actions drop below rather than squeezing
           the title to nothing. */}
-      <div className="title flex-wrap gap-y-[10px] [&>.quickrow]:shrink [&>.quickrow]:min-w-0 [&>.quickrow]:max-w-full">
-        <div className="min-w-0 flex-[1_1_260px]">
+      <div
+        className={
+          'title flex-wrap gap-y-[10px] [&>.quickrow]:shrink [&>.quickrow]:min-w-0 [&>.quickrow]:max-w-full' +
+          (beside ? ' [box-shadow:inset_0_-1px_0_var(--line)]' : '')
+        }
+      >
+        <div className={'min-w-0 flex-[1_1_260px]' + (beside ? ' pb-[9px]' : '')}>
           <h1 className="whitespace-nowrap overflow-hidden text-ellipsis" title={titleHint}>{title}</h1>
           {lead && <p className="text-muted text-[13px] m-[3px_0_0] max-w-[70ch]">{lead}</p>}
         </div>
+        {beside && <div className="min-w-0 max-w-full shrink-0 [&>.subnav]:[box-shadow:none]">{tabs}</div>}
         {actions && <div className="quickrow">{actions}</div>}
       </div>
-      {tabs && <div className="mt-[14px]">{tabs}</div>}
+      {tabs && !beside && <div className="mt-[14px]">{tabs}</div>}
     </div>
   );
 }

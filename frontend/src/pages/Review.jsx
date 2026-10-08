@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Check, SkipForward, ExternalLink, Pencil, RefreshCw } from 'lucide-react';
+import { Check, SkipForward, ExternalLink, Pencil, RefreshCw, ClipboardList, AlertCircle, Undo2, ChevronLeft } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { PageHead } from '../components/Section.jsx';
@@ -7,31 +7,62 @@ import { madeByLabel } from '../utils/made-by.js';
 
 const CONFIRM = /\[CONFIRM:\s*[^\]]*\]\s*/gi;
 const strip = (t) => t.replace(CONFIRM, '').replace(/\s{2,}/g, ' ').trim();
-const words = (ls) => ls.reduce((n, l) => n + strip(l.text).split(/\s+/).filter(Boolean).length, 0);
-const CHIP = 'text-[12px] p-[5px_11px] rounded-full border border-solid cursor-pointer whitespace-nowrap';
+const wordCount = (ls) => ls.reduce((n, l) => n + strip(l.text).split(/\s+/).filter(Boolean).length, 0);
+const secsOf = (rt) => { const [m, s] = String(rt ?? '').split(':').map(Number); return (m || 0) * 60 + (s || 0); };
+const clock = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+const CHIP = 'text-[12.5px] p-[6px_13px] rounded-full border border-solid cursor-pointer whitespace-nowrap';
 const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
+const HOST = (url) => { try { return new URL(/^https?:/.test(url) ? url : `https://${url}`).host.replace(/^www\./, ''); } catch { return url; } };
 
-/** A line with each [CONFIRM: …] shown as the question it is. */
-function Marked({ text }) {
-  return String(text).split(/(\[CONFIRM:[^\]]*\])/gi).map((p, i) => (/^\[CONFIRM:/i.test(p)
-    ? <mark key={i} className="bg-warn-soft text-warn rounded-[3px] px-[4px] text-[12.5px]">check: {p.replace(/^\[CONFIRM:\s*|\]$/gi, '')}</mark>
-    : <React.Fragment key={i}>{p}</React.Fragment>));
+/** The facts to judge a script against, beside it. */
+function BriefPanel({ item }) {
+  const words = wordCount(item.lines);
+  const est = Math.round((words / 150) * 60);
+  const target = secsOf(item.target);
+  const off = target ? est / target : null;
+  const fit = off == null ? null : off < 0.8 ? 'short' : off > 1.2 ? 'long' : 'fits';
+  const fact = (label, value) => value && (
+    <div><dt className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold">{label}</dt><dd className="m-[2px_0_0] text-[13px] text-ink-2 leading-[1.45]">{value}</dd></div>
+  );
+  return (
+    <aside className="flex flex-col gap-[12px] p-[14px_16px] rounded-lg bg-surface-2 self-start lte960:order-first">
+      <dl className="m-0 flex flex-col gap-[10px]">
+        {fact('For', item.brief?.audience)}
+        {fact('Goal', item.brief?.goal)}
+        {fact('Call to action', item.brief?.cta)}
+        {fact('Made by', madeByLabel(item.madeBy))}
+        <div>
+          <dt className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold">Length</dt>
+          <dd className="m-[2px_0_0] text-[13px] text-ink-2">
+            about {clock(est)} at a typical pace{target ? <> · target {item.target} · <b className={fit === 'fits' ? 'text-ok' : 'text-warn'}>{fit === 'fits' ? 'fits' : fit === 'long' ? 'runs long' : 'runs short'}</b></> : ''}
+          </dd>
+        </div>
+      </dl>
+      {item.brief?.website && (
+        <a className="text-[12.5px] text-accent underline self-start" href={/^https?:/.test(item.brief.website) ? item.brief.website : `https://${item.brief.website}`} target="_blank" rel="noreferrer">
+          <ExternalLink size={12} className="inline -mt-[2px]" /> Open {HOST(item.brief.website)}
+        </a>
+      )}
+    </aside>
+  );
 }
 
 /**
- * Reading work across the whole register, one thing at a time: drafts that
+ * Reading work across the whole register, one video at a time: drafts that
  * only need your yes, and the [CONFIRM] checks that need you to look at the
- * real product. Keyboard: A approves, S skips.
+ * real product. Keyboard: A approves, S skips, ← goes back.
  */
 export default function Review({ go, tabs }) {
   const { openProduction, mutate } = useStudio();
   const [data, setData] = useState(null);
   const [mode, setMode] = useState('ready');
-  const [sort, setSort] = useState('release');
+  const [sort, setSort] = useState('priority');
   const [at, setAt] = useState(0);
   const [editing, setEditing] = useState(null); // line id
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [approvedHere, setApprovedHere] = useState(0);
+  const [undo, setUndo] = useState(null); // { productionId, versionId, videoId }
 
   const load = useCallback(() => api.review(sort).then(setData).catch(() => setData({ ready: [], checks: [], totals: {} })), [sort]);
   useEffect(() => { load(); }, [load]);
@@ -41,15 +72,23 @@ export default function Review({ go, tabs }) {
   const item = list[Math.min(at, Math.max(0, list.length - 1))];
 
   const approve = useCallback(async () => {
-    if (!item || busy) return;
+    if (!item || busy || editing) return;
     setBusy(true);
     try {
       await mutate(() => api.acceptScript(item.productionId, item.versionId), null, { silent: true });
       await mutate(() => api.buildSegments(item.productionId), null, { silent: true });
+      setUndo({ productionId: item.productionId, versionId: item.versionId, videoId: item.videoId });
+      setApprovedHere((n) => n + 1);
       await load(); // the approved draft leaves the list; the next one moves up
     } catch { /* mutate reports it */ } finally { setBusy(false); }
-  }, [item, busy, mutate, load]);
+  }, [item, busy, editing, mutate, load]);
   const skip = useCallback(() => setAt((i) => Math.min(i + 1, list.length - 1)), [list.length]);
+  const takeBack = async () => {
+    if (!undo) return;
+    await mutate(() => api.reopenScript(undo.productionId, undo.versionId), null).catch(() => {});
+    setUndo(null); setApprovedHere((n) => Math.max(0, n - 1));
+    await load();
+  };
 
   useEffect(() => {
     const onKey = (e) => {
@@ -70,6 +109,10 @@ export default function Review({ go, tabs }) {
       await load();
     } catch { /* mutate reports it */ } finally { setBusy(false); }
   };
+  const toNote = async (it, line) => {
+    setBusy(true);
+    try { await mutate(() => api.checkToNote(it.productionId, line.id), null); await load(); } catch { /* reported */ } finally { setBusy(false); }
+  };
   const confirmAll = async (it) => {
     if (!window.confirm(`Confirm all ${it.lines.length} checked lines in ${it.videoId} as written?`)) return;
     setBusy(true);
@@ -82,78 +125,114 @@ export default function Review({ go, tabs }) {
 
   if (!data) return <><PageHead title="Review" tabs={tabs} /><p className="muted">Loading…</p></>;
   const t = data.totals;
+  const tab = (id, label, n) => (
+    <button className={`${CHIP} ${mode === id ? 'bg-ink text-[#fff] border-ink' : 'bg-surface text-ink-2 border-line hover:border-line-2'}`} onClick={() => setMode(id)}>
+      {label} <span className={mode === id ? 'opacity-70' : 'text-muted'}>{n}</span>
+    </button>
+  );
 
   return (
     <>
       <PageHead title="Review" tabs={tabs} lead="Reading work across the register, one video at a time." />
 
-      <div className="flex flex-wrap items-center gap-[6px] mt-[4px]">
-        <button className={`${CHIP} ${mode === 'ready' ? 'bg-ink text-[#fff] border-ink' : 'bg-surface text-ink-2 border-line'}`} onClick={() => setMode('ready')}>
-          Ready to approve <span className="opacity-70">{t.ready}</span>
-        </button>
-        <button className={`${CHIP} ${mode === 'checks' ? 'bg-ink text-[#fff] border-ink' : 'bg-surface text-ink-2 border-line'}`} onClick={() => setMode('checks')}>
-          Checks <span className="opacity-70">{t.checks} in {t.videosWithChecks} videos</span>
-        </button>
+      <div className="flex flex-wrap items-center gap-[8px] mt-[4px]">
+        {tab('ready', 'Ready to approve', t.ready)}
+        {tab('checks', 'Checks to answer', `${t.checks} in ${t.videosWithChecks} videos`)}
+        {approvedHere > 0 && <span className="text-[12.5px] text-ok ml-[6px]"><Check size={13} className="inline -mt-[2px]" /> {approvedHere} approved this session</span>}
         <label className="text-[12px] text-muted flex items-center gap-[6px] ml-auto">
           Order
           <select className="text-[12px]" value={sort} onChange={(e) => setSort(e.target.value)}>
-            <option value="release">Release order</option>
             <option value="priority">Priority first</option>
+            <option value="release">Release order</option>
           </select>
         </label>
       </div>
 
+      {undo && (
+        <div className="flex items-center gap-[10px] mt-[12px] p-[8px_12px] rounded-md bg-ok-soft text-ok text-[12.5px]">
+          <Check size={14} /> Approved {undo.videoId} — its lines are ready for Voice.
+          <button className="ghostbtn text-[12.5px] text-ink-2 p-0 underline" onClick={takeBack}><Undo2 size={12} className="inline" /> Undo</button>
+          <button className="ghostbtn text-[12px] text-muted p-0 ml-auto" onClick={() => setUndo(null)}>Dismiss</button>
+        </div>
+      )}
+
       {!item ? (
-        <p className="mt-[24px] text-muted text-[13px]">{mode === 'ready' ? 'No drafts waiting — every draft is approved or has checks.' : 'No open checks.'}</p>
+        <div className="mt-[28px] text-center p-[32px] border border-dashed border-line-2 rounded-lg">
+          <Check size={22} className="block mx-auto text-ok mb-[6px]" />
+          <b className="text-[14px]">{mode === 'ready' ? 'No drafts waiting' : 'No checks left'}</b>
+          <p className="text-muted text-[13px] m-[4px_0_0]">{mode === 'ready' ? 'Every draft is approved or still has checks to answer.' : 'Every check is answered.'}</p>
+        </div>
       ) : (
-        <section className="mt-[14px] border border-solid border-line rounded-lg bg-surface p-[16px_18px] [box-shadow:var(--shadow)]" aria-label="Review item">
-          <div className="flex flex-wrap items-baseline gap-x-[12px] gap-y-[4px]">
+        <section className="mt-[14px] border border-solid border-line rounded-lg bg-surface [box-shadow:var(--shadow)]" aria-label="Review item">
+          <header className="flex flex-wrap items-baseline gap-x-[12px] gap-y-[4px] p-[14px_18px] [border-bottom:1px_solid_var(--line)]">
             <code className="text-[12px] font-semibold text-ink-2">{item.videoId}</code>
-            <b className="text-[15px] font-[600]">{item.name}</b>
-            <span className="text-[12px] text-muted">{item.company}{item.priority ? ` · ${item.priority}` : ''} · {madeByLabel(item.madeBy)}{item.target ? ` · target ${item.target}` : ''}</span>
-            <span className="text-[12px] text-faint ml-auto">{Math.min(at, list.length - 1) + 1} of {list.length}</span>
+            <b className="text-[16px] font-[620]">{item.name}</b>
+            <span className="text-[12.5px] text-muted">{item.company}{item.priority ? ` · ${item.priority}` : ''}</span>
+            <span className="ml-auto flex items-center gap-[6px] text-[12px] text-faint">
+              <button className="ghostbtn p-[2px] text-faint" aria-label="Previous" disabled={at === 0} onClick={() => setAt((i) => Math.max(0, i - 1))}><ChevronLeft size={14} /></button>
+              {Math.min(at, list.length - 1) + 1} of {list.length}
+            </span>
+          </header>
+
+          <div className="grid grid-cols-[minmax(0,1fr)_280px] gap-[22px] p-[18px] lte960:grid-cols-[1fr]">
+            {mode === 'ready' ? (
+              <article className="max-w-[66ch] flex flex-col gap-[12px]">
+                {item.lines.map((l) => (editing === l.id ? (
+                  <div key={l.id}>
+                    <textarea className="w-full min-h-[90px] text-[15.5px] leading-[1.7]" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus />
+                    <div className="flex gap-[6px] mt-[6px]">
+                      <button className="primary text-[12.5px]" disabled={busy || !draft.trim()} onClick={() => saveLine(item, l, draft)}><Check size={13} /> Save</button>
+                      <button className="text-[12.5px]" onClick={() => setEditing(null)}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <p key={l.id} title="Click to edit" onClick={() => { setEditing(l.id); setDraft(l.text); }}
+                    className="m-0 text-[15.5px] leading-[1.7] text-ink cursor-text rounded-[4px] -mx-[6px] px-[6px] hover:bg-surface-2">{l.text}</p>
+                )))}
+                <p className="text-faint text-[12px] m-0">Click any paragraph to fix it before you approve.</p>
+              </article>
+            ) : (
+              <div className="flex flex-col gap-[14px] min-w-0">
+                {item.lines.map((l) => (
+                  <div key={l.id} className="rounded-lg border border-solid border-line p-[12px_14px]">
+                    <div className="flex items-start gap-[8px] text-[13px] text-warn font-[560]">
+                      <AlertCircle size={15} className="flex-none mt-[2px]" />
+                      <span>Check against the product: {l.checks.join(' · ')}</span>
+                    </div>
+                    {editing === l.id ? (
+                      <>
+                        <textarea className="w-full min-h-[80px] text-[14.5px] leading-[1.65] mt-[8px]" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus />
+                        <div className="flex gap-[6px] mt-[6px]">
+                          <button className="primary text-[12.5px]" disabled={busy || !draft.trim()} onClick={() => saveLine(item, l, draft)}><Check size={13} /> Save the line</button>
+                          <button className="text-[12.5px]" onClick={() => setEditing(null)}>Cancel</button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="m-[8px_0_0] text-[14.5px] leading-[1.65] text-ink max-w-[66ch]">{strip(l.text)}</p>
+                        <div className="flex flex-wrap gap-[6px] mt-[10px]">
+                          <button className="text-[12.5px] p-[5px_11px]" disabled={busy} onClick={() => saveLine(item, l, strip(l.text))}><Check size={13} /> Confirmed as written</button>
+                          <button className="text-[12.5px] p-[5px_11px]" disabled={busy} onClick={() => { setEditing(l.id); setDraft(strip(l.text)); }}><Pencil size={13} /> Edit the line</button>
+                          <button className="text-[12.5px] p-[5px_11px]" disabled={busy} title="Remove it from the script and add it to the shot list, to check while you record that screen"
+                            onClick={() => toNote(item, l)}><ClipboardList size={13} /> Make it a recording note</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <BriefPanel item={item} />
           </div>
 
-          {mode === 'ready' ? (
-            <>
-              <div className="mt-[12px] flex flex-col gap-[8px] max-h-[52vh] overflow-y-auto pr-[6px]">
-                {item.lines.map((l) => <p key={l.id} className="m-0 text-[14px] leading-[1.6] text-ink">{l.text}</p>)}
-              </div>
-              <p className="text-faint text-[11.5px] m-[10px_0_0]">{item.lines.length} lines · {words(item.lines)} words · about {Math.round(words(item.lines) / 150 * 60)}s at a typical pace</p>
-            </>
-          ) : (
-            <div className="mt-[12px] flex flex-col gap-[12px]">
-              {item.lines.map((l) => (
-                <div key={l.id} className="border-l-[3px] border-solid border-warn-line pl-[12px]">
-                  {editing === l.id ? (
-                    <>
-                      <textarea className="w-full min-h-[70px] text-[13.5px] leading-[1.55]" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus />
-                      <div className="flex gap-[6px] mt-[6px]">
-                        <button className="primary text-[12.5px]" disabled={busy || !draft.trim()} onClick={() => saveLine(item, l, draft)}><Check size={13} /> Save the line</button>
-                        <button className="text-[12.5px]" onClick={() => setEditing(null)}>Cancel</button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="m-0 text-[13.5px] leading-[1.6]"><Marked text={l.text} /></p>
-                      <div className="flex flex-wrap gap-[6px] mt-[6px]">
-                        <button className="text-[12px] p-[4px_10px]" disabled={busy} onClick={() => saveLine(item, l, strip(l.text))}><Check size={12} /> Confirmed as written</button>
-                        <button className="text-[12px] p-[4px_10px]" disabled={busy} onClick={() => { setEditing(l.id); setDraft(strip(l.text)); }}><Pencil size={12} /> Edit the line</button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-[8px] mt-[16px] pt-[12px] [border-top:1px_solid_var(--line)]">
-            {mode === 'ready' && <button className="primary" disabled={busy} onClick={approve}><Check size={14} /> Approve <kbd className="opacity-60 text-[10.5px]">A</kbd></button>}
+          {/* Stays in view on a long script, so Approve is always one key or click away. */}
+          <footer className="sticky bottom-0 z-[2] flex flex-wrap items-center gap-[8px] p-[12px_18px] [border-top:1px_solid_var(--line)] bg-surface-2 rounded-b-lg [box-shadow:0_-6px_14px_-10px_rgba(0,0,0,.25)]">
+            {mode === 'ready' && <button className="primary" disabled={busy || !!editing} onClick={approve}><Check size={14} /> Approve <kbd className="opacity-60 text-[10.5px] ml-[2px]">A</kbd></button>}
             {mode === 'checks' && item.lines.length > 1 && <button disabled={busy} onClick={() => confirmAll(item)}><Check size={14} /> Confirm all {item.lines.length} as written</button>}
-            <button disabled={busy || at >= list.length - 1} onClick={skip}><SkipForward size={14} /> Skip <kbd className="opacity-60 text-[10.5px]">S</kbd></button>
+            <button disabled={busy || at >= list.length - 1} onClick={skip}><SkipForward size={14} /> Skip <kbd className="opacity-60 text-[10.5px] ml-[2px]">S</kbd></button>
             {busy && <RefreshCw size={13} className="animate-spin text-muted" />}
             <button className="ghostbtn text-[12.5px] text-accent ml-auto" onClick={() => open(item.productionId)}><ExternalLink size={13} /> Open the video</button>
-          </div>
+          </footer>
         </section>
       )}
     </>

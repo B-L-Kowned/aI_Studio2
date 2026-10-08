@@ -52,7 +52,11 @@ body {
 
 h1, h2, h3 { letter-spacing: -0.018em; color: var(--ink); }
 h1 { font-size: 22px; font-weight: 640; margin: 0 0 2px; }
-h2 { font-size: 16px; font-weight: 620; margin: 22px 0 8px; }
+h2 { font-size: 16px; font-weight: 620; margin: 18px 0 6px; }
+/* A heading or lead that opens a padded box already has the box's padding
+   above it; its own top margin stacked on that was most of the dead space.
+   :where() keeps this at zero specificity, so a utility margin still wins. */
+:where(.stagepane, .card, .card-body, section, .notice) > :first-child { margin-top: 0; }
 h3 { font-size: 14px; font-weight: 600; margin: 0; }
 p  { color: var(--ink-2); }
 code { font-family: var(--mono); font-size: 12px; }
@@ -510,9 +514,10 @@ main { max-width: 1180px; margin: 18px auto 48px; padding: 0 22px; }
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  padding: 22px;
+  padding: 16px 18px;
 }
-.stagepane > p { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.stagepane > h2 { margin-bottom: 2px; }
+.stagepane > p { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
 .empty { text-align: center; padding: 64px 20px; color: var(--faint); }
 .empty svg { color: var(--line-2); margin-bottom: 10px; }
 .empty p { color: var(--faint); font-size: 13px; }

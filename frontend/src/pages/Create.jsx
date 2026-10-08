@@ -63,6 +63,7 @@ export default function Create({ go }) {
         title={production.title}
         titleHint={production.title}
         actions={<SaveState state={saveState} />}
+        tabsBeside
         tabs={
           <Tabs
             items={STEPS.map((s, i) => {
@@ -98,7 +99,7 @@ export default function Create({ go }) {
       )}
       {stage === 'Make' && made !== 'self' && made !== 'voice' && <RenderStage />}
       {stage === 'Edit' && <EditStage goToStage={setStage} />}
-      {stage === 'Finish' && <FinishStage />}
+      {stage === 'Finish' && <FinishStage goToStage={setStage} />}
 
       {nextStep && nextStep !== stage && (
         <div className="flex items-center justify-end gap-[10px] mt-[16px] text-[12.5px] text-muted">

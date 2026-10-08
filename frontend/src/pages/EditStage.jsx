@@ -91,9 +91,8 @@ function EditorKit({ production }) {
   );
 }
 
-const CHIP_ON = 'text-[11.5px] p-[2px_8px] rounded-full border border-solid cursor-pointer bg-warn-soft text-warn border-warn-line line-through decoration-[1.5px]';
-const CHIP_OFF = 'text-[11.5px] p-[2px_8px] rounded-full border border-solid cursor-pointer bg-surface text-muted border-line';
-const KIND = { filler: 'filler', gap: 'pause', head: 'start', tail: 'end' };
+const CHIP_ON = 'inline-flex items-center gap-[4px] text-[11.5px] p-[2px_8px] rounded-full border border-solid cursor-pointer bg-warn-soft text-warn border-warn-line';
+const CHIP_OFF = 'inline-flex items-center gap-[4px] text-[11.5px] p-[2px_8px] rounded-full border border-dashed cursor-pointer bg-surface text-muted border-line';
 const secs = (n) => `${n.toFixed(1)}s`;
 
 /**
@@ -164,10 +163,34 @@ function AvatarFromRecording({ production, onFinished }) {
   );
 }
 
+/** A small labelled group of settings. */
+function SettingGroup({ title, children }) {
+  return (
+    <div className="border border-solid border-line rounded-lg bg-surface p-[10px_12px]">
+      <div className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold mb-[8px]">{title}</div>
+      <div className="flex flex-col gap-[7px]">{children}</div>
+    </div>
+  );
+}
+
+/** One line's chosen take as a bar: kept spans solid, cuts hatched — so a cut is something you can see. */
+function TakeBar({ take }) {
+  const total = Math.max(0.01, take.outPoint - take.inPoint);
+  const pos = (t) => `${((Math.min(Math.max(t, take.inPoint), take.outPoint) - take.inPoint) / total) * 100}%`;
+  return (
+    <div className="relative h-[8px] rounded-full bg-ok-soft overflow-hidden" aria-hidden="true">
+      {take.cuts.filter((c) => c.on).map((c, i) => (
+        <span key={i} className="absolute top-0 bottom-0 bg-warn opacity-70"
+          style={{ left: pos(c.start), width: `calc(${pos(c.end)} - ${pos(c.start)})` }} />
+      ))}
+    </div>
+  );
+}
+
 /**
  * Finish a video you recorded (or narrated over screen recordings) without
- * leaving the app: listen for fillers and pauses, choose the take and the in
- * and out of each line, decide how it looks and sounds, preview, export. The
+ * leaving the app. The preview is the centre of the page; settings sit beside
+ * it in groups; each line shows its take as a bar with the cuts marked. The
  * export is the finished video: it marks the video done and can be published.
  */
 function FinishInApp({ production, goToStage }) {
@@ -206,137 +229,149 @@ function FinishInApp({ production, goToStage }) {
   // Most settings are on/off; look and reframe are stored by name.
   const NAMED = { look: ['auto', 'off'], reframe: ['face', 'center'] };
   const check = (key, label, title) => (
-    <label className="flex items-center gap-[5px] text-[12.5px] cursor-pointer" title={title}>
+    <label className="flex items-center gap-[7px] text-[12.5px] cursor-pointer" title={title}>
       <input type="checkbox" checked={NAMED[key] ? s[key] === NAMED[key][0] : !!s[key]}
         onChange={(e) => set({ [key]: NAMED[key] ? NAMED[key][e.target.checked ? 0 : 1] : e.target.checked })} /> {label}
     </label>
   );
+  const pill = (on) => 'text-[11.5px] p-[2px_9px] rounded-full ' + (on ? 'bg-ink text-[#fff] border-ink' : '');
 
+  // Nothing to put together yet: say what is missing and where to get it.
+  if (self && !recorded) {
+    return (
+      <section className="border border-dashed border-line-2 rounded-lg p-[28px_20px] text-center">
+        <b className="text-[15px]">Record your lines first</b>
+        <p className="text-muted text-[13px] m-[6px_auto_14px] max-w-[46ch]">This is where your takes come together: fillers and pauses cut, sound and light cleaned up, captions and music added, then exported.</p>
+        <button className="primary" onClick={() => goToStage?.('Make')}>Go to Record</button>
+      </section>
+    );
+  }
+
+  const done = st.job?.state === 'done' && !st.job.preview;
   return (
-    <section className="border border-solid border-line rounded-lg bg-surface p-[12px_14px]" aria-label="Finish in the app">
-      {/* One header line: what this is, where it stands, and the one action that
-          starts it. The action used to sit alone on a row of its own. */}
-      <div className="flex flex-wrap items-center gap-x-[12px] gap-y-[6px]">
-        <b className="text-[13.5px]">Finish it here</b>
-        <span className="text-muted text-[12px]">
-          {self ? `${recorded} of ${lines.length} lines recorded` : 'Your approved audio, with each section\'s recording or a title card'}
-        </span>
-        {self && st.analysis?.state === 'running' && <span className="text-warn text-[12.5px]"><RefreshCw size={12} className="inline animate-spin" /> Listening to {st.analysis.total} takes…</span>}
-        {self && st.analysis?.state === 'failed' && <span className="text-danger text-[12.5px]">{st.analysis.error}</span>}
-        {self && analyzed && st.analysis?.state !== 'running' && (
-          <span className="text-[12.5px] text-ink-2">{cutsOn.length} cuts on — saves {secs(saving)}. Click a cut to keep that bit.</span>
-        )}
-        {self && (
-          <button className="ml-auto text-[12.5px] p-[4px_10px]" onClick={() => act(() => api.analyzeTakes(production.id))} disabled={busy || !recorded}>
-            <Wand2 size={13} /> {analyzed ? 'Listen again' : 'Listen for fillers and pauses'}
-          </button>
-        )}
-      </div>
+    <section aria-label="Finish in the app">
+      <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(280px,1fr)] gap-[16px] lte960:grid-cols-[1fr]">
+        <div>
+          <div className="relative rounded-lg overflow-hidden bg-ink aspect-video grid place-items-center">
+            {st.preview
+              ? <video key={st.preview.url} className="w-full h-full object-contain" src={st.preview.url} controls preload="metadata" />
+              : <div className="text-center text-[rgba(255,255,255,.7)] text-[13px] p-[20px]">
+                  <Film size={26} className="block mx-auto mb-[8px] opacity-60" />
+                  Build a preview to watch the whole video here.
+                </div>}
+            {st.job?.state === 'running' && (
+              <div className="absolute inset-0 grid place-items-center bg-[rgba(0,0,0,.55)] text-[#fff] text-[13px]">
+                <span><RefreshCw size={15} className="inline animate-spin -mt-[2px]" /> {st.job.preview ? 'Building the preview…' : st.job.step ?? 'Exporting at full size…'}</span>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-[10px] mt-[10px]">
+            <button onClick={() => act(() => api.previewEdit(production.id))} disabled={busy}><Film size={14} /> {st.preview ? 'Rebuild preview' : 'Preview'}</button>
+            <button className="primary" onClick={() => act(() => api.exportEdit(production.id))} disabled={busy}><Check size={14} /> Export the finished video</button>
+            {st.job?.state === 'done' && st.job.preview && (
+              <span className="text-faint text-[12px]">{secs(st.job.duration ?? 0)} · {st.job.pieces} pieces{st.job.cutaways ? ` · ${st.job.cutaways} cutaway${st.job.cutaways === 1 ? '' : 's'}` : ''}{st.job.captions ? ' · captions' : ''}{st.job.music ? ' · music' : ''}{st.job.missing?.length ? ` · line ${st.job.missing.join(', ')} not recorded` : ''}</span>
+            )}
+            {st.job?.state === 'failed' && <span className="text-danger text-[12.5px]">{st.job.error}</span>}
+          </div>
+          {done && (
+            <div className="notice mt-[10px]"><Check /> <span>Exported <b>{st.job.name}</b> ({secs(st.job.duration ?? 0)}){st.job.extras?.length ? ` and ${st.job.extras.length} more shape${st.job.extras.length === 1 ? '' : 's'}` : ''} — the video is marked done.</span>
+              <button className="ml-auto" onClick={() => goToStage?.('Finish')}>Publish it</button></div>
+          )}
+        </div>
 
-      <div className="flex flex-wrap gap-x-[16px] gap-y-[6px] mt-[10px] p-[8px_12px] rounded-md bg-surface-2">
-        {self && check('removeFillers', 'Cut fillers', 'um, uh, hmm…')}
-        {self && check('tightenGaps', 'Shorten long pauses')}
-        {self && check('trimEnds', 'Trim dead air at each end')}
-        {check('cleanAudio', 'Clean audio', 'Noise reduction and broadcast loudness (−14 LUFS)')}
-        {self && check('look', 'Auto light and colour')}
-        {check('captions', 'Burn in captions')}
-        <span className="flex items-center gap-[5px] text-[12.5px]">
-          Frame
-          {['16:9', '9:16', '1:1'].map((a) => (
-            <button key={a} type="button" onClick={() => set({ aspect: a })}
-              className={'text-[11.5px] p-[2px_9px] rounded-full ' + (s.aspect === a ? 'bg-ink text-[#fff] border-ink' : '')}>{a}</button>
-          ))}
-        </span>
-        {self && check('reframe', 'Keep my face centred', 'Crop around your face when the frame changes shape')}
-        <span className="flex items-center gap-[5px] text-[12.5px]">
-          Also export
-          {['16:9', '9:16', '1:1'].filter((a) => a !== s.aspect).map((a) => {
-            const on = (s.alsoExport ?? []).includes(a);
-            return (
-              <button key={a} type="button" title={a === '9:16' ? 'Shorts, Reels, TikTok' : a === '1:1' ? 'Feeds' : 'YouTube'}
-                onClick={() => set({ alsoExport: on ? s.alsoExport.filter((x) => x !== a) : [...(s.alsoExport ?? []), a] })}
-                className={'text-[11.5px] p-[2px_9px] rounded-full ' + (on ? 'bg-ink text-[#fff] border-ink' : '')}>{on ? '✓ ' : '+ '}{a}</button>
-            );
-          })}
-        </span>
-        <span className="flex flex-wrap items-center gap-[6px] text-[12.5px]">
-          Music
-          <select className="text-[12px] max-w-[220px]" value={s.music ?? ''} aria-label="Background music"
-            onChange={(e) => set({ music: e.target.value || null })}>
-            <option value="">None</option>
-            {tracks.map((t) => <option key={t.name} value={t.name}>{t.name}{t.seconds ? ` (${Math.round(t.seconds)}s)` : ''}</option>)}
-          </select>
-          {s.music && ['low', 'medium', 'high'].map((l) => (
-            <button key={l} type="button" onClick={() => set({ musicLevel: l })}
-              className={'text-[11.5px] p-[2px_9px] rounded-full ' + (s.musicLevel === l ? 'bg-ink text-[#fff] border-ink' : '')}>{l}</button>
-          ))}
-          <UploadDrop compact accept="audio/*" label="Add a track"
-            upload={(f, p) => api.uploadMusic(f, p)} onDone={(r) => { setTracks(r.data.tracks); set({ music: r.data.saved }); }} />
-        </span>
+        <div className="flex flex-col gap-[10px]">
+          {self && (
+            <SettingGroup title="Clean-up">
+              <button className={analyzed ? '' : 'primary'} onClick={() => act(() => api.analyzeTakes(production.id))} disabled={busy}>
+                <Wand2 size={14} /> {st.analysis?.state === 'running' ? `Listening to ${st.analysis.total} takes…` : analyzed ? 'Listen again' : 'Find fillers and pauses'}
+              </button>
+              {analyzed && st.analysis?.state !== 'running' && <span className="text-[12px] text-ink-2">{cutsOn.length} cuts — {secs(saving)} shorter. Click a cut below to keep it.</span>}
+              {st.analysis?.state === 'failed' && <span className="text-danger text-[12px]">{st.analysis.error}</span>}
+              {check('removeFillers', 'Cut um, uh and hmm')}
+              {check('tightenGaps', 'Shorten long pauses')}
+              {check('trimEnds', 'Trim dead air at each end')}
+            </SettingGroup>
+          )}
+          <SettingGroup title="Sound">
+            {check('cleanAudio', 'Clean up the audio', 'Noise reduction and broadcast loudness (−14 LUFS)')}
+            <div className="flex flex-wrap items-center gap-[6px] text-[12.5px]">
+              Music
+              <select className="text-[12px] flex-1 min-w-[120px]" value={s.music ?? ''} aria-label="Background music" onChange={(e) => set({ music: e.target.value || null })}>
+                <option value="">None</option>
+                {tracks.map((t) => <option key={t.name} value={t.name}>{t.name}{t.seconds ? ` (${Math.round(t.seconds)}s)` : ''}</option>)}
+              </select>
+            </div>
+            {s.music && <div className="flex items-center gap-[5px] text-[12px] text-muted">Level {['low', 'medium', 'high'].map((l) => <button key={l} type="button" onClick={() => set({ musicLevel: l })} className={pill(s.musicLevel === l)}>{l}</button>)}</div>}
+            <UploadDrop compact accept="audio/*" label="Add a music track"
+              upload={(f, p) => api.uploadMusic(f, p)} onDone={(r) => { setTracks(r.data.tracks); set({ music: r.data.saved }); }} />
+          </SettingGroup>
+          <SettingGroup title="Picture">
+            <div className="flex items-center gap-[5px] text-[12.5px]">Frame {['16:9', '9:16', '1:1'].map((a) => <button key={a} type="button" onClick={() => set({ aspect: a })} className={pill(s.aspect === a)}>{a}</button>)}</div>
+            {self && check('reframe', 'Keep my face centred', 'Crop around your face when the frame changes shape')}
+            {self && check('look', 'Auto light and colour')}
+            {check('captions', 'Burn in captions')}
+            <div className="flex items-center gap-[5px] text-[12px] text-muted">Also export {['16:9', '9:16', '1:1'].filter((a) => a !== s.aspect).map((a) => {
+              const on = (s.alsoExport ?? []).includes(a);
+              return <button key={a} type="button" className={pill(on)} title={a === '9:16' ? 'Shorts, Reels, TikTok' : a === '1:1' ? 'Feeds' : 'YouTube'}
+                onClick={() => set({ alsoExport: on ? s.alsoExport.filter((x) => x !== a) : [...(s.alsoExport ?? []), a] })}>{on ? '✓ ' : '+ '}{a}</button>;
+            })}</div>
+          </SettingGroup>
+        </div>
       </div>
-      <p className="text-faint text-[11px] m-[4px_0_0]">Music sits under your voice and dips while you speak. Use tracks you have the rights to — they are kept in your storage's Music folder for every video.</p>
 
       {self && (
-        <ol className="list-none p-0 m-[10px_0_0] border border-solid border-line rounded-md">
-          {lines.map((l) => {
-            const t = chosen(l);
-            return (
-              <li key={l.segmentId} className="[&+&]:[border-top:1px_solid_var(--line)] p-[7px_10px]">
-                <div className="grid grid-cols-[24px_1fr_auto] gap-[8px] items-start">
-                  <code className="text-[11px] text-faint pt-[2px]">{String(l.n).padStart(2, '0')}</code>
-                  <div className="min-w-0">
-                    <button type="button" className="ghostbtn text-left text-[12.5px] leading-[1.4] p-0 text-ink line-clamp-2" onClick={() => setOpen(open === l.segmentId ? null : l.segmentId)}>{l.text}</button>
-                    {t && t.cuts.length > 0 && (
-                      <div className="flex flex-wrap gap-[4px] mt-[4px]">
-                        {t.cuts.map((c, i) => (
-                          <button key={i} type="button" className={c.on ? CHIP_ON : CHIP_OFF} title={`${secs(c.start)}–${secs(c.end)} · ${c.on ? 'cut — click to keep' : 'kept — click to cut'}`}
-                            onClick={() => toggle(t, i, !c.on)}>{KIND[c.kind]}: {c.label}</button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {t ? (
-                    <select className="text-[12px]" value={t.id} aria-label={`Take for line ${l.n}`}
-                      onChange={(e) => mutate(() => api.updateLineTake(production.id, Number(e.target.value), { chosen: true }), null, { silent: true }).then(load).catch(() => {})}>
-                      {l.takes.map((x) => <option key={x.id} value={x.id}>Take {x.version}{x.analyzed ? '' : ' ·'}</option>)}
-                    </select>
-                  ) : <span className="text-[12px] text-warn">not recorded</span>}
-                </div>
-                {open === l.segmentId && t && (
-                  <div className="p-[8px_0_2px_32px] flex flex-wrap items-center gap-[8px]">
-                    <video ref={(el) => { player.current[t.id] = el; }} className="w-[260px] rounded-md bg-ink" controls preload="metadata"
-                      src={`${t.url}#t=${t.inPoint.toFixed(2)}`} />
-                    <div className="flex flex-col gap-[6px] text-[12px]">
-                      <span className="text-muted">In {secs(t.inPoint)} · Out {secs(t.outPoint)} of {secs(t.duration ?? t.outPoint)}</span>
-                      <span className="flex gap-[6px]">
-                        <button className="text-[12px] p-[3px_9px]" onClick={() => setPoint(t, 'inPoint')}>Set in here</button>
-                        <button className="text-[12px] p-[3px_9px]" onClick={() => setPoint(t, 'outPoint')}>Set out here</button>
+        <div className="mt-[18px]">
+          <div className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold mb-[6px]">Lines · {recorded} of {lines.length} recorded</div>
+          <ol className="list-none p-0 m-0 flex flex-col gap-[6px]">
+            {lines.map((l) => {
+              const t = chosen(l);
+              const kept = t ? t.outPoint - t.inPoint - t.cuts.filter((c) => c.on).reduce((n, c) => n + (c.end - c.start), 0) : 0;
+              return (
+                <li key={l.segmentId} className="border border-solid border-line rounded-lg bg-surface p-[9px_12px]">
+                  <div className="grid grid-cols-[22px_minmax(0,1fr)_auto] gap-[10px] items-start">
+                    <code className="text-[11px] text-faint pt-[2px]">{String(l.n).padStart(2, '0')}</code>
+                    <button type="button" className="ghostbtn text-left text-[13px] leading-[1.45] p-0 text-ink" onClick={() => setOpen(open === l.segmentId ? null : l.segmentId)}>{l.text}</button>
+                    {t ? (
+                      <span className="flex items-center gap-[6px]">
+                        <span className="text-faint text-[11.5px] [font-variant-numeric:tabular-nums]">{secs(Math.max(0, kept))}</span>
+                        <select className="text-[12px]" value={t.id} aria-label={`Take for line ${l.n}`}
+                          onChange={(e) => mutate(() => api.updateLineTake(production.id, Number(e.target.value), { chosen: true }), null, { silent: true }).then(load).catch(() => {})}>
+                          {l.takes.map((x) => <option key={x.id} value={x.id}>Take {x.version}</option>)}
+                        </select>
                       </span>
-                      <span className="text-faint">Play to the spot, then set it.</span>
-                    </div>
+                    ) : <button className="text-[12px] p-[3px_9px]" onClick={() => goToStage?.('Make')}>Record it</button>}
                   </div>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      )}
-
-      <div className="flex flex-wrap items-center gap-[10px] mt-[12px]">
-        <button onClick={() => act(() => api.previewEdit(production.id))} disabled={busy}><Film size={14} /> Preview</button>
-        <button className="primary" onClick={() => act(() => api.exportEdit(production.id))} disabled={busy}><Check size={14} /> Export the finished video</button>
-        {st.job?.state === 'running' && <span className="text-warn text-[12.5px]"><RefreshCw size={12} className="inline animate-spin" /> {st.job.preview ? 'Building a preview…' : st.job.step ?? 'Exporting at full size…'}</span>}
-        {st.job?.state === 'failed' && <span className="text-danger text-[12.5px]">{st.job.error}</span>}
-        {st.job?.state === 'done' && !st.job.preview && (
-          <span className="text-ok text-[12.5px]"><Check size={13} className="inline" /> Exported "{st.job.name}" ({secs(st.job.duration ?? 0)}){st.job.extras?.length ? ` + ${st.job.extras.length} more shape${st.job.extras.length === 1 ? '' : 's'}` : ''} — marked done.
-            {' '}<button className="ghostbtn text-[12.5px] text-accent p-0 underline" onClick={() => goToStage?.('Finish')}>Publish it</button></span>
-        )}
-      </div>
-      {st.preview && (
-        <video key={st.preview.url} className="w-full max-w-[560px] mt-[10px] rounded-md bg-ink" src={st.preview.url} controls preload="metadata" />
-      )}
-      {st.job?.state === 'done' && st.job.preview && (
-        <p className="text-faint text-[11.5px] m-[6px_0_0]">Preview: {secs(st.job.duration ?? 0)}, {st.job.pieces} pieces{st.job.cutaways ? `, ${st.job.cutaways} screen cutaway${st.job.cutaways === 1 ? '' : 's'}` : ''}{st.job.captions ? `, ${st.job.captions} captions` : ''}{st.job.music ? ', music' : ''}{st.job.missing?.length ? ` — line ${st.job.missing.join(', ')} not recorded yet` : ''}.</p>
+                  {t && (
+                    <div className="pl-[32px] mt-[7px]">
+                      <TakeBar take={t} />
+                      {t.cuts.length > 0 && (
+                        <div className="flex flex-wrap gap-[4px] mt-[6px]">
+                          {t.cuts.map((c, i) => (
+                            <button key={i} type="button" className={c.on ? CHIP_ON : CHIP_OFF} title={`${secs(c.start)}–${secs(c.end)} · ${c.on ? 'cut — click to keep' : 'kept — click to cut'}`}
+                              onClick={() => toggle(t, i, !c.on)}>{c.on ? <Scissors size={11} /> : <Check size={11} />}{c.kind === 'filler' ? `“${c.label}”` : c.label}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {open === l.segmentId && t && (
+                    <div className="pl-[32px] mt-[8px] flex flex-wrap items-center gap-[10px]">
+                      <video ref={(el) => { player.current[t.id] = el; }} className="w-[280px] rounded-md bg-ink" controls preload="metadata" src={`${t.url}#t=${t.inPoint.toFixed(2)}`} />
+                      <div className="flex flex-col gap-[6px] text-[12px]">
+                        <span className="text-muted">In {secs(t.inPoint)} · Out {secs(t.outPoint)}</span>
+                        <span className="flex gap-[6px]">
+                          <button className="text-[12px] p-[3px_9px]" onClick={() => setPoint(t, 'inPoint')}>Set in here</button>
+                          <button className="text-[12px] p-[3px_9px]" onClick={() => setPoint(t, 'outPoint')}>Set out here</button>
+                        </span>
+                        <span className="text-faint">Play to the spot, then set it.</span>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
       )}
     </section>
   );
@@ -354,10 +389,13 @@ export default function EditStage({ goToStage }) {
     return (
       <div className="stagepane">
         <h2>Edit</h2>
-        <p>Finish it here, or take the kit to CapCut and upload the result in Finish — either way marks it done.</p>
+        <p>Put it together here, or take the kit to CapCut and upload the result in Finish — either way marks it done.</p>
         <FinishInApp production={production} goToStage={goToStage} />
-        {madeByOf(production) === 'self' && <AvatarFromRecording production={production} onFinished={() => goToStage?.('Finish')} />}
-        <EditorKit production={production} />
+        <details className="mt-[22px] group">
+          <summary className="cursor-pointer text-[13px] font-[560] text-ink-2 select-none">Other ways to finish{madeByOf(production) === 'self' ? ' — avatar version, editor kit for CapCut' : ' — editor kit for CapCut'}</summary>
+          {madeByOf(production) === 'self' && <AvatarFromRecording production={production} onFinished={() => goToStage?.('Finish')} />}
+          <EditorKit production={production} />
+        </details>
       </div>
     );
   }

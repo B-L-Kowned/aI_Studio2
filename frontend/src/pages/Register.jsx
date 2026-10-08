@@ -10,8 +10,8 @@ const STAGES = [
   { id: 'draft-ready', label: 'Ready to approve', tone: 'bg-warn-soft text-warn border-warn-line' },
   { id: 'draft-checks', label: 'Has checks', tone: 'bg-warn-soft text-warn border-warn-line' },
   { id: 'script', label: 'Script approved', tone: 'bg-accent-soft text-accent border-accent-line' },
-  { id: 'audio', label: 'Audio made', tone: 'bg-accent-soft text-accent border-accent-line' },
-  { id: 'audio-approved', label: 'Audio approved', tone: 'bg-ok-soft text-ok border-[#c5e3d5]' },
+  { id: 'audio', label: 'Voice made', tone: 'bg-accent-soft text-accent border-accent-line' },
+  { id: 'audio-approved', label: 'Voice approved', tone: 'bg-ok-soft text-ok border-[#c5e3d5]' },
   { id: 'final', label: 'Rendered', tone: 'bg-ok-soft text-ok border-[#c5e3d5]' },
   { id: 'done', label: 'Done', tone: 'bg-ink text-[#fff] border-ink' },
 ];
@@ -46,7 +46,7 @@ const WORKSTREAMS = ['Company', 'Outreach', 'Training', 'Wrapper', 'Editions', '
 
 // The four things that have to be true before a video exists, in order.
 const MARKS = [
-  ['script', 'Script'], ['audio', 'Audio'], ['look', 'Look'], ['video', 'Video'],
+  ['script', 'Script'], ['audio', 'Voice'], ['look', 'Look'], ['video', 'Video'],
 ];
 const MARK_TEXT = {
   done: 'done', draft: 'waiting for your approval', partial: 'started', none: 'not started', 'n/a': 'not needed',
@@ -216,6 +216,13 @@ export default function Register({ go, tabs }) {
               {s.label} <span className={stage === s.id ? 'opacity-80' : 'text-muted'}>{stageCount(s.id)}</span>
             </button>
           ))}
+          {/* An action, not a filter: only offered when there is voice to make. */}
+          {voiceable.length > 0 && !batchBusy && (
+            <button className="ml-auto text-[12.5px] p-[5px_12px]" onClick={queueVoice}
+              title="Videos shown here with an approved script whose voice is not finished — made free on this Mac">
+              <Headphones size={13} /> Make the voice for {voiceable.length === 1 ? 'this video' : `these ${voiceable.length}`}
+            </button>
+          )}
         </div>
       )}
 
@@ -259,10 +266,6 @@ export default function Register({ go, tabs }) {
             Clear filters
           </button>
         )}
-        <button className="text-[12px] p-[5px_11px]" disabled={!voiceable.length} onClick={queueVoice}
-          title="Videos shown here with an approved script whose voice is not finished">
-          <Headphones size={13} /> Make the voice for these ({voiceable.length})
-        </button>
         <span className="text-faint text-[11.5px] ml-auto">{shown.length} of {data.items.length}</span>
       </div>
 

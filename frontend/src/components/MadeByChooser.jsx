@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Check, AlertCircle } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
-import { MADE_BY, madeByOf } from '../utils/made-by.js';
+import { MADE_BY, madeByOf, madeByLabel } from '../utils/made-by.js';
 
 /**
  * How this video gets made — HeyGen avatar, filmed by you, or voice-over —
@@ -13,10 +13,12 @@ export default function MadeByChooser({ onChange }) {
   const { production, applyProduction, mutate } = useStudio();
   const [saving, setSaving] = useState(false);
   const current = madeByOf(production);
+  // Once chosen it is one line; the three options open only to change it.
+  const [open, setOpen] = useState(current === 'mixed');
 
   const choose = async (m) => {
     const todo = production.outline.filter((s) => s.participants !== m.who);
-    if (!todo.length) return;
+    if (!todo.length) { setOpen(false); return; }
     setSaving(true);
     try {
       for (const [i, s] of todo.entries()) {
@@ -24,8 +26,21 @@ export default function MadeByChooser({ onChange }) {
         await mutate(() => api.updateSection(production.id, s.id, { participants: m.who }), last ? applyProduction : null, { silent: !last });
       }
       onChange?.(m.id);
+      setOpen(false);
     } catch { /* mutate reports it */ } finally { setSaving(false); }
   };
+
+  if (!open) {
+    const m = MADE_BY.find((x) => x.id === current);
+    return (
+      <p className="flex flex-wrap items-baseline gap-x-[8px] m-0 text-[13px]" aria-label="How this video is made">
+        <span className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold">How it's made</span>
+        <b className="font-[580] text-ink">{madeByLabel(current)}</b>
+        {m && <span className="text-muted text-[12.5px]">— {m.detail}</span>}
+        <button className="ghostbtn text-[12.5px] text-accent p-0" onClick={() => setOpen(true)}>change</button>
+      </p>
+    );
+  }
 
   return (
     <section aria-label="How this video is made">
