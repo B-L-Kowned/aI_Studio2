@@ -103,6 +103,66 @@ router.post(
   })
 );
 
+// One cache for every line heard, keyed by voice + speed + words: Hear, the
+// full read and the warm-up share it, so a line is made once, not per click.
+const cacheKey = (voice, speed, text) => createHash('sha1').update(`${voice.id}|${speed ?? ''}|${text}`).digest('hex').slice(0, 16);
+const cacheRel = (key) => `samples/listen/cache/${key}.wav`;
+
+/** The quickest audio for a line: its approved take, else a cached read, else nothing yet. */
+function readyAudio(db, id, line, voice, speed) {
+  const take = db.prepare(
+    `SELECT t.* FROM segments s JOIN takes t ON t.segment_id = s.id
+      WHERE s.production_id = ? AND s.text = ? AND t.local_path IS NOT NULL AND t.stale = 0 AND t.text = s.text
+      ORDER BY t.heard DESC, t.version DESC LIMIT 1`
+  ).get(id, line.text);
+  if (take && localFile(take.local_path)) return { url: `/api/takes/${take.id}/audio`, duration: take.duration, from: 'take' };
+  const key = cacheKey(voice, speed, line.text);
+  if (localFile(cacheRel(key))) return { url: `/api/productions/${id}/script/${line.script_version_id}/listen/${line.id}?k=${key}`, duration: null, from: 'cache' };
+  return null;
+}
+
+// Lines being made ahead of time, so Hear is instant by the time you click it.
+// One worker, because the voice service makes one line at a time (about 20-35 s
+// each on this Mac). A line you click jumps the queue; it is never made twice.
+const warmQueue = [];          // keys waiting, in order
+const pending = new Map();     // key -> { voice, speed, text, promise, resolve, reject }
+let warming = false;
+
+function ensureCached(voice, speed, text, { front = false } = {}) {
+  const key = cacheKey(voice, speed, text);
+  if (localFile(cacheRel(key))) return Promise.resolve(key);
+  let job = pending.get(key);
+  if (!job) {
+    job = { voice, speed, text };
+    job.promise = new Promise((res, rej) => { job.resolve = res; job.reject = rej; });
+    job.promise.catch(() => {}); // a warm-up nobody waits on must not crash the process
+    pending.set(key, job);
+    warmQueue.push(key);
+  }
+  if (front) {
+    const i = warmQueue.indexOf(key);
+    if (i > 0) { warmQueue.splice(i, 1); warmQueue.unshift(key); }
+  }
+  warmNext();
+  return job.promise;
+}
+
+async function warmNext() {
+  if (warming) return;
+  warming = true;
+  try {
+    while (warmQueue.length) {
+      const key = warmQueue.shift();
+      const job = pending.get(key);
+      if (!job) continue;
+      try {
+        if (!localFile(cacheRel(key))) await speakLocal(job.voice.id, job.text, cacheRel(key), { speed: job.speed });
+        job.resolve(key);
+      } catch (err) { job.reject(err); } finally { pending.delete(key); }
+    }
+  } finally { warming = false; }
+}
+
 /** Hear one line of a draft in the local voice, at this video's speed. Free; nothing is approved. */
 router.post(
   '/:id/script/:versionId/listen/:lineId',
@@ -118,11 +178,12 @@ router.post(
     const voice = narrationVoice();
     if (!voice) return fail(res, 409, 'NO_VOICE', 'Create a local voice in Settings → Your voice first.');
     const speed = db.prepare('SELECT voice_speed FROM productions WHERE id = ?').get(id)?.voice_speed ?? undefined;
-    const rel = `samples/listen/${line.script_version_id}-${line.id}.wav`;
+    const ready = readyAudio(db, id, line, voice, speed);
+    if (ready) return ok(res, ready, 'Ready — nothing spent');
     try {
-      const r = await speakLocal(voice.id, line.text, rel, { speed });
-      return ok(res, { url: `/api/productions/${id}/script/${line.script_version_id}/listen/${line.id}?t=${Date.now()}`, duration: r.duration },
-        `${r.duration?.toFixed?.(1) ?? '?'}s at ${r.speed}× — nothing spent`);
+      const key = await ensureCached(voice, speed, line.text, { front: true });
+      return ok(res, { url: `/api/productions/${id}/script/${line.script_version_id}/listen/${line.id}?k=${key}`, duration: null, from: 'made' },
+        'Made in your voice — nothing spent');
     } catch (err) {
       return fail(res, err.code === 'VOICE_OFFLINE' ? 503 : 502, err.code ?? 'VOICE_FAILED', err.message);
     }
@@ -132,10 +193,36 @@ router.post(
 router.get(
   '/:id/script/:versionId/listen/:lineId',
   route(async (req, res) => {
-    const file = localFile(`samples/listen/${Number(req.params.versionId)}-${Number(req.params.lineId)}.wav`);
+    const key = String(req.query.k ?? '');
+    const file = /^[0-9a-f]{16}$/.test(key)
+      ? localFile(cacheRel(key))
+      : localFile(`samples/listen/${Number(req.params.versionId)}-${Number(req.params.lineId)}.wav`);
     if (!file) return fail(res, 404, 'NOT_FOUND', 'Not generated yet');
     res.type('audio/wav');
     return createReadStream(file).pipe(res);
+  })
+);
+
+/** Make the script's lines ahead of time, in the background, so Hear plays at once. */
+router.post(
+  '/:id/script/:versionId/warm',
+  route(async (req, res) => {
+    const db = getDb();
+    const id = Number(req.params.id);
+    const voice = narrationVoice();
+    if (!voice) return ok(res, { queued: 0 });
+    const speed = db.prepare('SELECT voice_speed FROM productions WHERE id = ?').get(id)?.voice_speed ?? undefined;
+    const lines = db.prepare(
+      `SELECT ss.* FROM script_segments ss JOIN script_versions v ON v.id = ss.script_version_id
+        WHERE v.id = ? AND v.production_id = ? ORDER BY ss.position`
+    ).all(Number(req.params.versionId), id).filter((l) => l.text.trim() && !/\[CONFIRM/i.test(l.text));
+    let queued = 0;
+    for (const l of lines) {
+      if (readyAudio(db, id, l, voice, speed)) continue;
+      ensureCached(voice, speed, l.text);
+      queued++;
+    }
+    return ok(res, { queued });
   })
 );
 
@@ -150,8 +237,7 @@ async function buildFullRead(job, voice, speed, lines) {
   mkdirSync(dir, { recursive: true });
   const parts = [];
   for (const l of lines) {
-    const key = createHash('sha1').update(`${voice.id}|${speed ?? ''}|${l.text}`).digest('hex').slice(0, 16);
-    const rel = `samples/listen/cache/${key}.wav`;
+    const rel = cacheRel(cacheKey(voice, speed, l.text));
     if (!localFile(rel)) await speakLocal(voice.id, l.text, rel, { speed });
     parts.push(join(voicesDir(), rel));
     job.done++;

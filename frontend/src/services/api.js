@@ -252,6 +252,7 @@ export const api = {
   discardLineTake: (id, takeId) => del(`/productions/${id}/line-takes/${takeId}`),
   splitRecording: (id, file, onProgress) => uploadFile(`/productions/${id}/line-takes/split`, file, onProgress),
   listenLine: (id, versionId, lineId) => post(`/productions/${id}/script/${versionId}/listen/${lineId}`),
+  warmScript: (id, versionId) => post(`/productions/${id}/script/${versionId}/warm`),
   saveAppearanceDefault: (scope, body) => request(`/appearance-defaults/${encodeURIComponent(scope)}`, { method: 'PUT', body: JSON.stringify(body) }),
   applyAppearanceDefault: (scope) => post(`/appearance-defaults/${encodeURIComponent(scope)}/apply`),
   productionLock: (id) => get(`/productions/${id}/lock`),

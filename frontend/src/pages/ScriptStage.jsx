@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { Sparkles, Check, X, Lock, AlertCircle, FileText, Play, Minus, Plus, ChevronDown, Headphones } from 'lucide-react';
+import { Sparkles, Check, X, Lock, AlertCircle, FileText, Play, Minus, Plus, ChevronDown, Headphones, RefreshCw } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
@@ -61,6 +61,13 @@ export default function ScriptStage({ goToStage }) {
   useEffect(() => { load().catch(setLoadError); }, [load]);
 
   const latest = state?.latest;
+
+  // Make the lines ahead of time in the background, so Hear plays at once.
+  // Re-run when the words change, since a changed line is a new read.
+  const wordsKey = (latest?.segments ?? []).map((x) => x.text).join('\n');
+  useEffect(() => {
+    if (latest?.id) api.warmScript(production.id, latest.id).catch(() => {});
+  }, [production.id, latest?.id, wordsKey]);
 
   useEffect(() => {
     if (!latest?.id) return undefined;
@@ -399,7 +406,9 @@ export default function ScriptStage({ goToStage }) {
                         <span>{published ? `${l.words} words` : `${clock(secsAt(l.words))} · ${l.words}w`}</span>
                         <button className="ghostbtn text-[11px] p-[2px_6px]" disabled={l.checks > 0 || listening?.busy}
                           title={l.checks ? 'Resolve the check first' : 'Hear it in your voice — free'} onClick={() => listen(l)}>
-                          <Play size={11} /> {listening?.id === l.id && listening.busy ? '…' : 'Hear'}
+                          {listening?.id === l.id && listening.busy
+                            ? <span title="Your voice is made on this Mac — about 20-40 seconds for a new line; instant once made"><RefreshCw size={11} className="animate-spin inline" /> Making… ~30s</span>
+                            : <><Play size={11} /> Hear</>}
                         </button>
                       </div>
                     </div>
