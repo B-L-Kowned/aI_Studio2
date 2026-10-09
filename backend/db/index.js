@@ -88,6 +88,10 @@ const ADDED_COLUMNS = [
   // A real deadline. The calendar stored a day-of-MONTH integer, which cannot
   // express "next Tuesday" or be overdue, so nothing could be scheduled.
   ['productions', 'due_at', 'TEXT'],
+  // The production order: one numbered sequence shared by both programs, so a
+  // bit and a register video can sit side by side in "what gets made next".
+  // Null means not in the order yet.
+  ['productions', 'schedule_order', 'INTEGER'],
   // A campaign is a TRACK within a company: promotion, investor, GTM. The
   // purpose is a small enum because the point is comparing the same track
   // across fifty companies; the audience is free text because no enum survives

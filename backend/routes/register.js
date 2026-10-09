@@ -23,14 +23,17 @@ const STAGES = ['needs-script', 'draft-checks', 'draft-ready', 'script', 'audio'
  * here (script accepted, lines heard, renders finished). Where the two
  * disagree, both are shown; the register's word is never silently replaced.
  */
-export function buildRegister() {
+export function buildRegister({ program = 'content' } = {}) {
   const db = getDb();
+  const comedy = program === 'comedy';
+  // Content: the register of IDed business videos. Comedy: every bit, by title.
   const rows = db.prepare(
-    `SELECT p.id, p.title, p.target_runtime, c.name AS track, co.name AS company, co.group_name AS grp
+    `SELECT p.id, p.title, p.target_runtime, p.mode, p.schedule_order, c.name AS track, co.name AS company, co.group_name AS grp
        FROM productions p
        LEFT JOIN campaigns c ON c.id = p.campaign_id
-       LEFT JOIN companies co ON co.id = c.company_id`
-  ).all().filter((r) => REGISTER_ID.test(r.title));
+       LEFT JOIN companies co ON co.id = c.company_id
+      WHERE p.archived_at IS NULL`
+  ).all().filter((r) => (comedy ? r.mode === 'comedy' || r.mode === 'both' : REGISTER_ID.test(r.title)));
 
   const briefOf = db.prepare('SELECT label, value FROM brief_fields WHERE production_id = ?');
   const accepted = db.prepare(
@@ -59,7 +62,7 @@ export function buildRegister() {
   );
 
   const items = rows.map((r) => {
-    const [, videoId, name] = REGISTER_ID.exec(r.title);
+    const [, videoId, name] = REGISTER_ID.exec(r.title) ?? [null, null, r.title];
     const b = Object.fromEntries(briefOf.all(r.id).map((f) => [f.label, f.value]));
     const lines = segs.all(r.id);
     const heard = lines.filter((l) => l.heard).length;
@@ -79,7 +82,7 @@ export function buildRegister() {
       : proposed.get(r.id).n ? (checks ? 'draft-checks' : 'draft-ready')
       : 'needs-script';
     return {
-      id: r.id, videoId, name, workstream: streamOf(videoId),
+      id: r.id, videoId, name, workstream: videoId ? streamOf(videoId) : null, order: r.schedule_order ?? null,
       company: r.company, group: r.grp, track: r.track,
       priority: b.Priority || null, format, voiceOnly, selfRecorded, checks,
       madeBy: made,
@@ -109,6 +112,7 @@ export function buildRegister() {
 
   // Register order first (V, O, T, L, A, I), then the pack's GTM and SRC rows.
   const order = (v) => {
+    if (!v) return '9';
     const m = /^([A-Z])(\d+)(?:-(\d+))?$/.exec(v);
     if (!m) return `9${v}`;
     return `${'VOTLAI'.indexOf(m[1])}${m[2].padStart(3, '0')}${(m[3] ?? '0').padStart(2, '0')}`;
@@ -126,7 +130,7 @@ export function buildRegister() {
   };
 }
 
-router.get('/register', route(async (_req, res) => ok(res, buildRegister())));
+router.get('/register', route(async (req, res) => ok(res, buildRegister({ program: req.query.program }))));
 
 /**
  * How many videos are made, in one go: every outline section of each takes the

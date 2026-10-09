@@ -333,9 +333,11 @@ export const api = {
     post(`/productions/${id}/publications/${encodeURIComponent(platform)}`, { mode }),
 
   // Your own voice, synthesised on this machine (voice/server.py).
-  register: () => get('/register'),
+  register: (program) => get(`/register${program ? `?program=${program}` : ''}`),
   review: (sort = 'release') => get(`/review?sort=${sort}`),
-  manager: () => get('/manager'),
+  // the shared production order: `at` is a 1-based slot, 'end', or null to take out
+  setScheduleOrder: (ids, at = 'end') => post('/schedule/order', { ids, at }),
+  manager: (program) => get(`/manager${program ? `?program=${program}` : ''}`),
   setDeadlines: (body) => request('/manager/deadlines', { method: 'PUT', body: JSON.stringify(body) }),
   reopenScript: (productionId, versionId) => post('/review/reopen', { productionId, versionId }),
   checkToNote: (productionId, lineId) => post('/review/note', { productionId, lineId }),

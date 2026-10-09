@@ -39,6 +39,7 @@ function nowLine(i) {
 const STAGE_RANK = Object.fromEntries(['needs-script', 'draft-checks', 'draft-ready', 'script', 'audio', 'audio-approved', 'final', 'done'].map((s, i) => [s, i]));
 const SORTS = [
   ['release', 'Release order'],
+  ['order', 'Production order'],
   ['priority', 'Priority'],
   ['stage', 'Stage — closest to done'],
   ['runtime', 'Shortest runtime'],
@@ -159,7 +160,9 @@ export default function Register({ go, tabs }) {
   const [setQ, setStage, setPriority, setFormat, setStream, setCompany, setNeed, setSort] =
     ['q', 'stage', 'pri', 'fmt', 'ws', 'co', 'need', 'sort'].map(set);
 
-  useEffect(() => { api.register().then(setData).catch(() => setData({ items: [], totals: null })); }, []);
+  const { scopeMode: registerScope } = useStudio();
+  const program = registerScope === 'comedy' ? 'comedy' : 'content';
+  useEffect(() => { setPicked(new Set()); api.register(program).then(setData).catch(() => setData({ items: [], totals: null })); }, [program]);
 
   // The overnight voice queue: checked every few seconds while it has work.
   const loadBatch = useCallback(() => api.voiceBatch().then(setBatch).catch(() => {}), []);
@@ -226,6 +229,7 @@ export default function Register({ go, tabs }) {
       priority: (a, b) => (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9),
       stage: (a, b) => STAGE_RANK[b.stage] - STAGE_RANK[a.stage],
       runtime: (a, b) => (a.runtimeSeconds || Infinity) - (b.runtimeSeconds || Infinity),
+      order: (a, b) => (a.order ?? Infinity) - (b.order ?? Infinity),
     }[sort];
     return by ? [...rows].sort((a, b) => by(a, b) || at.get(a.id) - at.get(b.id)) : rows;
   }, [base, stage, sort]);
@@ -360,7 +364,7 @@ export default function Register({ go, tabs }) {
         const recordable = sel.filter((i) => i.madeBy === 'self' && !['needs-script', 'draft-ready', 'draft-checks', 'done'].includes(i.stage));
         const setHow = async (madeBy) => {
           await mutate(() => api.setMadeBy([...picked], madeBy), null).catch(() => {});
-          api.register().then(setData).catch(() => {});
+          api.register(program).then(setData).catch(() => {});
         };
         const recordThese = async () => {
           const ids = recordable.map((i) => i.id);
@@ -370,6 +374,11 @@ export default function Register({ go, tabs }) {
           go('Create');
         };
         const HOW = [['self', 'Recorded by me'], ['heygen', 'HeyGen avatar'], ['voice', 'Voice-over']];
+        const place = async (at) => {
+          await mutate(() => api.setScheduleOrder([...picked], at), null).catch(() => {});
+          api.register(program).then(setData).catch(() => {});
+        };
+        const ordered = sel.filter((i) => i.order != null).length;
         return (
           <div className="sticky top-[var(--appbar-h,53px)] z-[6] flex flex-wrap items-center gap-[8px_12px] mt-[10px] p-[8px_14px] rounded-lg bg-ink text-white text-[12.5px] [box-shadow:var(--shadow-pop)]">
             <b className="font-[600]">{picked.size} selected</b>
@@ -378,6 +387,16 @@ export default function Register({ go, tabs }) {
               <button key={v} type="button" onClick={() => setHow(v)}
                 className="text-[12px] p-[3px_10px] rounded-full !bg-transparent !text-white border border-solid border-[rgba(255,255,255,.35)] hover:!border-white">{l}</button>
             ))}
+            <span className="w-[1px] h-[18px] bg-[rgba(255,255,255,.25)]" aria-hidden="true" />
+            <span className="opacity-70" title="One order shared by Content and Comedy — it leads Work on next on Today">Order:</span>
+            <button type="button" onClick={() => place(1)}
+              className="text-[12px] p-[3px_10px] rounded-full !bg-transparent !text-white border border-solid border-[rgba(255,255,255,.35)] hover:!border-white">Put first</button>
+            <button type="button" onClick={() => place('end')}
+              className="text-[12px] p-[3px_10px] rounded-full !bg-transparent !text-white border border-solid border-[rgba(255,255,255,.35)] hover:!border-white">Add to order</button>
+            {ordered > 0 && (
+              <button type="button" onClick={() => place(null)}
+                className="text-[12px] p-[3px_10px] rounded-full !bg-transparent !text-white border border-solid border-[rgba(255,255,255,.35)] hover:!border-white">Take out</button>
+            )}
             <span className="w-[1px] h-[18px] bg-[rgba(255,255,255,.25)]" aria-hidden="true" />
             <button type="button" disabled={!recordable.length} onClick={recordThese}
               title={recordable.length ? 'Record them one after another, line by line, with the teleprompter' : 'Recordable once they are set to Recorded by me and their scripts are approved'}
@@ -425,7 +444,8 @@ export default function Register({ go, tabs }) {
               <input type="checkbox" className="m-0" aria-label={`Select ${i.videoId}`} checked={picked.has(i.id)}
                 onChange={() => setPicked((cur) => { const n = new Set(cur); if (n.has(i.id)) n.delete(i.id); else n.add(i.id); return n; })} />
               <code className="text-[11.5px] font-[600] text-ink-2 break-all" title={i.inRegister ? '' : 'From the script pack — not a register row'}>
-                {i.videoId}{!i.inRegister && <sup className="text-faint font-normal"> pack</sup>}
+                {i.videoId ?? 'Bit'}{!i.inRegister && <sup className="text-faint font-normal"> pack</sup>}
+                {i.order != null && <span className="block text-[10.5px] font-semibold text-accent [font-variant-numeric:tabular-nums]" title="Place in your production order">#{i.order}</span>}
               </code>
               <span className="min-w-0">
                 <b className="flex items-center gap-[6px] text-[13px] font-[560] min-w-0">

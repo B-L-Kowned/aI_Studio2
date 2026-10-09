@@ -379,6 +379,33 @@ export function schedule({
   };
 }
 
+/**
+ * Place productions in the shared production order. `at` is a 1-based slot
+ * ('end' or omitted appends, null takes them out); the rest close up around
+ * them so the order always reads 1, 2, 3 with no gaps.
+ */
+export function placeInOrder(ids, at = 'end') {
+  const db = getDb();
+  const want = [...new Set((ids ?? []).map(Number).filter(Number.isInteger))];
+  if (!want.length) throw Object.assign(new Error('Choose at least one production.'), { code: 'NO_IDS' });
+  const found = db.prepare(`SELECT id FROM productions WHERE id IN (${want.map(() => '?').join(',')})`).all(...want).map((r) => r.id);
+  if (found.length !== want.length) throw Object.assign(new Error('Production not found'), { code: 'NOT_FOUND' });
+  const rest = db.prepare('SELECT id FROM productions WHERE schedule_order IS NOT NULL ORDER BY schedule_order, id').all()
+    .map((r) => r.id).filter((id) => !want.includes(id));
+  let seq = rest;
+  if (at !== null) {
+    const slot = at === 'end' || at === undefined ? rest.length : Math.min(Math.max(Number(at) - 1, 0), rest.length);
+    if (!Number.isFinite(slot)) throw Object.assign(new Error('Position must be a number.'), { code: 'BAD_POSITION' });
+    seq = [...rest.slice(0, slot), ...want, ...rest.slice(slot)];
+  }
+  const set = db.prepare('UPDATE productions SET schedule_order = ? WHERE id = ?');
+  db.transaction(() => {
+    if (at === null) for (const id of want) set.run(null, id);
+    seq.forEach((id, n) => set.run(n + 1, id));
+  })();
+  return { order: seq };
+}
+
 export function setDueDate(productionId, dueAt) {
   const db = getDb();
   if (dueAt !== null && days(dueAt) === null) {
