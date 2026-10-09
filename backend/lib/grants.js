@@ -92,7 +92,11 @@ function shape(r) {
     // What this side may do with it.
     canExtend: r.direction === 'out' && (r.status === 'active' || r.status === 'ended'),
     canEnd: r.status === 'active' || r.status === 'pending',
-    authentech: r.authentech_share_id ? { shareId: r.authentech_share_id, verified: !!r.verified, acceptedAt: r.accepted_at ?? null } : null,
+    // Withdrawing a confirmed share happens on AuthenTech's own page (D11).
+    authentech: r.authentech_share_id ? {
+      shareId: r.authentech_share_id, verified: !!r.verified, acceptedAt: r.accepted_at ?? null,
+      withdrawUrl: `https://theauthentech.app/clone?share=${encodeURIComponent(r.authentech_share_id)}`,
+    } : null,
     createdAt: r.created_at,
   };
 }

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { getDb } from '../db/index.js';
 import { listGrants, createGrant, extendGrant, endGrant, grantById } from '../lib/grants.js';
 import { syncConsent, finishInvite } from '../lib/consent.js';
+import { isSignedIn, authentechBase } from '../lib/authentech.js';
+import { receivedShares } from '../lib/authentech-shares.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -11,7 +13,22 @@ const failWith = (res, err) => fail(res, STATUS[err.code] ?? 400, err.code ?? 'B
 /** Everything shared: your twins lent out, and others' lent to you. */
 router.get('/grants', route(async (_req, res) => {
   try { await syncConsent(); } catch { /* the consent page is unreachable: list what is known */ }
-  return ok(res, listGrants());
+  const list = listGrants();
+  // Twins sent to you through AuthenTech that you have not opened yet: each
+  // with where it stands and the link to accept it there.
+  let offers = [];
+  if (await isSignedIn().catch(() => false)) {
+    try {
+      const known = new Set(list.in.map((g) => g.authentech?.shareId).filter(Boolean));
+      offers = (await receivedShares()).filter((s) => !known.has(s.share_id)).map((s) => ({
+        shareId: s.share_id, from: s.from?.name ?? s.from ?? 'Someone', status: s.status,
+        scopes: s.scopes ?? [], mode: s.mode ?? 'source', label: s.label ?? null,
+        expiresAt: s.expires_at ?? null, acceptedAt: s.accepted_at ?? null,
+        acceptUrl: `${authentechBase()}/api/oauth/share/accept?share=${encodeURIComponent(s.share_id)}`,
+      }));
+    } catch { /* AuthenTech unreachable: show what is here */ }
+  }
+  return ok(res, { ...list, offers });
 }));
 
 /** Lend one of your personas to someone, for a while. */

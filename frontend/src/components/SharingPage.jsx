@@ -37,11 +37,17 @@ function Row({ g, people, onChanged }) {
       title: mine ? `End ${g.counterpart}'s access now?` : `Finished with ${g.counterpart}'s likeness?`,
       confirmLabel: mine ? 'End now' : 'I’m finished', tone: 'warn',
       body: mine
-        ? `${g.counterpart} can no longer make anything new with ${g.presenter?.name ?? 'your twin'}. Videos already made stay as they are; a copy they downloaded cannot be recalled.`
+        ? `${g.counterpart} can no longer make anything new with ${g.presenter?.name ?? 'your twin'}. Videos already made stay as they are; a copy they downloaded cannot be recalled.${g.authentech ? ' AuthenTech opens next — press Withdraw there so their app hears it ended too.' : ''}`
         : `It ends now, before ${g.endsAt ? day(g.endsAt) : 'its end'}. ${g.counterpart} sees it has ended, and nothing new can be made with their likeness here.`,
     });
     if (!ok) return;
+    // Opened before the await, so the browser treats it as the click's own window.
+    // ('noopener' would make window.open return null even when it worked.)
+    const withdraw = mine && g.authentech?.withdrawUrl ? window.open(g.authentech.withdrawUrl, '_blank') : null;
+    if (withdraw) withdraw.opener = null;
     await mutate(() => api.endGrant(g.id), null).catch(() => {});
+    // A blocked pop-up still gets the person there: a link they can press.
+    if (mine && g.authentech && !withdraw) await dialog.notice({ title: 'Withdraw it on AuthenTech too', body: `Your browser blocked the new tab. Open ${g.authentech.withdrawUrl} and press Withdraw.` });
     onChanged();
   };
   const extend = async (days) => { await mutate(() => api.extendGrant(g.id, days), null).catch(() => {}); onChanged(); };
@@ -134,6 +140,29 @@ export default function SharingPage() {
         <p className="m-[0_0_12px] p-[9px_12px] rounded-md bg-warn-soft text-warn text-[12.5px]">
           {data.endingSoon.map((g) => `${g.direction === 'out' ? `${g.counterpart}'s access to ${g.presenter?.name ?? 'your twin'}` : `Your access to ${g.counterpart}`} ends ${g.daysLeft === 0 ? 'today' : `in ${g.daysLeft} day${g.daysLeft === 1 ? '' : 's'}`}`).join(' · ')}
         </p>
+      )}
+      {data.offers?.length > 0 && (
+        <Section title="Sent to you on AuthenTech" meta={`${data.offers.length} waiting`}>
+          <div className="border border-solid border-line rounded-lg bg-surface overflow-clip">
+            {data.offers.map((o) => (
+              <div key={o.shareId} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-[12px] items-center p-[10px_14px] [&+&]:[border-top:1px_solid_var(--line)]">
+                <span className="min-w-0">
+                  <b className="block text-[13.5px] font-[580] truncate">{o.label ?? `${o.from}'s twin`}</b>
+                  <span className="block text-[12px] text-muted">From {o.from} · {o.scopes.map((x) => PART[x] ?? x).join(' · ')}{o.expiresAt ? ` · until ${day(o.expiresAt)}` : ''}</span>
+                </span>
+                <span className="text-[12px] text-ink-2">
+                  {o.status === 'offered' ? 'Waiting for you to accept'
+                    : o.status === 'active' ? 'Accepted — open the twin package they send you'
+                    : o.status === 'revoked' ? 'Withdrawn' : o.status === 'expired' ? 'Ended' : o.status}
+                </span>
+                <span className="flex gap-[6px]">
+                  {o.status === 'offered' && <a className="inline-flex items-center gap-[5px] text-[12.5px] p-[5px_11px] rounded-md bg-ink text-white no-underline" href={o.acceptUrl} target="_blank" rel="noreferrer">Accept on AuthenTech</a>}
+                  {o.status === 'active' && <button className="text-[12.5px] p-[4px_11px]" onClick={() => setDlg('import')}><Upload size={12} /> Open their package</button>}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Section>
       )}
       <List title="Shared with you" meta={`${count(data.in)} active`} rows={data.in} people={people} onChanged={load}
         empty="No one has shared their likeness with you yet."
