@@ -141,9 +141,10 @@ export async function pollEvents() {
   let handled = 0;
   for (let page = 0; page < 20; page++) {
     const r = await authFetch('GET', `${PATHS.events}${cursor ? `?after=${encodeURIComponent(cursor)}` : ''}`);
-    const events = r?.events ?? r?.items ?? [];
+    // { events: [{ seq, type, subject, data: { share_id }, created_at }], next_cursor }
+    const events = r?.events ?? [];
     for (const e of events) {
-      const id = e.share_id ?? e.data?.share_id;
+      const id = e.data?.share_id;
       if (!id) continue;
       if (e.type === 'twin_share.revoked') {
         db.prepare("UPDATE grants SET status = 'withdrawn', ended_at = datetime('now'), ended_by = CASE direction WHEN 'out' THEN 'borrower' ELSE 'owner' END WHERE authentech_share_id = ? AND status IN ('active','pending')").run(id);
@@ -151,8 +152,8 @@ export async function pollEvents() {
       if (e.type === 'twin_share.accepted') db.prepare('UPDATE grants SET accepted_at = datetime(\'now\') WHERE authentech_share_id = ?').run(id);
       handled++;
     }
-    const next = r?.next_cursor ?? r?.cursor ?? (events.length ? events[events.length - 1].id : null);
-    if (!next || next === cursor || !events.length) break;
+    const next = r?.next_cursor;
+    if (next == null || String(next) === String(cursor) || !events.length) { if (next != null) cursor = String(next); break; }
     cursor = String(next);
   }
   db.prepare('UPDATE workspace SET authentech_cursor = ? WHERE id = 1').run(cursor);

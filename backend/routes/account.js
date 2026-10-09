@@ -10,7 +10,9 @@ router.get('/account', route(async (_req, res) => ok(res, await accountState()))
 /** Where to send the browser. It comes back to /account/callback on this machine. */
 router.post('/account/sign-in', route(async (req, res) => {
   try {
-    const redirectUri = `${req.protocol}://${req.get('host')}/api/account/callback`;
+    // Registered exactly as http://127.0.0.1/api/account/callback; loopback
+    // matching ignores the port, never the host or path (RFC 8252).
+    const redirectUri = `http://127.0.0.1:${req.socket.localPort}/api/account/callback`;
     return ok(res, { url: startSignIn({ redirectUri, createAccount: req.body?.createAccount === true }) });
   } catch (err) { return fail(res, err.code === 'NOT_CONFIGURED' ? 503 : 400, err.code ?? 'BAD_REQUEST', err.message); }
 }));
@@ -36,7 +38,7 @@ router.get('/account/callback', route(async (req, res) => {
 /** Confirm one of your shares on AuthenTech: the page to open, which comes back here. */
 router.post('/account/shares/:grantId/start', route(async (req, res) => {
   try {
-    const redirectUri = `${req.protocol}://${req.get('host')}/api/account/share-callback`;
+    const redirectUri = `http://127.0.0.1:${req.socket.localPort}/api/account/share-callback`;
     return ok(res, { url: await startShare(Number(req.params.grantId), redirectUri) });
   } catch (err) { return fail(res, { NOT_SIGNED_IN: 401, REVOKED: 401, NOT_YOURS: 403 }[err.code] ?? 400, err.code ?? 'ERROR', err.message); }
 }));
