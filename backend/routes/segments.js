@@ -11,7 +11,7 @@ import { renderViaKey } from '../lib/providers/heygen-key-render.js';
 import { chooseRenderPath } from '../lib/providers/heygen-route.js';
 import { ok, fail, route } from '../utils/respond.js';
 import { readThrough } from '../lib/readthrough.js';
-import { costOf, budgetRefusal } from '../lib/budget.js';
+import { costOf, budgetRefusal, budgetApplies } from '../lib/budget.js';
 import { usable } from '../lib/grants.js';
 import { createReadStream, existsSync } from 'node:fs';
 
@@ -183,8 +183,8 @@ router.post(
         'This render is charged to your HeyGen plan. Confirm to continue.');
     }
 
-    const lineCost = path.free ? 0 : costOf(Math.max(1, seg.text.split(/\s+/).length) / 140);
-    const overBudget = path.free ? null : budgetRefusal(lineCost);
+    const lineCost = budgetApplies(path) ? costOf(Math.max(1, seg.text.split(/\s+/).length) / 140) : 0;
+    const overBudget = budgetApplies(path) ? budgetRefusal(lineCost) : null;
     if (overBudget) return fail(res, 402, overBudget.code, overBudget.message);
 
     const version =

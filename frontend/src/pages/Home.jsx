@@ -110,7 +110,9 @@ export default function Home({ go }) {
   const renderAll = async () => {
     const n = Q.render.count;
     if (n === 1) { openAt(Q.render.first, 'Make'); return; }
-    const budget = await api.budget().catch(() => null);
+    // The dollar limit covers pay-as-you-go (API key) renders; a plan spends its own credits.
+    const pocket = (await api.heygenStatus().catch(() => null))?.pocket;
+    const budget = pocket === 'key' ? await api.budget().catch(() => null) : null;
     if (budget && !budget.set) {
       if (await dialog.confirm({ title: 'Choose a monthly HeyGen limit first', confirmLabel: 'Choose a limit',
         body: 'Renders are charged to your own HeyGen account. Set how much a month the studio may spend there, and a batch can never run past it.' })) {

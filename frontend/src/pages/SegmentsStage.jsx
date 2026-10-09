@@ -325,7 +325,7 @@ export default function SegmentsStage({ optional = false, goToStage }) {
       </div>
 
       {confirm?.kind === 'all' && (
-        <PaidConfirm
+        <PaidConfirm path={path}
           title={`Audition ${pendingAudition} line${pendingAudition === 1 ? '' : 's'} on your HeyGen plan?`}
           detail="Each line is real speech in the voice that will ship, and each one uses credits."
           confirmLabel="Yes — audition and charge my plan"

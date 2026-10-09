@@ -31,7 +31,8 @@ const POCKET_CLASS = {
 const CONN_P = 'm-[6px_0_0] text-[12.5px] leading-[1.55]';
 
 export default function HeyGen({ embedded }) {
-  const { mutate, notify } = useStudio();
+  const { mutate, notify, workspace, reload: reloadWorkspace } = useStudio();
+  const [reading, setReading] = useState(false);
   const [status, setStatus] = useState(null);
   const [videos, setVideos] = useState(null);
   const [assets, setAssets] = useState([]);
@@ -96,10 +97,38 @@ export default function HeyGen({ embedded }) {
         </span>
       </div>
 
-      {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
+      {/* Signed in, but the studio is still set not to contact HeyGen: one click to read the account. */}
+      {connected && workspace?.providerMode?.mode === 'fixtures' ? (
+        <div className="flex flex-wrap items-center gap-[10px] m-[-6px_0_16px] p-[10px_14px] rounded-lg border border-solid border-line bg-surface">
+          <span className="flex-1 min-w-[260px] text-[12.5px] text-ink-2">
+            <b className="font-[600]">One more step: let the studio read your account.</b>{' '}
+            <span className="text-muted">Loads your videos, looks, voices and credits. Reading is free; nothing renders until you choose to.</span>
+          </span>
+          <button className="primary" disabled={reading} onClick={async () => {
+            setReading(true);
+            try {
+              await mutate(() => api.setProviderMode('live_read', false), null);
+              await reloadWorkspace?.();
+              await mutate(() => api.syncProvider('heygen'), null, { silent: true }).catch(() => {});
+              setErr(null);
+              await load();
+            } catch { /* reported */ } finally { setReading(false); }
+          }}>{reading ? 'Reading…' : 'Read my account'}</button>
+        </div>
+      ) : err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
 
       {/* Your HeyGen account, your money: the studio spends only up to a limit you choose. */}
-      {budget && (
+      {/* Signed in to a plan: renders spend its credits, so the plan is what to show. */}
+      {connected && status.pocket !== 'key' && (
+        <Section title="Your plan" meta={typeof status.plan === 'string' ? status.plan : (status.plan?.name ?? status.plan?.label ?? 'connected by sign-in')}>
+          <p className="m-0 text-[12.5px] text-ink-2 leading-[1.55]">
+            Renders use your plan’s credits{status.credits != null ? <> — <b className="font-[600]">{status.credits} left</b></> : ''}. HeyGen stops when they run out, so nothing here can overspend.
+            {' '}<span className="text-muted">A plan has no free test render; a free, watermarked test needs a pay-as-you-go API key (Settings → Connections), and a monthly dollar limit applies only to that.</span>
+          </p>
+        </Section>
+      )}
+
+      {budget && (!connected || status.pocket === 'key') && (
         <Section title="Monthly limit" meta={budget.set ? 'renders stop before passing it' : 'choose one before your first paid render'}>
           {!connected && status.pocket === 'none' && (
             <p className="m-[0_0_10px] text-[12.5px] text-muted leading-[1.5]">

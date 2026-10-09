@@ -103,6 +103,14 @@ export function costOf(minutes) {
 }
 
 /**
+ * The limit is about money spent per render, which is the API key's
+ * pay-as-you-go balance. A render on a web plan you are signed in to spends
+ * that plan's credits — already paid for, and stopped by HeyGen when they run
+ * out — so the dollar limit does not apply to it.
+ */
+export const budgetApplies = (path) => path?.path === 'key' && !path.free;
+
+/**
  * Whether a paid render of `cost` may start. Returns null when it may, or the
  * refusal: no limit chosen yet, or this render would pass it.
  */

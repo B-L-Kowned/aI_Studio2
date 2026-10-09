@@ -7,9 +7,11 @@ import { useBudget, BudgetMeter, BudgetPicker } from './Budget.jsx';
  * first time, it asks for a monthly limit instead: a render cannot start
  * without one, so the customer chooses it here rather than meeting a refusal.
  */
-export default function PaidConfirm({ title, detail, confirmLabel, busy, onCancel, onConfirm }) {
+export default function PaidConfirm({ title, detail, confirmLabel, busy, onCancel, onConfirm, path }) {
   const [budget, , setBudget] = useBudget();
-  if (budget && !budget.set) {
+  // Only pay-as-you-go (API key) renders are counted against the dollar limit.
+  const metered = path?.path === 'key' && !path.free;
+  if (metered && budget && !budget.set) {
     return (
       <div className="m-[12px_0] p-[12px_14px] border border-solid border-line rounded-lg bg-surface">
         <b className="block text-[13.5px] font-[600]">First, a monthly limit for HeyGen</b>
@@ -25,11 +27,11 @@ export default function PaidConfirm({ title, detail, confirmLabel, busy, onCance
       <div className="flex-1 min-w-[220px] flex flex-col gap-[2px]">
         <b className="text-[13.5px]">{title}</b>
         <small className="text-[12px] opacity-[.85]">{detail}</small>
-        {budget?.set && <div className="mt-[6px] text-ink"><BudgetMeter budget={budget} compact /></div>}
+        {metered && budget?.set && <div className="mt-[6px] text-ink"><BudgetMeter budget={budget} compact /></div>}
       </div>
       <div className="flex gap-[8px] flex-none">
         <button onClick={onCancel}>Cancel</button>
-        <button className="primary" disabled={busy || budget?.atLimit} title={budget?.atLimit ? 'This month’s limit is reached — raise it in Settings → HeyGen account' : ''} onClick={onConfirm}>{confirmLabel}</button>
+        <button className="primary" disabled={busy || (metered && budget?.atLimit)} title={metered && budget?.atLimit ? 'This month’s limit is reached — raise it in Settings → HeyGen account' : ''} onClick={onConfirm}>{confirmLabel}</button>
       </div>
     </div>
   );

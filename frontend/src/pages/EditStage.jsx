@@ -139,7 +139,7 @@ function AvatarFromRecording({ production, onFinished }) {
         {path && <span className="text-[12px] text-muted">{path.free ? 'Free here — ' : 'Charged to your plan — '}{path.reason}</span>}
       </div>
       {confirming && (
-        <PaidConfirm title="This render is charged to your HeyGen plan." detail={path.reason}
+        <PaidConfirm path={path} title="This render is charged to your HeyGen plan." detail={path.reason}
           confirmLabel="Yes — render and charge my plan" busy={starting} onCancel={() => setConfirming(false)} onConfirm={start} />
       )}
       {showLook && <div className="mt-[14px]"><HeyGenLook /></div>}

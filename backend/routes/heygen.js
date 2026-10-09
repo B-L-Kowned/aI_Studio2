@@ -15,7 +15,7 @@ const router = Router();
 // Fixtures promises that nothing leaves this machine — reads included. Sign-in
 // is exempt: connecting is something you ask for, not a call made for you.
 const offline = (res) => fail(res, 409, 'FIXTURES_MODE',
-  'Fixtures mode makes no HeyGen calls. Switch to Test or Live to read your account.');
+  'The studio is set not to contact HeyGen yet. Choose “Read my account” to load your videos, looks and credits — reading costs nothing.');
 
 /**
  * Which pocket is in use, and why it matters.

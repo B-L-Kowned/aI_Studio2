@@ -20,7 +20,8 @@ import { productionLock } from '../lib/production-lock.js';
 import { madeBy } from '../lib/made-by.js';
 import { cleanRecordingAudio } from '../lib/assemble.js';
 import { keepRenderLocally } from '../lib/render-keep.js';
-import { costOf, budgetRefusal } from '../lib/budget.js';
+import { costOf, budgetRefusal, budgetApplies } from '../lib/budget.js';
+import { chooseRenderPath } from '../lib/providers/heygen-route.js';
 import { usable } from '../lib/grants.js';
 import { ok, fail, route } from '../utils/respond.js';
 
@@ -496,9 +497,11 @@ router.post(
       ? `${Math.floor(audio.seconds / 60)}:${String(Math.round(audio.seconds % 60)).padStart(2, '0')}`
       : estimateRuntime(segments);
     const minutes = duration.split(':').reduce((m, s, i) => (i === 0 ? Number(m) : Number(m) + Number(s) / 60), 0);
-    const cost = costOf(minutes);
-    // The customer's own monthly limit: nothing starts that would pass it.
-    const overBudget = DRY_RUN() ? null : budgetRefusal(cost);
+    // The customer's own monthly limit, for pay-as-you-go (API key) renders.
+    // A plan render spends plan credits and is not counted against it.
+    const renderPath = DRY_RUN() ? null : await chooseRenderPath();
+    const cost = budgetApplies(renderPath) ? costOf(minutes) : 0;
+    const overBudget = budgetApplies(renderPath) ? budgetRefusal(cost) : null;
     if (overBudget) return fail(res, 402, overBudget.code, overBudget.message);
 
     const version =

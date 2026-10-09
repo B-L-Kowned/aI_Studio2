@@ -106,7 +106,7 @@ export default function RenderStage() {
       </div>
 
       {confirming && (
-        <PaidConfirm
+        <PaidConfirm path={path}
           title="This render is charged to your HeyGen plan."
           detail={path.reason}
           confirmLabel="Yes — render and charge my plan"
