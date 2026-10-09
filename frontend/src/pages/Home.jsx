@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertCircle, ArrowRight, Check, Clock, Headphones, Lightbulb, RefreshCw, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AlertCircle, ArrowRight, ArrowUp, ArrowDown, Check, Clock, Headphones, Lightbulb, RefreshCw, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { useDialog, Modal } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import { PageHead } from '../components/Section.jsx';
-import ProgramWork from '../components/ProgramWork.jsx';
 
 /**
  * Today: the production manager. Where the register stands against your three
@@ -64,15 +63,9 @@ function DeadlineDialog({ deadlines, onSave, onClose }) {
 
 const H = 'text-[11.5px] tracking-[.06em] uppercase text-faint font-semibold m-[0_0_8px] flex items-center gap-[6px]';
 
-// Today is built from the register of IDed business videos, which is
-// Content's. In Comedy it is the list of bits instead.
+// One Today for both programs: the same queues, next work, pace and calendar,
+// each filled with the program you are in — videos in Content, bits in Comedy.
 export default function Home({ go }) {
-  const { scopeMode } = useStudio();
-  if (scopeMode === 'comedy') return <ProgramWork go={go} title="Today" />;
-  return <ContentToday go={go} />;
-}
-
-function ContentToday({ go }) {
   const [ending, setEnding] = useState([]);
   useEffect(() => { api.grants().then((g) => setEnding(g.endingSoon ?? [])).catch(() => {}); }, []);
   const { openProduction, setPendingStage, setPendingView, setPendingDate, mutate, scopeMode, notify } = useStudio();
@@ -83,7 +76,8 @@ function ContentToday({ go }) {
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
   const [idea, setIdea] = useState('');
-  const load = useCallback(() => api.manager().then((d) => { setM(d); setError(null); }).catch(setError), []);
+  const program = scopeMode === 'comedy' ? 'comedy' : 'content';
+  const load = useCallback(() => api.manager(program).then((d) => { setM(d); setError(null); }).catch(setError), [program]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     let live = true;
@@ -157,7 +151,7 @@ function ContentToday({ go }) {
     <li key={v.id}>
       <button type="button" onClick={() => openAt(v)}
         className="w-full grid grid-cols-[64px_minmax(0,1fr)_auto] gap-[10px] items-center text-left p-[8px_12px] bg-transparent [border:0] rounded-none hover:bg-surface-2">
-        <code className="text-[11.5px] font-semibold text-ink-2">{v.videoId}</code>
+        <code className="text-[11.5px] font-semibold text-ink-2">{v.videoId ?? (v.order ? `#${v.order}` : 'Bit')}</code>
         <span className="min-w-0">
           <span className="block truncate text-[13px] text-ink">{v.name}</span>
           <span className="block text-[11.5px] text-muted truncate">{v.company}{v.priority ? ` · ${v.priority}` : ''} · next: {NEXT_WORDS[v.stage] ?? v.stage}</span>
@@ -167,6 +161,9 @@ function ContentToday({ go }) {
     </li>
   );
 
+  const reorder = async (v, at) => {
+    try { await mutate(() => api.setScheduleOrder([v.id], at), null); load(); } catch { /* reported */ }
+  };
   const openDay = (date) => { setPendingView('Calendar'); setPendingDate(date); go('Plan'); };
   const alerts = m.lateCount > 0 || m.dueSoonCount > 0 || m.stalledCount > 0;
   const campaigns = (week?.byCampaign ?? []).filter((c) => c.productions > 0)
@@ -174,7 +171,7 @@ function ContentToday({ go }) {
 
   return (
     <>
-      <PageHead title="Today" lead={`${m.totals.done} of ${m.totals.videos} videos done · ${m.totals.left} to go`} />
+      <PageHead title="Today" lead={`${m.totals.done} of ${m.totals.videos} ${program === 'comedy' ? 'bit' : 'video'}${m.totals.videos === 1 ? '' : 's'} done · ${m.totals.left} to go`} />
 
       <div className="grid grid-cols-[minmax(0,1fr)_340px] gap-[22px] items-start lte960:grid-cols-[1fr]">
         {/* ================= the work ================= */}
@@ -248,8 +245,26 @@ function ContentToday({ go }) {
 
           <section>
             <h2 className={H}>Work on next</h2>
+            <p className="text-faint text-[11.5px] m-[-4px_0_8px]">
+              {m.next.some((v) => v.order) ? 'Your production order comes first — move items up or down here, or set the order in Register.' : 'Set a production order in Register (select, then Add to order) and it leads this list. Until then: late first, then soonest due.'}
+            </p>
             <ol className="list-none p-0 m-0 border border-solid border-line rounded-lg bg-surface [&>li+li]:[border-top:1px_solid_var(--line)]">
-              {m.next.map((v) => row(v, <span className={`text-[11.5px] whitespace-nowrap ${v.daysLeft < 0 ? 'text-danger font-semibold' : 'text-faint'}`}>{dueWords(v.daysLeft)}</span>))}
+              {m.next.map((v, n) => row(v, (
+                <span className="flex items-center gap-[8px]">
+                  {v.order != null && <span className="text-[11px] font-semibold text-accent [font-variant-numeric:tabular-nums]" title="Place in your production order">#{v.order}</span>}
+                  <span className={`text-[11.5px] whitespace-nowrap ${v.daysLeft < 0 ? 'text-danger font-semibold' : 'text-faint'}`}>{dueWords(v.daysLeft)}</span>
+                  {v.order != null && (
+                    <span className="flex" onClick={(e) => e.stopPropagation()}>
+                      <span role="button" tabIndex={0} aria-label="Move up in the order" title="Move up"
+                        className={`p-[2px] rounded hover:bg-surface ${v.order > 1 ? 'text-muted hover:text-ink' : 'text-line pointer-events-none'}`}
+                        onClick={() => reorder(v, v.order - 1)} onKeyDown={(e) => e.key === 'Enter' && reorder(v, v.order - 1)}><ArrowUp size={12} /></span>
+                      <span role="button" tabIndex={0} aria-label="Move down in the order" title="Move down"
+                        className={`p-[2px] rounded hover:bg-surface ${m.next[n + 1]?.order != null ? 'text-muted hover:text-ink' : 'text-line pointer-events-none'}`}
+                        onClick={() => reorder(v, v.order + 1)} onKeyDown={(e) => e.key === 'Enter' && reorder(v, v.order + 1)}><ArrowDown size={12} /></span>
+                    </span>
+                  )}
+                </span>
+              )))}
             </ol>
           </section>
         </div>

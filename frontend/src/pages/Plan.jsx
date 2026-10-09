@@ -23,7 +23,7 @@ import Review from './Review.jsx';
 const VIEWS = [
   // The end-to-end register: every Video ID and where it really stands.
   // contentOnly: the register of IDed business videos and what hangs off it.
-  { id: 'Register', label: 'Register', contentOnly: true },
+  { id: 'Register', label: 'Register' },
   // Reading work across the register: drafts to approve, checks to answer.
   { id: 'Review', label: 'Review', contentOnly: true },
   // What is due when — daily work, not setup.

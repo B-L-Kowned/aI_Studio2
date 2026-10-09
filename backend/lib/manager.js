@@ -34,11 +34,11 @@ export function setDeadlines(input) {
   return next;
 }
 
-export function manager() {
+export function manager({ program = 'content' } = {}) {
   const db = getDb();
   const dl = deadlines();
   const now = today();
-  const { items } = buildRegister();
+  const { items } = buildRegister({ program });
 
   const doneOn = db.prepare("SELECT value FROM brief_fields WHERE production_id = ? AND label = 'Completed confirmed'");
   const dueAt = db.prepare('SELECT due_at FROM productions WHERE id = ?');
@@ -65,7 +65,7 @@ export function manager() {
     const finished = done ? /(\d{4}-\d{2}-\d{2})/.exec(doneOn.get(i.id)?.value ?? '')?.[1] ?? null : null;
     const touched = String(lastTouch.get({ id: i.id })?.t ?? '').slice(0, 10) || null;
     return {
-      id: i.id, videoId: i.videoId, name: i.name, company: i.company, priority: i.priority, madeBy: i.madeBy,
+      id: i.id, videoId: i.videoId, order: i.order, name: i.name, company: i.company, priority: i.priority, madeBy: i.madeBy,
       stage: i.stage, checks: i.checks, lines: i.lines, heard: i.heard, done, finished, due, ownDue: !!own,
       daysLeft: due ? daysBetween(now, due) : null, idleDays: touched ? daysBetween(touched, now) : null,
     };
@@ -103,7 +103,7 @@ export function manager() {
     approve: q((v) => v.stage === 'draft-ready'),
     checks: q((v) => v.stage === 'draft-checks'),
     // Drafts whose length is off for their target: Fit to time can run on them tonight.
-    fit: (() => { const off = new Set(thinDrafts()); return videos.filter((v) => off.has(v.id)); })(),
+    fit: (() => { const off = new Set(thinDrafts()); return videos.filter((v) => off.has(v.id) && !v.done); })(),
     makeVoice: q((v) => v.madeBy !== 'self' && v.lines > 0 && takesMade.get(v.id).n < v.lines),
     approveVoice: q((v) => v.madeBy !== 'self' && v.lines > 0 && takesMade.get(v.id).n === v.lines && v.heard < v.lines),
     record: q((v) => v.madeBy === 'self' && v.lines > 0 && recorded.get(v.id).n < v.lines),
@@ -113,14 +113,16 @@ export function manager() {
       || (v.madeBy === 'heygen' && !!rendered.get(v.id))),
     publish: videos.filter((v) => v.done && !prepared.get(v.id)),
   };
-  const slim = (v) => ({ id: v.id, videoId: v.videoId, name: v.name, company: v.company, priority: v.priority,
+  const slim = (v) => ({ id: v.id, videoId: v.videoId, order: v.order, name: v.name, company: v.company, priority: v.priority,
     stage: v.stage, madeBy: v.madeBy, due: v.due, daysLeft: v.daysLeft, idleDays: v.idleDays, checks: v.checks });
 
-  // What to work on next: late first, then soonest due, then the furthest
-  // along (closest to done), so effort turns into finished videos.
+  // What to work on next: your production order first, as you set it; then
+  // late, then soonest due, then the furthest along (closest to done), so
+  // effort turns into finished videos.
   const rank = ['final', 'audio-approved', 'audio', 'script', 'draft-ready', 'draft-checks', 'needs-script'];
   const next = [...open].sort((a, b) =>
-    (a.daysLeft ?? 1e4) - (b.daysLeft ?? 1e4)
+    (a.order ?? 1e6) - (b.order ?? 1e6)
+    || (a.daysLeft ?? 1e4) - (b.daysLeft ?? 1e4)
     || rank.indexOf(a.stage) - rank.indexOf(b.stage)
     || (a.priority ?? 'P9').localeCompare(b.priority ?? 'P9')).slice(0, 12);
 

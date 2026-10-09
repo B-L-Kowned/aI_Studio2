@@ -4,7 +4,7 @@ import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
 
-router.get('/manager', route(async (_req, res) => ok(res, manager())));
+router.get('/manager', route(async (req, res) => ok(res, manager({ program: req.query.program }))));
 
 router.put('/manager/deadlines', route(async (req, res) => {
   try { setDeadlines(req.body ?? {}); return ok(res, manager(), 'Deadlines saved'); }
