@@ -1,4 +1,5 @@
 import { createWriteStream, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import { localDay } from '../utils/local-date.js';
 import { join, dirname, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
@@ -113,7 +114,7 @@ export async function recordFinal(productionId, file, name, { editsApplied = 0, 
   if (!db.prepare("SELECT value FROM brief_fields WHERE production_id = ? AND label = 'Completed asset'").get(productionId)?.value) {
     brief(productionId, 'Completed asset', r.name);
   }
-  brief(productionId, 'Completed confirmed', `Finished video ${note ?? 'saved'} ${new Date().toISOString().slice(0, 10)}`);
+  brief(productionId, 'Completed confirmed', `Finished video ${note ?? 'saved'} ${localDay()}`);
   brief(productionId, 'Final file', r.path);
   const version = (db.prepare('SELECT MAX(version) m FROM exports WHERE production_id = ?').get(productionId).m ?? 0) + 1;
   db.prepare(

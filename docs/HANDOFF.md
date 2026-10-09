@@ -340,6 +340,18 @@ In rough priority order. Items 1–3 are about not spending money by accident.
     model — a 7B is ~4.7 GB); Enhance optional or cloud-routable. Also decide
     Windows/Intel: the voice runs on Apple GPUs (MPS) and is ~3× slower on CPU.
 
+    **Done 2026-10-09:** Settings → *This Mac* (`GET /api/workspace/components`)
+    checks each piece — ffmpeg, voice engine, model runner, writing model,
+    HeyGen — and gives the one step for what is missing; the writing model
+    already downloads in-app (Light 2 GB / Full 9 GB). **Still to do for a
+    customer build:** (1) bundle or download-on-first-run the Python voice
+    environment and its models, with progress and sizes stated first;
+    (2) ship ffmpeg inside the app instead of expecting Homebrew; (3) have
+    the Electron shell start and supervise the voice service; (4) **decided
+    2026-10-09:** Mac first; once the Mac build is signed off, Pat builds the
+    Windows version on his Windows machine (voice there runs ~3× slower on CPU);
+    (5) code-sign and notarise the macOS build.
+
 ---
 
 ## 8. How to work on this without repeating the mistakes

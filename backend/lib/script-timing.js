@@ -2,6 +2,7 @@ import { getDb } from '../db/index.js';
 import { resolveSpeaker, presenterCasting } from './casting.js';
 import { listLocalVoices, SPEED_RANGE } from './local-voice.js';
 import { madeBy } from './made-by.js';
+import { personaFor } from './personas.js';
 
 // What a planned script was timed at, used only until the voice has been measured.
 export const PLANNING_WPM = 150;
@@ -22,7 +23,7 @@ export function scriptTiming(productionId) {
   if (!p) return null;
   const voice = narrationVoice();
   const natural = voice?.naturalWpm ?? null;
-  const speed = p.voice_speed ?? voice?.speed ?? 1;
+  const speed = p.voice_speed ?? personaFor(productionId)?.speed ?? voice?.speed ?? 1;
   const sections = db.prepare('SELECT title, runtime FROM outline_sections WHERE production_id = ? ORDER BY position').all(p.id)
     .map((s) => ({ title: s.title, runtime: s.runtime, seconds: secs(s.runtime) }));
   // Recording it yourself, the pace that matters is yours: words over time

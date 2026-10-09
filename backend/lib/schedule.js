@@ -154,7 +154,7 @@ export function schedule({
       `SELECT p.*, c.name AS campaign_name
          FROM productions p
          LEFT JOIN campaigns c ON c.id = p.campaign_id
-        ${scoped ? "WHERE p.mode = ? OR p.mode = 'both'" : ''}`
+        WHERE p.archived_at IS NULL ${scoped ? "AND (p.mode = ? OR p.mode = 'both')" : ''}`
     )
     .all(...(scoped ? [mode] : []));
 

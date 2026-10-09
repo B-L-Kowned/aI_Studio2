@@ -22,24 +22,25 @@ import Review from './Review.jsx';
  */
 const VIEWS = [
   // The end-to-end register: every Video ID and where it really stands.
-  { id: 'Register', label: 'Register' },
+  // contentOnly: the register of IDed business videos and what hangs off it.
+  { id: 'Register', label: 'Register', contentOnly: true },
   // Reading work across the register: drafts to approve, checks to answer.
-  { id: 'Review', label: 'Review' },
+  { id: 'Review', label: 'Review', contentOnly: true },
   // What is due when — daily work, not setup.
   { id: 'Calendar', label: 'Calendar' },
   // Ideas not yet videos.
   { id: 'Ideas', label: 'Parking lot' },
   // Set up once and rarely visited: set apart so the daily three stand out.
-  { id: 'Companies', label: 'Companies', setup: true },
+  { id: 'Companies', label: 'Companies', setup: true, contentOnly: true },
   { id: 'Campaigns', label: 'Campaigns', setup: true },
-  { id: 'Training', label: 'Training', setup: true },
+  { id: 'Training', label: 'Training', setup: true, contentOnly: true },
 ];
 
 export default function Plan({ go, routes, programs }) {
-  const { workspace, pendingView, setPendingView } = useStudio();
+  const { workspace, pendingView, setPendingView, scopeMode } = useStudio();
   const map = routes ?? workspace.program?.routes ?? {};
   const granted = programs ?? workspace.program?.programs ?? [];
-  const allowed = VIEWS.filter((v) => !map[v.id] || granted.includes(map[v.id]));
+  const allowed = VIEWS.filter((v) => (!map[v.id] || granted.includes(map[v.id])) && !(v.contentOnly && scopeMode === 'comedy'));
 
   // The tab you were on, so opening a video and coming back lands you there.
   const [view, setViewState] = useState(() => { try { return sessionStorage.getItem('plan-view') || 'Register'; } catch { return 'Register'; } });

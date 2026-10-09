@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getDb } from '../db/index.js';
-import { ok, route } from '../utils/respond.js';
+import { ok, fail, route } from '../utils/respond.js';
 import { madeBy } from '../lib/made-by.js';
 
 const router = Router();
@@ -10,7 +10,8 @@ const router = Router();
 const secs = (rt) => { const [m, s] = String(rt ?? '').split(':').map(Number); return (m || 0) * 60 + (s || 0); };
 const REGISTER_ID = /^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*) — (.*)$/;
 const WORKSTREAM = { V: 'Company', O: 'Outreach', T: 'Training', L: 'Wrapper', A: 'Editions', I: 'Investor', GTM: 'GTM masters', SRC: 'Training' };
-const streamOf = (id) => WORKSTREAM[/^(GTM|SRC)-/.exec(id)?.[1] ?? id[0]] ?? 'Other';
+export const streamOf = (id) => WORKSTREAM[/^(GTM|SRC)-/.exec(id)?.[1] ?? id[0]] ?? 'Other';
+export const WORKSTREAMS = [...new Set(Object.values(WORKSTREAM))];
 // Read the furthest true step, in the order the work actually happens.
 // A draft splits by whether it still holds [CONFIRM: …] checks: one with none
 // only needs your yes.
@@ -126,5 +127,28 @@ export function buildRegister() {
 }
 
 router.get('/register', route(async (_req, res) => ok(res, buildRegister())));
+
+/**
+ * How many videos are made, in one go: every outline section of each takes the
+ * same "who appears". Who appears never makes a script out of date.
+ */
+const WHO = { self: 'Pat (recorded myself)', voice: 'Pat (voice only)', heygen: 'Pat' };
+router.post('/productions/made-by', route(async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
+  const who = WHO[req.body?.madeBy];
+  if (!who) return fail(res, 400, 'BAD_MADE_BY', 'madeBy must be self, voice or heygen');
+  if (!ids.length) return fail(res, 400, 'NO_IDS', 'Choose at least one video');
+  const db = getDb();
+  const upd = db.prepare('UPDATE outline_sections SET participants = ? WHERE production_id = ?');
+  let changed = 0; const noOutline = [];
+  db.transaction(() => {
+    for (const id of ids) {
+      const n = upd.run(who, id).changes;
+      if (n) changed++; else noOutline.push(id);
+    }
+  })();
+  return ok(res, { changed, noOutline }, `${changed} video${changed === 1 ? '' : 's'} now ${req.body.madeBy === 'self' ? 'recorded by you' : req.body.madeBy === 'voice' ? 'voice-over' : 'HeyGen avatar'}`
+    + (noOutline.length ? ` · ${noOutline.length} have no outline yet` : ''));
+}));
 
 export default router;

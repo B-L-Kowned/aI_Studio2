@@ -106,13 +106,13 @@ export default function CalendarPage({ go, tabs }) {
     catch { /* mutate reports it */ }
   };
 
-  if (!data) return <><PageHead title="Production calendar" tabs={tabs} /><p className="muted">Loading…</p></>;
+  if (!data) return <><PageHead title="Calendar" tabs={tabs} /><p className="muted">Loading…</p></>;
   const { days, label, counts, unscheduled } = data;
 
   return (
     <>
       <PageHead
-        title="Production calendar"
+        title="Calendar"
         tabs={tabs}
         lead="What lands when, and what it still needs before it can."
         actions={

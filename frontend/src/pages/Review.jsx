@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Check, SkipForward, ExternalLink, Pencil, RefreshCw, ClipboardList, AlertCircle, Undo2, ChevronLeft, Square, Headphones, RotateCcw, Sparkles } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
+import { useDialog } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import LineVoice from '../components/LineVoice.jsx';
 import { EnhanceButton, Suggestion, modelLabel } from '../components/Enhance.jsx';
@@ -29,7 +30,7 @@ function BriefPanel({ item, onFit, fitting }) {
   const fact = (label, value) => value && (
     <div><dt className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold">{label}</dt>
       {INSTRUCTION.test(value.trim())
-        ? <dd className="m-[2px_0_0] text-[12.5px] text-faint italic leading-[1.45]" title={value}>Not set yet — Fill the gaps in the video’s brief</dd>
+        ? <dd className="m-[2px_0_0] text-[12.5px] text-faint italic leading-[1.45]" title={value}>Not set yet · add it in the video’s brief</dd>
         : <dd className="m-[2px_0_0] text-[13px] text-ink-2 leading-[1.45]">{value}</dd>}
     </div>
   );
@@ -145,6 +146,7 @@ function VoiceItem({ item, onApproveAll, onApproveLine, onRemake, onChanged, bus
  */
 export default function Review({ go, tabs }) {
   const { openProduction, mutate } = useStudio();
+  const dialog = useDialog();
   const [data, setData] = useState(null);
   // Home can send you straight to the checks.
   const [mode, setMode] = useState(() => { try { const m = sessionStorage.getItem('review-mode'); sessionStorage.removeItem('review-mode'); return m === 'checks' || m === 'voice' ? m : 'ready'; } catch { return 'ready'; } });
@@ -169,9 +171,8 @@ export default function Review({ go, tabs }) {
     if (!item || busy || editing || fitting?.productionId === item?.productionId) return;
     setBusy(true);
     try {
-      await mutate(() => api.acceptScript(item.productionId, item.versionId), null, { silent: true });
-      await mutate(() => api.buildSegments(item.productionId), null, { silent: true });
-      setUndo({ productionId: item.productionId, versionId: item.versionId, videoId: item.videoId, madeBy: item.madeBy, queued: false });
+      const r = await mutate(() => api.acceptScript(item.productionId, item.versionId), null, { silent: true });
+      setUndo({ productionId: item.productionId, versionId: item.versionId, videoId: item.videoId, madeBy: item.madeBy, queued: r?.data?.voice === 'queued' || r?.data?.voice === 'already queued' });
       setApprovedHere((n) => n + 1);
       await load(); // the approved draft leaves the list; the next one moves up
     } catch { /* mutate reports it */ } finally { setBusy(false); }
@@ -205,7 +206,7 @@ export default function Review({ go, tabs }) {
     if (!fitting) return undefined;
     const t = setInterval(async () => {
       const j = await api.enhanceState(fitting.productionId).catch(() => null);
-      if (!j || j.state !== 'running') { setFitting(null); await load(); if (j?.state === 'failed') window.alert(j.error); }
+      if (!j || j.state !== 'running') { setFitting(null); await load(); if (j?.state === 'failed') dialog.notice({ title: 'Could not fit it to time', body: j.error }); }
       else setFitting({ productionId: fitting.productionId, ...j });
     }, 2500);
     return () => clearInterval(t);
@@ -233,7 +234,8 @@ export default function Review({ go, tabs }) {
     try { await mutate(() => api.checkToNote(it.productionId, line.id), null); await load(); } catch { /* reported */ } finally { setBusy(false); }
   };
   const confirmAll = async (it) => {
-    if (!window.confirm(`Confirm all ${it.lines.length} checked lines in ${it.videoId} as written?`)) return;
+      if (!await dialog.confirm({ title: `Confirm all ${it.lines.length} lines as written?`, confirmLabel: 'Confirm all',
+        body: `Every checked line in ${it.videoId} is kept as it is and its [CONFIRM] marker removed.` })) return;
     setBusy(true);
     try {
       for (const l of it.lines) await mutate(() => api.updateScriptSegment(it.productionId, it.versionId, l.id, { text: strip(l.text) }), null, { silent: true });
@@ -272,7 +274,7 @@ export default function Review({ go, tabs }) {
         <div className="flex items-center gap-[10px] mt-[12px] p-[8px_12px] rounded-md bg-ok-soft text-ok text-[12.5px]">
           <Check size={14} /> Approved {undo.videoId} — its lines are ready for Voice.
           {undo.madeBy !== 'self' && (undo.queued
-            ? <span className="text-ink-2">Voice queued for tonight.</span>
+            ? <span className="text-ink-2">Its voice is being made on this Mac — it will be in Voices to approve.</span>
             : <button className="text-[12px] p-[3px_10px]" onClick={async () => { await mutate(() => api.queueVoice([undo.productionId]), null).catch(() => {}); setUndo((u) => u && { ...u, queued: true }); }}>
                 <Headphones size={12} /> Make its voice tonight
               </button>)}

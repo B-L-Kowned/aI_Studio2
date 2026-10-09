@@ -245,7 +245,7 @@ export default function Campaigns({ go, tabs }) {
               ) : (
                 g.items.map((p) => (
                   <div
-                    className={'group/prow grid grid-cols-[1fr_150px_150px] lte760:grid-cols-[1fr_auto] items-center gap-[12px] p-[0_14px_0_0] [border-bottom:1px_solid_var(--line)] last:[border-bottom:0] hover:bg-surface-2'
+                    className={'group/prow grid grid-cols-[1fr_190px_minmax(120px,auto)] lte760:grid-cols-[1fr_auto] items-center gap-[12px] p-[0_14px_0_0] [border-bottom:1px_solid_var(--line)] last:[border-bottom:0] hover:bg-surface-2'
                       + (p.id === production.id ? ' [box-shadow:inset_2px_0_0_var(--ink)]' : '')}
                     key={p.id}
                   >

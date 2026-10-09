@@ -135,8 +135,8 @@ function summarize(p) {
 
 router.get(
   '/',
-  route(async (_req, res) => {
-    const rows = getDb().prepare('SELECT * FROM productions ORDER BY updated_at DESC, id DESC').all();
+  route(async (req, res) => {
+    const rows = getDb().prepare(`SELECT * FROM productions WHERE archived_at IS NULL${req.query.archived ? ' OR 1' : ''} ORDER BY updated_at DESC, id DESC`).all();
     return ok(res, rows.map(summarize));
   })
 );
@@ -712,5 +712,13 @@ router.get(
     return result ? ok(res, result) : fail(res, 404, 'NOT_FOUND', 'Production not found');
   })
 );
+
+/** Archive (or restore with archived: false): out of every list, nothing deleted. */
+router.post('/:id/archive', route(async (req, res) => {
+  const restore = req.body?.archived === false;
+  const r = getDb().prepare(`UPDATE productions SET archived_at = ${restore ? 'NULL' : "datetime('now')"} WHERE id = ?`).run(Number(req.params.id));
+  return r.changes ? ok(res, { id: Number(req.params.id), archived: !restore }, restore ? 'Restored' : 'Archived — kept, out of the way')
+    : fail(res, 404, 'NOT_FOUND', 'Production not found');
+}));
 
 export default router;

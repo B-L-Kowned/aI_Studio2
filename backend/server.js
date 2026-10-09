@@ -23,9 +23,15 @@ import workflow from './routes/workflow.js';
 import voices from './routes/voices.js';
 import register from './routes/register.js';
 import appearance from './routes/appearance.js';
+import account from './routes/account.js';
+import { getDb } from './db/index.js';
+import { advanceRenders } from './routes/pipeline.js';
+import { pollEvents } from './lib/authentech-shares.js';
+import grantsRoutes from './routes/grants.js';
 import scriptTools from './routes/script-tools.js';
 import editorKit from './routes/editor-kit.js';
 import enhance from './routes/enhance.js';
+import personas from './routes/personas.js';
 import recording from './routes/recording.js';
 import steps from './routes/steps.js';
 import edit from './routes/edit.js';
@@ -74,6 +80,7 @@ app.use('/api/productions', workflow);
 app.use('/api/productions', scriptTools);
 app.use('/api/productions', editorKit);
 app.use('/api/productions', enhance);
+app.use('/api', personas);
 app.use('/api/productions', recording);
 app.use('/api/productions', steps);
 app.use('/api/productions', edit);
@@ -91,6 +98,8 @@ app.use('/api', music);
 app.use('/api', managerRoutes);
 app.use('/api', lineFixRoutes);
 app.use('/api', appearance);
+app.use('/api', account);
+app.use('/api', grantsRoutes);
 
 // ------------------------------------------------------- the app itself ---
 //
@@ -156,4 +165,15 @@ const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`STUDIO_READY ${JSON.stringify({ port: actual, packaged, dbPath })}`);
   // Avatar pictures are signed links that expire; keep yours while they work.
   cacheOwnedPreviews().catch(() => {});
+  // Renders finish while you are elsewhere: check the live ones every minute,
+  // so each is saved and filed as finished without the Render step being open.
+  const watchRenders = async () => {
+    try {
+      const live = getDb().prepare("SELECT DISTINCT production_id FROM render_versions WHERE status IN ('queued','processing')").all();
+      for (const { production_id: id } of live) await advanceRenders(id).catch(() => {});
+    } catch { /* the next tick tries again */ }
+  };
+  setInterval(watchRenders, 60_000).unref();
+  // Shares withdrawn or accepted on AuthenTech reach the studio within minutes.
+  setInterval(() => { pollEvents().catch(() => {}); }, 180_000).unref();
 });

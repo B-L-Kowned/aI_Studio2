@@ -101,7 +101,7 @@ export function Tabs({ items, value, onChange }) {
         <button
           role="tab"
           aria-selected={value === t.id}
-          className={value === t.id ? 'on' : t.stale ? '!text-warn' : t.setup ? '!text-faint' : ''}
+          className={value === t.id ? 'on' : t.stale ? '!text-warn' : t.setup ? '!text-muted' : ''}
           title={t.title ?? ''}
           onClick={() => onChange(t.id)}
         >

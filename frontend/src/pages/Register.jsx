@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Search, Mic, User, Video, Check, AlertTriangle, ChevronDown, Minus, Headphones,
-  Flag, Clapperboard, Layers, Building2, ArrowUpDown, X, Sparkles } from 'lucide-react';
+  Flag, Clapperboard, Layers, Building2, ArrowUpDown, X, Sparkles, Circle } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
+import { useDialog } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import { PageHead } from '../components/Section.jsx';
 
@@ -61,12 +62,16 @@ const FILTER_KEYS = ['q', 'stage', 'pri', 'fmt', 'ws', 'co', 'need', 'sort'];
 const VIEW_KEY = 'register-view';
 function initialView() {
   let search = window.location.search;
+  const fromUrl = !!search;
   if (!search) { try { search = sessionStorage.getItem(VIEW_KEY) ?? ''; } catch { /* storage blocked */ } }
   const p = new URLSearchParams(search);
+  // Filters are where you work, so they come back; a search was for one moment,
+  // and finding the register narrowed to one video later reads as missing rows.
+  if (!fromUrl) p.delete('q');
   return Object.fromEntries(FILTER_KEYS.map((k) => [k, p.get(k) ?? '']));
 }
 
-const ROW = 'grid grid-cols-[86px_minmax(220px,1.7fr)_minmax(110px,.7fr)_34px_132px_repeat(4,46px)] gap-[10px] items-center p-[9px_14px] lte860:grid-cols-[64px_1fr_auto]';
+const ROW = 'grid grid-cols-[22px_86px_minmax(220px,1.7fr)_minmax(110px,.7fr)_34px_132px_repeat(4,46px)] gap-[10px] items-center p-[9px_14px] lte860:grid-cols-[22px_64px_1fr_auto]';
 const TAG = 'text-[10px] tracking-[.04em] uppercase font-semibold p-[3px_7px] rounded-[3px] whitespace-nowrap border border-solid text-center';
 
 function Mark({ state, title }) {
@@ -141,10 +146,13 @@ function SearchPill({ value, onChange }) {
  * complete" with nothing behind it stays visible.
  */
 export default function Register({ go, tabs }) {
-  const { openProduction, mutate } = useStudio();
+  const { openProduction, mutate, setPendingStage } = useStudio();
+  const dialog = useDialog();
   const [batch, setBatch] = useState(null);
   const [data, setData] = useState(null);
   const [view, setView] = useState(initialView);
+  // Videos ticked for a batch change: how they are made, or a recording session.
+  const [picked, setPicked] = useState(() => new Set());
   const { q, stage, pri: priority, fmt: format, ws: stream, co: company, need } = view;
   const sort = view.sort || 'release';
   const set = (k) => (v) => setView((cur) => ({ ...cur, [k]: v }));
@@ -241,14 +249,16 @@ export default function Register({ go, tabs }) {
   if (!data) return <><PageHead title="Register" tabs={tabs} /><p className="muted">Loading…</p></>;
   // Approved script, voice not finished, and the AI voice is part of how it is made.
   const voiceable = shown.filter((i) => ['script', 'audio'].includes(i.stage) && i.madeBy !== 'self');
-  const queueVoice = () => {
-    if (!window.confirm(`Make your voice for ${voiceable.length} video${voiceable.length === 1 ? '' : 's'}? It runs on this Mac, free, about twice real time — leave it overnight. You still listen and approve each line.`)) return;
+  const queueVoice = async () => {
+    if (!await dialog.confirm({ title: `Make the voice for ${voiceable.length} video${voiceable.length === 1 ? '' : 's'}?`,
+      body: 'It is made on this Mac, free, a few seconds a line. You still listen to and approve every line.', confirmLabel: 'Make the voice' })) return;
     mutate(() => api.queueVoice(voiceable.map((i) => i.id)), (r) => setBatch(r.data)).catch(() => {});
   };
   const thin = new Set(fit?.thin ?? []);
   const fittable = shown.filter((i) => thin.has(i.id));
-  const queueFit = () => {
-    if (!window.confirm(`Fit ${fittable.length} draft${fittable.length === 1 ? '' : 's'} to time? Each is rewritten on this Mac, about a minute a video, and kept as a new draft for you to compare, keep or undo — nothing is approved.`)) return;
+  const queueFit = async () => {
+    if (!await dialog.confirm({ title: `Fit ${fittable.length} draft${fittable.length === 1 ? '' : 's'} to time?`,
+      body: 'Each is rewritten on this Mac, about a minute a video, and kept as a new draft you can compare, keep or undo. Nothing is approved.', confirmLabel: 'Fit to time' })) return;
     mutate(() => api.queueEnhance(fittable.map((i) => i.id)), (r) => setFit((f) => ({ ...f, ...r.data })), { silent: true }).catch(() => {});
   };
   const fitNow = fit?.items.find((b) => b.state === 'running');
@@ -344,9 +354,49 @@ export default function Register({ go, tabs }) {
         </p>
       )}
 
+      {picked.size > 0 && (() => {
+        const sel = data.items.filter((i) => picked.has(i.id));
+        // A line can only be recorded once its script is approved.
+        const recordable = sel.filter((i) => i.madeBy === 'self' && !['needs-script', 'draft-ready', 'draft-checks', 'done'].includes(i.stage));
+        const setHow = async (madeBy) => {
+          await mutate(() => api.setMadeBy([...picked], madeBy), null).catch(() => {});
+          api.register().then(setData).catch(() => {});
+        };
+        const recordThese = async () => {
+          const ids = recordable.map((i) => i.id);
+          try { sessionStorage.setItem('record-session', JSON.stringify(ids)); } catch { /* storage blocked */ }
+          await openProduction(ids[0]);
+          setPendingStage?.('Make');
+          go('Create');
+        };
+        const HOW = [['self', 'Recorded by me'], ['heygen', 'HeyGen avatar'], ['voice', 'Voice-over']];
+        return (
+          <div className="sticky top-[var(--appbar-h,53px)] z-[6] flex flex-wrap items-center gap-[8px_12px] mt-[10px] p-[8px_14px] rounded-lg bg-ink text-white text-[12.5px] [box-shadow:var(--shadow-pop)]">
+            <b className="font-[600]">{picked.size} selected</b>
+            <span className="opacity-70">How they're made:</span>
+            {HOW.map(([v, l]) => (
+              <button key={v} type="button" onClick={() => setHow(v)}
+                className="text-[12px] p-[3px_10px] rounded-full !bg-transparent !text-white border border-solid border-[rgba(255,255,255,.35)] hover:!border-white">{l}</button>
+            ))}
+            <span className="w-[1px] h-[18px] bg-[rgba(255,255,255,.25)]" aria-hidden="true" />
+            <button type="button" disabled={!recordable.length} onClick={recordThese}
+              title={recordable.length ? 'Record them one after another, line by line, with the teleprompter' : 'Recordable once they are set to Recorded by me and their scripts are approved'}
+              className="text-[12px] p-[4px_12px] rounded-full !bg-white !text-ink !border-white font-[600] disabled:opacity-40">
+              <Circle size={11} fill="currentColor" className="text-danger" /> Record {recordable.length || ''} {recordable.length === 1 ? 'video' : 'videos'}
+            </button>
+            {sel.length > recordable.length && <span className="opacity-70">{sel.length - recordable.length} not ready to record (needs Recorded by me and an approved script)</span>}
+            <button type="button" className="ml-auto !bg-transparent !text-white [border:0] opacity-80 hover:opacity-100 p-[2px_4px]" onClick={() => setPicked(new Set())}><X size={13} /> Clear</button>
+          </div>
+        );
+      })()}
+
       <section className="overflow-clip mt-[12px] border border-solid border-line rounded-lg bg-surface [box-shadow:var(--shadow)]"
         aria-label="Video register">
         <div className={`${ROW} sticky top-[var(--appbar-h,53px)] z-[5] rounded-t-lg min-h-[36px] bg-surface-2 lte880:static [border-bottom:1px_solid_var(--line)] text-faint text-[10px] font-semibold tracking-[.06em] uppercase lte860:hidden`}>
+          <input type="checkbox" aria-label="Select every video shown" className="m-0"
+            checked={shown.length > 0 && shown.every((i) => picked.has(i.id))}
+            ref={(el) => { if (el) el.indeterminate = picked.size > 0 && !shown.every((i) => picked.has(i.id)); }}
+            onChange={(e) => setPicked(e.target.checked ? new Set(shown.map((i) => i.id)) : new Set())} />
           <span>ID</span><span>Video</span><span>Company</span><span>Pri</span><span>Stage</span>
           {MARKS.map(([k, l]) => (
             <button key={k} type="button" aria-pressed={need === k} onClick={() => setNeed(need === k ? '' : k)}
@@ -369,8 +419,11 @@ export default function Register({ go, tabs }) {
           const sub = nowLine(i);
           const subTitle = i.scriptStatus ? `${sub}\nWorkbook: ${i.scriptStatus}` : sub;
           return (
-            <button key={i.id} type="button" onClick={() => open(i.id)}
-              className={`${ROW} w-full text-left bg-transparent [border:0] rounded-none [&+&]:[border-top:1px_solid_var(--line)] hover:bg-surface-2`}>
+            <div key={i.id} role="button" tabIndex={0} onClick={(e) => { if (!e.target.closest('input')) open(i.id); }}
+              onKeyDown={(e) => e.key === 'Enter' && open(i.id)}
+              className={`${ROW} w-full text-left cursor-pointer [&+&]:[border-top:1px_solid_var(--line)] ${picked.has(i.id) ? 'bg-accent-soft' : 'hover:bg-surface-2'}`}>
+              <input type="checkbox" className="m-0" aria-label={`Select ${i.videoId}`} checked={picked.has(i.id)}
+                onChange={() => setPicked((cur) => { const n = new Set(cur); if (n.has(i.id)) n.delete(i.id); else n.add(i.id); return n; })} />
               <code className="text-[11.5px] font-[600] text-ink-2 break-all" title={i.inRegister ? '' : 'From the script pack — not a register row'}>
                 {i.videoId}{!i.inRegister && <sup className="text-faint font-normal"> pack</sup>}
               </code>
@@ -400,7 +453,7 @@ export default function Register({ go, tabs }) {
                     title={`${l}: ${MARK_TEXT[i.marks?.[k]] ?? 'not started'}${k === 'audio' && i.lines ? ` (${i.heard}/${i.lines} lines approved)` : ''}${k === 'look' && i.marks?.lookName ? ` — ${i.marks.lookName}` : ''}`} />
                 </span>
               ))}
-            </button>
+            </div>
           );
         })}
       </section>

@@ -121,6 +121,19 @@ const ADDED_COLUMNS = [
   // How fast this video's narration runs, relative to the clone's natural
   // pace (1 = natural). Set to fit the words to the target length.
   ['productions', 'voice_speed', 'REAL'],
+  // A persona's own pace (1 = the clone's natural), used by every video it
+  // presents unless that video sets its own speed.
+  ['presenters', 'speed', 'REAL'],
+  // Which videos a persona presents by default: {workstreams: [], companies: []}.
+  ['presenters', 'use_for', 'TEXT'],
+  // A collaborator's invite lives on the consent service; these tie the two.
+  ['people', 'email', 'TEXT'],
+  ['people', 'invite_id', 'TEXT'],
+  ['people', 'invite_url', 'TEXT'],
+  ['people', 'invite_role', 'TEXT'],
+  ['people', 'invite_status', 'TEXT'],
+  // Which of your personas presents this video; null = your likeness.
+  ['productions', 'persona_id', 'INTEGER'],
   // A scene is a row of the shot list: what is on screen while a section of
   // the script plays. `purpose` holds the shot detail.
   ['scenes', 'shot_type', 'TEXT'],
@@ -151,6 +164,32 @@ const ADDED_COLUMNS = [
   // The three dates your register is worked to: { P1, P2, P3 } as YYYY-MM-DD.
   // A video is due by its priority's date unless it carries its own due_at.
   ['workspace', 'deadlines', 'TEXT'],
+  // The customer's monthly HeyGen limit and rate: { monthlyCap, ratePerMin }.
+  ['workspace', 'budget', 'TEXT'],
+  // What a single-line render was estimated to cost, counted against the limit.
+  ['segment_renders', 'cost_estimate', 'REAL NOT NULL DEFAULT 0'],
+  // Which local model tier Enhance and the checks use: 'light' | 'full'.
+  ['workspace', 'llm_tier', 'TEXT'],
+  // A twin someone shared with you: owner, wardrobe and voice references, grant.
+  ['presenters', 'twin_source', 'TEXT'],
+  // "Not me": an avatar in your account the studio should not offer. Kept
+  // across syncs, since the sync never writes this column.
+  ['provider_assets', 'hidden', 'INTEGER NOT NULL DEFAULT 0'],
+  // A presenter you reach for first: listed at the top, and a filter of its own.
+  ['presenters', 'favorite', 'INTEGER NOT NULL DEFAULT 0'],
+  // You posted it yourself and told the studio where.
+  ['publications', 'by_hand', 'INTEGER NOT NULL DEFAULT 0'],
+  // Kept but not shown: seed samples, and videos since deleted in HeyGen.
+  ['assets', 'hidden', 'INTEGER NOT NULL DEFAULT 0'],
+  // Archived: kept whole (scripts, takes, renders), out of every list; restorable.
+  ['productions', 'archived_at', 'TEXT'],
+  // A share recorded on AuthenTech: its id, the signed proof, and whether it checked out.
+  ['grants', 'authentech_share_id', 'TEXT'],
+  ['grants', 'authentech_assertion', 'TEXT'],
+  ['grants', 'verified', 'INTEGER NOT NULL DEFAULT 0'],
+  ['grants', 'accepted_at', 'TEXT'],
+  // Where the studio is in AuthenTech's event feed.
+  ['workspace', 'authentech_cursor', 'TEXT'],
 ];
 
 function migrate(db) {

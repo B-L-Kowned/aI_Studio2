@@ -85,7 +85,17 @@ export const api = {
   castablePresenters: () => get('/presenters/castable'),
   createPresenter: (body) => post('/presenters', body),
   castPresenter: (id, body) => patch(`/presenters/${id}/casting`, body),
+  presenterPersona: (id) => get(`/presenters/${id}/persona`),
+  savePresenterPersona: (id, body) => request(`/presenters/${id}/persona`, { method: 'PUT', body: JSON.stringify(body) }),
+  videoPersona: (id) => get(`/productions/${id}/persona`),
+  setVideoPersona: (id, personaId) => request(`/productions/${id}/persona`, { method: 'PUT', body: JSON.stringify({ personaId }) }),
+  favoritePresenter: (id, favorite) => post(`/presenters/${id}/favorite`, { favorite }),
   retirePresenter: (id, active) => post(`/presenters/${id}/retire`, { active }),
+  setMadeBy: (ids, madeBy) => post('/productions/made-by', { ids, madeBy }),
+  consentStatus: () => get('/people/consent-status'),
+  sendInvite: (body) => post('/people/invites', body),
+  withdrawInvite: (id) => post(`/people/${id}/withdraw-invite`),
+  syncPeople: () => get('/people?sync=1'),
   invitePerson: (name, role) => post('/people/invite', { name, role }),
   grantConsent: (id, scope) => post(`/people/${id}/consent`, { scope }),
   revokeConsent: (id) => post(`/people/${id}/revoke`),
@@ -110,14 +120,20 @@ export const api = {
   // generation providers (HeyGen)
   providers: () => get('/providers'),
   syncProvider: (id) => post(`/providers/${id}/sync`),
-  providerAssets: (id, { kind, q, limit } = {}) => {
+  providerAssets: (id, { kind, q, limit, pool, offset, gender, group, person } = {}) => {
     const p = new URLSearchParams();
     if (kind) p.set('kind', kind);
+    if (pool) p.set('pool', pool);
+    if (gender) p.set('gender', gender);
+    if (group) p.set('group', group);
+    if (person) p.set('person', person);
+    if (offset) p.set('offset', String(offset));
     if (q) p.set('q', q);
     if (limit) p.set('limit', String(limit));
     const qs = p.toString();
     return get(`/providers/${id}/assets${qs ? `?${qs}` : ''}`);
   },
+  hideAsset: (id, hidden = true) => post(`/provider-assets/${id}/hide`, { hidden }),
   providerJobs: () => get('/provider-jobs'),
 
   // training — the content program. Courses are campaigns, lessons are videos.
@@ -284,10 +300,33 @@ export const api = {
   acceptScript: (id, versionId) => post(`/productions/${id}/script/${versionId}/accept`),
   rejectScript: (id, versionId) => post(`/productions/${id}/script/${versionId}/reject`),
   render: (id) => get(`/productions/${id}/render`),
+  budget: () => get('/workspace/budget'),
+  account: () => get('/account'),
+  grants: () => get('/grants'),
+  shareTwin: (body) => post('/grants', body),
+  extendGrant: (id, days) => post(`/grants/${id}/extend`, { days }),
+  endGrant: (id) => post(`/grants/${id}/end`),
+  accountSignIn: (createAccount) => post('/account/sign-in', { createAccount }),
+  accountSignOut: () => post('/account/sign-out'),
+  startAuthentechShare: (grantId) => post(`/account/shares/${grantId}/start`),
+  twinCard: (presenterId, grantId) => get(`/presenters/${presenterId}/twin-card${grantId ? `?grant=${grantId}` : ''}`),
+  previewTwinCard: (card) => post('/twin-cards/preview', { card }).then((r) => r.data),
+  importTwinCard: (card) => post('/twin-cards/import', { card }),
+  importTwinPackage: (file) => request('/twin-packages/import', { method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream' } }),
+  addLookFromPhoto: (presenterId, file, name) => request(`/presenters/${presenterId}/looks/from-photo?confirm=1&name=${encodeURIComponent(name ?? '')}`, { method: 'POST', body: file, headers: { 'Content-Type': file.type || 'image/jpeg' } }),
+  makeTwinVoice: (presenterId) => post(`/presenters/${presenterId}/twin/voice`),
+  buildTwinLook: (presenterId) => post(`/presenters/${presenterId}/twin/look`, { confirm: true }),
+  components: () => get('/workspace/components'),
+  modelTier: () => get('/workspace/llm/tier'),
+  setModelTier: (tier) => request('/workspace/llm/tier', { method: 'PUT', body: JSON.stringify({ tier }) }),
+  downloadModelTier: (tier) => post('/workspace/llm/tier/download', { tier }),
+  setBudget: (body) => request('/workspace/budget', { method: 'PUT', body: JSON.stringify(body) }),
   startRender: (id, confirmPaid, opts = {}) => post(`/productions/${id}/render`, { confirmPaid, ...opts }),
   cancelRender: (id, renderId) => post(`/productions/${id}/render/${renderId}/cancel`),
   applyEdit: (id, renderId, body) => post(`/productions/${id}/render/${renderId}/edit`, body),
   createExport: (id) => post(`/productions/${id}/export`),
+  postFiles: (id) => get(`/productions/${id}/post-files`),
+  markPosted: (id, platform, url, undo = false) => post(`/productions/${id}/publications/${encodeURIComponent(platform)}/posted`, { url, undo }),
   publications: (id) => get(`/productions/${id}/publications`),
   // Channel names may contain spaces ("Artificial Funny"), so the segment is encoded.
   publish: (id, platform, mode) =>

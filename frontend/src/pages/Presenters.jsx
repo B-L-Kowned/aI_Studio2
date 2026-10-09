@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Check, AlertCircle, Plus, X, Archive, RotateCcw, ChevronDown, Search } from 'lucide-react';
+import { Check, AlertCircle, Plus, X, Archive, RotateCcw, ChevronDown, Search, Star } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
+import { useDialog, Modal } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import { Section, PageHead } from '../components/Section.jsx';
+import { ShareTwinDialog, ImportTwinDialog } from '../components/Twin.jsx';
 
 const ROSTER_PAGE_SIZE = 24;
 
@@ -33,7 +35,7 @@ function searchablePresenter(presenter) {
 
 function initials(name = '') {
   return name
-    .split(/\s+/)
+    .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean)
     .slice(0, 2)
     .map((word) => word[0])
@@ -51,15 +53,19 @@ function initials(name = '') {
  * a small thumbnail, so a cast roster never reads as a list of bare names.
  * Presenter and personal cards ARE people, so they keep the avatar photo.
  */
-export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode }) {
-  const { mutate } = useStudio();
+export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, onePage = false, after = null, show = null }) {
+  const { mutate, scopeMode } = useStudio();
+  const dialog = useDialog();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState(null);
   const [showRetired, setShowRetired] = useState(false);
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState(null);
   const [query, setQuery] = useState('');
+  const [only, setOnly] = useState('all'); // all | favorites | upcoming
   const [visibleCount, setVisibleCount] = useState(ROSTER_PAGE_SIZE);
+  const [browsing, setBrowsing] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     const d = await api.presenters(showRetired);
@@ -94,6 +100,125 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
     try { await mutate(fn, null); await load(); }
     catch (ex) { setErr(ex.message); }
   };
+  // In Comedy a HeyGen avatar becomes a character's performer; in Content, a presenter.
+  const comedy = scopeMode === 'comedy';
+  const useAvatar = async (a, person) => {
+    setErr(null);
+    try {
+      const r = await mutate(() => api.createPresenter(comedy
+        ? { kind: 'character', name: person ?? a.name, description: `Performed by a HeyGen avatar · ${a.name}` }
+        : { kind: 'avatar', name: person ?? a.name, description: `HeyGen presenter · ${a.name}` }), null);
+      await mutate(() => api.castPresenter(r.data.id, { avatarAssetId: a.id }), null, { silent: true });
+      await load();
+    } catch (ex) { setErr(ex.message); }
+  };
+  const rowsOf = (list) => (
+    <div className="border border-solid border-line rounded-lg bg-surface overflow-clip">
+      {list.map((p) => (
+        <PresenterRow key={p.id} presenter={p} options={data.options}
+          onSave={(body) => run(() => api.castPresenter(p.id, body))}
+          onRetire={() => run(() => api.retirePresenter(p.id, !p.isActive))}
+          onFavorite={() => run(() => api.favoritePresenter(p.id, !p.favorite))}
+          onChanged={load} />
+      ))}
+    </div>
+  );
+
+  // Who is in your videos, on one page, the same shape in both programs: you,
+  // the program's cast (presenters in Content, characters in Comedy — made
+  // here or brought in from HeyGen), and the people you invited.
+  if (onePage) {
+    const you = data.tabs.find((t) => t.id === 'personal');
+    const others = data.tabs.find((t) => t.id === (comedy ? 'characters' : 'avatars'));
+    const word = comedy ? 'character' : 'presenter';
+    return (
+      <>
+        <PageHead title="Cast" lead={comedy
+          ? 'Who appears in your comedy — you, your characters, and who has approved their likeness.'
+          : 'Who appears in your videos — you, anyone else on camera, and who has approved their likeness.'}
+          actions={<button onClick={() => setShowRetired((v) => !v)}>{showRetired ? 'Hide retired' : 'Show retired'}</button>}
+          tabs={tabsNode} />
+        {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
+        {you && (!show || show === 'you' || show === 'personas') && (() => {
+          // You and the roles you play are one list: yourself first (the
+          // default when no persona fits a video), then each persona.
+          const all = [...you.presenters].sort((x, y) => (!!x.persona - !!y.persona) || x.id - y.id);
+          return (
+            <Section title="You" meta={`yourself and ${all.length - 1} persona${all.length === 2 ? '' : 's'} — personality, outfits, pace, and which videos each presents`}
+              actions={<button onClick={async () => {
+                const name = await dialog.prompt({ title: 'New persona', label: 'Name', placeholder: 'Pat the Coach',
+                  body: 'A persona is you in a role. Give it a name now; its personality, outfits, pace and the videos it presents are set next.',
+                  confirmLabel: 'Create persona' });
+                if (!name?.trim()) return;
+                await run(async () => {
+                  const r = await api.createPresenter({ kind: 'personal', name: name.trim(), description: '' });
+                  await api.savePresenterPersona(r.data.id, { persona: { voice: '' } });
+                  return r;
+                });
+              }}><Plus size={14} /> New persona</button>}>
+              {all.length ? (
+                <div className="border border-solid border-line rounded-lg bg-surface overflow-clip">
+                  {all.map((p) => <PersonaCard key={p.id} presenter={p} onChanged={load} options={data.options}
+                    onCast={(body) => run(() => api.castPresenter(p.id, body))} />)}
+                </div>
+              ) : <p className="sectionempty">No likeness of you yet.</p>}
+            </Section>
+          );
+        })()}
+        {others && (!show || show === 'cast') && (
+          <Section title={comedy ? 'Characters' : 'Other presenters'} meta={others.presenters.length ? `${others.presenters.length}` : 'none'}
+            actions={<>
+              {others.presenters.length > 12 && (
+                <label className="flex items-center gap-[6px] border border-solid border-line-2 rounded p-[0_8px] bg-surface text-faint">
+                  <Search size={13} />
+                  <input className="[border:0] p-[5px_0] w-[150px] text-[12.5px] text-ink focus:[outline:0] focus:[box-shadow:none]" placeholder={`Search ${word}s…`}
+                    value={query} onChange={(e) => setQuery(e.target.value)} aria-label={`Search ${word}s`} />
+                </label>
+              )}
+              {comedy && <button onClick={() => setBrowsing((b) => !b)}>{browsing ? 'Close HeyGen avatars' : <><Plus size={14} /> Add from HeyGen</>}</button>}
+              <button onClick={() => setAdding(true)}><Plus size={14} /> New {word}</button>
+              {!comedy && <button className="ghostbtn text-muted" onClick={() => setImporting(true)} title="Someone shared their twin card with you">Add a shared twin</button>}
+            </>}>
+            {importing && <ImportTwinDialog onClose={() => setImporting(false)} onAdded={load} />}
+            {others.presenters.length ? (() => {
+              const found = others.presenters
+                .filter((p) => only === 'all' || (only === 'favorites' ? p.favorite : p.upcoming > 0))
+                .filter((p) => !normalizedQuery || searchablePresenter(p).includes(normalizedQuery));
+              const chip = (id, label, n) => (
+                <button key={id} type="button" onClick={() => setOnly(id)}
+                  className={'text-[12px] p-[3px_10px] rounded-full border border-solid ' + (only === id ? 'bg-ink text-white border-ink' : 'bg-surface text-ink-2 border-line')}>
+                  {label} <span className={only === id ? 'opacity-70' : 'text-faint'}>{n}</span>
+                </button>
+              );
+              return (
+                <>
+                  <div className="flex flex-wrap gap-[6px] mb-[10px]" role="group" aria-label="Show">
+                    {chip('all', 'All', others.presenters.length)}
+                    {chip('favorites', '★ Favorites', others.presenters.filter((p) => p.favorite).length)}
+                    {chip('upcoming', 'In upcoming videos', others.presenters.filter((p) => p.upcoming > 0).length)}
+                  </div>
+                  {found.length ? rowsOf(found.slice(0, visibleCount)) : <p className="sectionempty">{only !== 'all' && !normalizedQuery ? (only === 'favorites' ? 'No favourites yet — star a presenter to keep them at the top.' : 'None of these presenters is cast in a video still to make.') : `No ${word} matches “${query.trim()}”.`}</p>}
+                  {found.length > visibleCount && (
+                    <div className="flex items-center gap-[10px] pt-[10px] text-[12px] text-muted">
+                      Showing {visibleCount} of {found.length}
+                      <button className="text-[12px] p-[4px_10px]" onClick={() => setVisibleCount((n) => n + ROSTER_PAGE_SIZE)}>Show {Math.min(ROSTER_PAGE_SIZE, found.length - visibleCount)} more</button>
+                    </div>
+                  )}
+                </>
+              );
+            })()
+              : <p className="sectionempty">{comedy
+                ? 'No characters yet. Create one, or bring in a HeyGen avatar to perform one.'
+                : 'Every video in your register is presented by you. None added yet. To put someone else on camera, choose one of HeyGen’s presenters below.'}</p>}
+          </Section>
+        )}
+        {/* Content presenters come from HeyGen, so the catalogue is the page, not a hidden drawer. */}
+        {(browsing || !comedy) && (!show || show === 'cast') && <HeyGenBrowser onUse={useAvatar} />}
+        {after}
+        {adding && <NewPresenter kind={comedy ? 'character' : 'avatar'} onClose={() => setAdding(false)} onDone={load} />}
+      </>
+    );
+  }
 
   return (
     <>
@@ -119,12 +244,17 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
       />
 
       {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
+      {active?.id === 'avatars' && <HeyGenBrowser onUse={useAvatar} />}
 
       {active && (
         <>
           {active.presenters.length === 0 ? (
             <Section>
-              <p className="sectionempty">Nothing here yet.</p>
+              <p className="sectionempty">
+                {active.id === 'avatars'
+                  ? 'No other presenters. Every video in your register is presented by you — your looks and voice are under You. Add one here only for someone else on camera.'
+                  : 'Nothing here yet.'}
+              </p>
             </Section>
           ) : (
             <Section>
@@ -151,6 +281,18 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
                 <p className="sectionempty">No {active.label.toLocaleLowerCase()} match “{query.trim()}”.</p>
               ) : (
                 <>
+                  {active.id !== 'characters' ? (
+                    // People read as a list: who, the look and voice they are
+                    // cast to, whether they are ready. One row each; the persona
+                    // and Retire are there when wanted, not on every visit.
+                    <div className="border border-solid border-line rounded-lg bg-surface overflow-clip">
+                      {visiblePresenters.map((p) => (
+                        <PresenterRow key={p.id} presenter={p} options={data.options}
+                          onSave={(body) => run(() => api.castPresenter(p.id, body))}
+                          onRetire={() => run(() => api.retirePresenter(p.id, !p.isActive))} />
+                      ))}
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-[repeat(3,1fr)] gap-[12px] lte860:grid-cols-[repeat(2,1fr)] lte620:grid-cols-[1fr]">
                     {visiblePresenters.map((p) => (
                       <article
@@ -163,8 +305,11 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
                   {/* A persona that only shows a name is decoration. These are
                       the lines that actually steer the script. */}
                   {p.persona && (p.persona.voice || p.persona.signatureOpening) && (
-                    // Capped and scrolling: a long persona must not make its whole row as tall as itself.
-                    <dl className="m-[5px_14px_2px] grid grid-cols-[auto_1fr] gap-[3px_8px] max-h-[190px] overflow-y-auto pr-[4px] [&::-webkit-scrollbar]:w-[5px] [&::-webkit-scrollbar-thumb]:bg-line-2 [&::-webkit-scrollbar-thumb]:rounded-[3px]">
+                    <details className="m-[2px_14px_0] text-[12px] group/persona">
+                    <summary className="cursor-pointer text-muted hover:text-ink select-none list-none [&::-webkit-details-marker]:hidden">
+                      <span className="inline-block transition-transform group-open/persona:rotate-90">›</span> How they speak
+                    </summary>
+                    <dl className="m-[6px_0_2px] grid grid-cols-[auto_1fr] gap-[3px_8px]">
                       {p.persona.voice && (
                         <><dt className={PERSONA_DT + ' text-faint'}>Voice</dt><dd className={PERSONA_DD + ' text-ink-2'}>{p.persona.voice}</dd></>
                       )}
@@ -178,12 +323,13 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
                         <><dt className={'warn ' + PERSONA_DT + ' text-warn'}>Never claims</dt><dd className={'warn ' + PERSONA_DD + ' text-warn'}>{p.persona.neverClaim}</dd></>
                       )}
                     </dl>
+                    </details>
                   )}
 
                   {/* Casting is the same action on every card, so it sits in
                       the same place on every card — pinned to the bottom rather
                       than floating wherever the text above happens to end. */}
-                  <div className="mt-auto p-[10px_14px_13px] flex flex-col gap-[7px]">
+                  <div className="mt-auto p-[8px_14px_11px] flex flex-col gap-[6px]">
                     <div className="text-[11.5px] min-h-[1.4em]">
                       {p.ready
                         ? <span className="okv inline-flex items-center gap-[4px]"><Check size={12} /> Ready to produce</span>
@@ -203,6 +349,7 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
                       </article>
                     ))}
                   </div>
+                  )}
                   {visiblePresenters.length < matches.length && (
                     <div className="flex justify-center items-center gap-[12px] pt-[16px] text-muted text-[12px]">
                       <span>Showing {visiblePresenters.length} of {matches.length}</span>
@@ -216,7 +363,7 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
             </Section>
           )}
 
-          {!active.presenters.some((p) => p.ready) && (
+          {active.presenters.length > 0 && !active.presenters.some((p) => p.ready) && (
             <div className="notice warn">
               <AlertCircle />
               <span>
@@ -247,6 +394,437 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode })
  * three characters to a screen. The tile now appears only for a real image.
  * The kind badge ("CHARACTER") went too: the page title already says it.
  */
+/**
+ * Every avatar HeyGen holds for you — your own first, the whole catalogue a
+ * search away. The roster above is the presenters you cast; this is what they
+ * can be cast from. Nine thousand rows are searched, never shipped.
+ */
+const PAGE = 48;
+/**
+ * HeyGen's own presenters: about 1,600 people, each wearing several looks.
+ * Your own looks are not here — they belong to your personas, under You.
+ * Pick a person, then the look they should wear.
+ */
+function HeyGenBrowser({ onUse }) {
+  const [q, setQ] = useState('');
+  const [gender, setGender] = useState('');
+  const [res, setRes] = useState(null);
+  const [people, setPeople] = useState([]);
+  const [open, setOpen] = useState(null);      // the person whose looks are shown
+  const [looks, setLooks] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [broken, setBroken] = useState(() => new Set());
+  useEffect(() => {
+    let live = true;
+    const t = setTimeout(() => {
+      api.providerAssets('heygen', { kind: 'avatar', pool: 'stock', group: 'person', q: q.trim(), gender, limit: PAGE }).then((r) => {
+        if (!live) return;
+        setRes(r); setPeople(r.people ?? []);
+      }).catch(() => live && setRes({ people: [], matched: 0, total: 0 }));
+    }, q ? 250 : 0);
+    return () => { live = false; clearTimeout(t); };
+  }, [q, gender]);
+  useEffect(() => {
+    if (!open) { setLooks(null); return; }
+    api.providerAssets('heygen', { kind: 'avatar', pool: 'stock', person: open, limit: 200 })
+      .then((r) => setLooks(r.items ?? [])).catch(() => setLooks([]));
+  }, [open]);
+  const more = () => api.providerAssets('heygen', { kind: 'avatar', pool: 'stock', group: 'person', q: q.trim(), gender, limit: PAGE, offset: people.length })
+    .then((r) => setPeople((cur) => [...cur, ...(r.people ?? [])])).catch(() => {});
+  if (!res) return null;
+  const picture = (a, cls) => (a?.previewUrl && !broken.has(a.id)
+    ? <img className={`block w-full object-cover object-[center_22%] bg-surface-2 ${cls}`} src={a.previewUrl} alt="" loading="lazy"
+        onError={() => setBroken((cur) => new Set(cur).add(a.id))} />
+    : <div className={`w-full grid place-items-center bg-surface-2 text-[22px] font-[600] text-faint ${cls}`} aria-hidden="true">{initials(a?.name)}</div>);
+  const chip = (id, label) => (
+    <button type="button" onClick={() => setGender(id)}
+      className={'text-[12px] p-[4px_11px] rounded-full border border-solid ' + (gender === id ? 'bg-ink text-white border-ink' : 'bg-surface text-ink-2 border-line')}>
+      {label}
+    </button>
+  );
+  return (
+    <Section title="HeyGen presenters" meta={`${res.matched.toLocaleString()} ${q ? 'match' : 'people'} · ${res.looks?.toLocaleString() ?? ''} looks`}
+      actions={<>
+        {chip('', 'Everyone')}
+        {chip('female', 'Women')}
+        {chip('male', 'Men')}
+        <label className="flex items-center gap-[6px] border border-solid border-line-2 rounded p-[0_8px] bg-surface text-faint">
+          <Search size={13} />
+          <input className="[border:0] p-[5px_0] w-[180px] text-[12.5px] focus:[outline:0] focus:[box-shadow:none] text-ink" placeholder="Search a name or setting…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search HeyGen presenters" />
+        </label>
+      </>}>
+      {people.length === 0 ? (
+        <p className="sectionempty">{res.total ? 'No presenter matches that.' : 'HeyGen’s presenters have not been downloaded yet — sign in under Settings → HeyGen account.'}</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[10px]">
+            {people.map((p) => (
+              <button key={p.person} type="button" onClick={() => setOpen(p.person)}
+                className="text-left p-0 border border-solid border-line rounded-md overflow-hidden bg-surface hover:border-line-2 hover:[box-shadow:var(--shadow)]">
+                {picture(p.cover, 'aspect-square')}
+                <span className="flex items-baseline justify-between gap-[6px] p-[6px_8px]">
+                  <b className="text-[12.5px] font-[560] text-ink truncate">{p.person}</b>
+                  <span className="text-[11px] text-faint flex-none">{p.looks} look{p.looks === 1 ? '' : 's'}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          {people.length < res.matched && (
+            <div className="flex items-center gap-[10px] mt-[12px] text-[12px] text-muted">
+              Showing {people.length.toLocaleString()} of {res.matched.toLocaleString()}
+              <button type="button" className="text-[12px] p-[4px_10px]" onClick={more}>Show {Math.min(PAGE, res.matched - people.length)} more</button>
+            </div>
+          )}
+        </>
+      )}
+      {open && (
+        <Modal title={`${open} · choose a look`} width={760} onClose={() => setOpen(null)}
+          footer={<button onClick={() => setOpen(null)}>Close</button>}>
+          {!looks ? <p className="m-0 text-muted text-[13px]">Loading looks…</p> : (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[10px] max-h-[62vh] overflow-auto">
+              {looks.map((a) => (
+                <figure key={a.id} className="m-0 border border-solid border-line rounded-md overflow-hidden bg-surface">
+                  {picture(a, 'aspect-square')}
+                  <figcaption className="p-[6px_8px] text-[11.5px] text-ink-2 truncate" title={a.name}>{a.name}</figcaption>
+                  <div className="p-[0_8px_8px]">
+                    <button type="button" className="w-full text-[12px] p-[4px_8px]" disabled={busy === a.id}
+                      onClick={async () => { setBusy(a.id); await onUse(a, open); setBusy(null); setOpen(null); }}>
+                      <Plus size={12} /> {busy === a.id ? 'Adding…' : 'Add as presenter'}
+                    </button>
+                  </div>
+                </figure>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+    </Section>
+  );
+}
+
+/**
+ * A persona, whole: who they are, how they speak, what they wear, how fast,
+ * and which videos they present when a video does not choose for itself.
+ */
+function PersonaCard({ presenter: p, onChanged, options, onCast }) {
+  const [editing, setEditing] = useState(null); // null | the tab to open on
+  const [sharing, setSharing] = useState(false);
+  const useFor = p.useFor ?? { workstreams: [], companies: [] };
+  const image = p.avatar?.previewUrl;
+  const used = [...useFor.workstreams, ...useFor.companies];
+  const looks = p.looks ?? [];
+  return (
+    <div className="[&+&]:[border-top:1px_solid_var(--line)]">
+      <div className="grid grid-cols-[44px_minmax(220px,1fr)_minmax(200px,1fr)_220px_auto] gap-[14px] items-center p-[10px_14px] lte960:grid-cols-[44px_1fr]">
+        <LookThumb look={image ? { previewUrl: image, name: p.name } : { name: p.name }} className="w-[44px] h-[44px] rounded-[8px] text-[12px]" />
+        <div className="min-w-0">
+          <b className="flex items-center gap-[6px] text-[13.5px] font-[580] min-w-0"><span className="truncate">{p.name}</span>
+            {!p.persona && <span className="flex-none text-[10px] font-semibold tracking-[.05em] uppercase text-muted bg-canvas border border-solid border-line rounded-[3px] p-[1px_6px]">Yourself</span>}</b>
+          <span className="block truncate text-[12px] text-muted">{p.tagline || p.description || 'No description yet'}</span>
+        </div>
+        <div className="min-w-0 text-[12px] lte960:col-span-2">
+          <span className="text-muted">Presents: </span>
+          {used.length ? <span className="text-ink-2">{used.join(' · ')}</span>
+            : <span className="text-faint">{p.persona ? 'only when chosen for a video' : 'any video no persona presents'}</span>}
+          <span className="block text-faint">{p.speed ? `${p.speed.toFixed(2)}× pace` : 'natural pace'}</span>
+        </div>
+        {/* The outfits, seen at a glance; click to change them. */}
+        <button type="button" onClick={() => setEditing('outfits')} title="Change the outfits"
+          className="flex items-center gap-[4px] p-[3px] rounded-md border border-solid border-line bg-surface hover:border-line-2 justify-self-end lte960:col-span-2 lte960:justify-self-start">
+          {looks.slice(0, 4).map((l) => (
+            <LookThumb key={l.id} look={l} className="w-[30px] h-[30px] rounded-[5px] text-[10px]" />
+          ))}
+          <span className="text-[11.5px] text-muted p-[0_6px]">{looks.length} outfit{looks.length === 1 ? '' : 's'}</span>
+        </button>
+        <span className="flex gap-[6px] lte960:col-span-2 lte960:justify-self-end">
+          <button className="text-[12px] p-[4px_11px] ghostbtn text-muted" onClick={() => setSharing(true)} title="Let someone use this twin, for a set time">Share</button>
+          <button className="text-[12px] p-[4px_11px]" onClick={() => setEditing('who')}>Edit</button>
+        </span>
+      </div>
+      {sharing && <ShareTwinDialog presenter={p} onClose={() => setSharing(false)} />}
+      {editing && <PersonaEditor presenter={p} tab={editing} options={options} onCast={onCast}
+        onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged?.(); }} />}
+    </div>
+  );
+}
+
+/** A look's picture, or its initials once HeyGen's link has expired (sign in to refresh). */
+function LookThumb({ look, className }) {
+  const [broken, setBroken] = useState(false);
+  if (!look?.previewUrl || broken) {
+    return <span className={`grid place-items-center bg-surface-2 text-faint font-[600] ${className}`} title={`${look?.name ?? ''} — picture refreshes when you sign in to HeyGen`}>{initials(look?.name)}</span>;
+  }
+  return <img src={look.previewUrl} alt="" loading="lazy" onError={() => setBroken(true)} className={`object-cover object-[center_22%] bg-surface-2 ${className}`} />;
+}
+
+const EDIT_TABS = [['who', 'Who they are'], ['outfits', 'Outfits & pace'], ['voice', 'Look & voice'], ['presents', 'What they present']];
+
+/**
+ * Everything about a persona in one dialog, one Save: who they are and how
+ * they speak, the outfits they wear and their pace, and which videos they
+ * present by default.
+ */
+function PersonaEditor({ presenter: p, tab: initialTab, options, onCast, onClose, onSaved }) {
+  const [tab, setTab] = useState(initialTab);
+  const [meta, setMeta] = useState(null);
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const dialog = useDialog();
+  const { mutate } = useStudio();
+  useEffect(() => {
+    api.presenterPersona(p.id).then((d) => {
+      setMeta(d);
+      setForm({
+        name: p.name, tagline: p.tagline ?? p.description ?? '',
+        persona: { voice: '', signatureOpening: '', signOff: '', neverClaim: '', ...(p.persona ?? {}) },
+        useFor: d.useFor, assetIds: d.looks.map((l) => l.id), speed: d.speed ?? 1,
+      });
+    }).catch(() => {});
+  }, [p.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const FIELD = 'flex flex-col gap-[4px] text-[11.5px] font-semibold text-muted';
+  const toggleUse = (key, v) => setForm((f) => {
+    const list = f.useFor[key];
+    return { ...f, useFor: { ...f.useFor, [key]: list.includes(v) ? list.filter((x) => x !== v) : [...list, v] } };
+  });
+  const toggleLook = (id) => setForm((f) => ({ ...f, assetIds: f.assetIds.includes(id) ? f.assetIds.filter((x) => x !== id) : [...f.assetIds, id] }));
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.savePresenterPersona(p.id, {
+        name: form.name, tagline: form.tagline, persona: form.persona, useFor: form.useFor,
+        assetIds: form.assetIds, speed: Math.abs(form.speed - 1) < 0.005 ? null : form.speed,
+      });
+      onSaved?.();
+    } finally { setSaving(false); }
+  };
+  return (
+    <Modal title={`Edit ${p.name}`} width={860} onClose={onClose}
+      footer={<>
+        <span className="mr-auto text-[11.5px] text-faint">{form ? `${form.assetIds.length} outfit${form.assetIds.length === 1 ? '' : 's'} · ${form.speed.toFixed(2)}× pace` : ''}</span>
+        <button onClick={onClose}>Cancel</button>
+        <button className="primary" disabled={!form || saving || !form.assetIds.length || !form.name.trim()} onClick={save}
+          title={form && !form.assetIds.length ? 'Choose at least one outfit' : ''}>{saving ? 'Saving…' : 'Save'}</button>
+      </>}>
+      <div className="flex gap-[2px] m-[-4px_0_14px] [border-bottom:1px_solid_var(--line)]" role="tablist">
+        {EDIT_TABS.map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+            className={'[border:0] rounded-none bg-transparent text-[13px] p-[7px_12px] -mb-px ' + (tab === id ? 'text-ink font-[580] [border-bottom:2px_solid_var(--ink)]' : 'text-muted hover:text-ink')}>{label}</button>
+        ))}
+      </div>
+      {!form || !meta ? <p className="m-0 text-[13px] text-muted">Loading…</p> : (
+        <div className="min-h-[340px]">
+          {tab === 'who' && (
+            <div className="grid gap-[12px]">
+              <div className="grid grid-cols-[1fr_2fr] gap-[12px] lte800:grid-cols-[1fr]">
+                <label className={FIELD}>Name<input className="font-normal text-[13px] text-ink" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+                <label className={FIELD}>Who they are, in a line<input className="font-normal text-[13px] text-ink" value={form.tagline} onChange={(e) => setForm({ ...form, tagline: e.target.value })} /></label>
+              </div>
+              <div className="grid grid-cols-[1fr_1fr] gap-[12px] lte800:grid-cols-[1fr]">
+                {[['voice', 'How they speak'], ['signatureOpening', 'How they open'], ['signOff', 'How they close'], ['neverClaim', 'What they never claim']].map(([k, l]) => (
+                  <label key={k} className={FIELD}>{l}
+                    <textarea className="font-normal text-[12.5px] text-ink leading-[1.5] min-h-[78px]" value={form.persona[k] ?? ''}
+                      onChange={(e) => setForm({ ...form, persona: { ...form.persona, [k]: e.target.value } })} />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          {tab === 'outfits' && (
+            <div>
+              <div className="flex flex-wrap items-start gap-[10px] m-[0_0_10px]">
+                <p className="m-0 flex-1 min-w-[260px] text-[12.5px] text-muted">Tick the outfits {form.name} wears — from your own HeyGen looks. The first ticked is the default for new videos; any of them can be chosen per video in Render.</p>
+                <label className="cursor-pointer inline-flex items-center gap-[6px] text-[12.5px] p-[5px_11px] rounded-md border border-solid border-line bg-surface hover:border-line-2" title="A photo of you in the outfit — a phone photo, or an image made from one">
+                  <Plus size={13} /> {photoBusy ? 'Sending to HeyGen…' : 'Add a look from a photo'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={photoBusy}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]; e.target.value = '';
+                      if (!file) return;
+                      const ok = await dialog.confirm({ title: `Make a new look for ${form.name}?`, confirmLabel: 'Make the look', tone: 'warn',
+                        body: 'The photo is sent to your HeyGen account and made into a look in this persona’s own identity, so the face stays yours. It may use HeyGen credits, and appears here after the next sync.' });
+                      if (!ok) return;
+                      setPhotoBusy(true);
+                      try { await mutate(() => api.addLookFromPhoto(p.id, file, file.name.replace(/\.[^.]+$/, '')), null); } catch { /* reported */ }
+                      finally { setPhotoBusy(false); }
+                    }} />
+                </label>
+              </div>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-[8px] max-h-[46vh] overflow-auto p-[2px]">
+                {meta.wearable.map((l) => {
+                  const n = form.assetIds.indexOf(l.id);
+                  return (
+                    <button key={l.id} type="button" onClick={() => toggleLook(l.id)} title={l.name} aria-pressed={n >= 0}
+                      className={'relative p-0 rounded-md overflow-hidden border-[2px] border-solid bg-surface ' + (n >= 0 ? 'border-accent' : 'border-transparent opacity-80 hover:opacity-100')}>
+                      <LookThumb look={l} className="w-full aspect-square text-[20px]" />
+                      {n >= 0 && <span className="absolute top-[4px] left-[4px] text-[10px] font-semibold rounded-full p-[1px_6px] bg-accent text-white">{n === 0 ? 'Default' : n + 1}</span>}
+                      <span className="block p-[3px_5px] text-[11px] text-ink-2 truncate">{l.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap items-center gap-[10px] mt-[14px] text-[12.5px]">
+                <span className="font-semibold text-muted text-[11.5px]">Pace</span>
+                <input type="range" min="0.85" max="1.15" step="0.01" value={form.speed} onChange={(e) => setForm({ ...form, speed: Number(e.target.value) })}
+                  className="w-[200px] accent-[var(--ink)]" aria-label={`${form.name}'s pace`} />
+                <code className="text-ink-2">{form.speed.toFixed(2)}×</code>
+                <span className="text-faint">{Math.abs(form.speed - 1) < 0.005 ? 'natural' : form.speed < 1 ? 'more measured' : 'brisker'} — where every video {form.name} presents starts</span>
+              </div>
+            </div>
+          )}
+          {tab === 'voice' && (
+            <div>
+              <p className="m-[0_0_10px] text-[12.5px] text-muted">The default look and the voice {form.name} speaks in. Changes here save as you choose them. To give a persona its own voice, record a sample in its tone under Settings → Your voice.</p>
+              <div className="max-w-[640px]"><CastRow presenter={p} options={options} onSave={onCast} /></div>
+            </div>
+          )}
+          {tab === 'presents' && (
+            <div>
+              <p className="m-[0_0_10px] text-[12.5px] text-muted">When a video does not choose its persona, these decide who presents it. A company outranks a kind of video: a Fixology investor briefing goes to whoever presents Fixology.</p>
+              <span className={FIELD}>Kinds of video</span>
+              <div className="flex flex-wrap gap-[6px] mt-[6px]">
+                {meta.workstreams.map((w) => (
+                  <button key={w} type="button" onClick={() => toggleUse('workstreams', w)} aria-pressed={form.useFor.workstreams.includes(w)}
+                    className={'text-[12.5px] p-[4px_11px] rounded-full border border-solid ' + (form.useFor.workstreams.includes(w) ? 'bg-ink text-white border-ink' : 'bg-surface text-ink-2 border-line')}>{w}</button>
+                ))}
+              </div>
+              <span className={FIELD + ' mt-[16px]'}>Companies</span>
+              <div className="flex flex-wrap items-center gap-[6px] mt-[6px]">
+                {form.useFor.companies.map((c) => (
+                  <span key={c} className="text-[12.5px] p-[4px_7px_4px_11px] rounded-full bg-ink text-white inline-flex items-center gap-[5px]">
+                    {c}<button type="button" className="[border:0] bg-transparent text-white p-0" aria-label={`Remove ${c}`} onClick={() => toggleUse('companies', c)}><X size={11} /></button>
+                  </span>
+                ))}
+                <select className="text-[12.5px] p-[4px_8px]" value="" onChange={(e) => e.target.value && toggleUse('companies', e.target.value)} aria-label="Add a company">
+                  <option value="">+ a company…</option>
+                  {meta.companies.filter((c) => !form.useFor.companies.includes(c)).map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * A persona's outfits and pace. Tick the looks it wears — the first ticked is
+ * its default, the one a new video starts with — and set how fast it speaks.
+ */
+function PersonaStyle({ presenter, onSaved }) {
+  const [data, setData] = useState(null);
+  const [picked, setPicked] = useState([]);
+  const [speed, setSpeed] = useState(presenter.speed ?? 1);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    api.presenterPersona(presenter.id).then((d) => { setData(d); setPicked(d.looks.map((l) => l.id)); setSpeed(d.speed ?? 1); }).catch(() => {});
+  }, [presenter.id]);
+  if (!data) return <p className="m-0 p-[0_14px_12px_72px] text-[12px] text-muted">Loading looks…</p>;
+  const toggle = (id) => setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  const changed = picked.join() !== data.looks.map((l) => l.id).join() || speed !== (data.speed ?? 1);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.savePresenterPersona(presenter.id, { assetIds: picked, speed: Math.abs(speed - 1) < 0.005 ? null : speed });
+      onSaved?.();
+    } finally { setSaving(false); }
+  };
+  return (
+    <div className="p-[2px_14px_14px_72px] lte960:p-[2px_14px_14px]">
+      <p className="m-[0_0_8px] text-[12px] text-muted">Tick the outfits {presenter.name} wears. The first one ticked is the default for new videos; any of them can be chosen per video in Render.</p>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-[8px]">
+        {data.wearable.map((l) => {
+          const n = picked.indexOf(l.id);
+          return (
+            <button key={l.id} type="button" onClick={() => toggle(l.id)} title={l.name}
+              className={'relative p-0 rounded-md overflow-hidden border-[2px] border-solid bg-surface ' + (n >= 0 ? 'border-accent' : 'border-transparent opacity-80 hover:opacity-100')}>
+              <img className="block w-full aspect-square object-cover object-[center_22%] bg-surface-2" src={l.previewUrl} alt={l.name} loading="lazy" />
+              {n >= 0 && (
+                <span className="absolute top-[4px] left-[4px] text-[10px] font-semibold rounded-full p-[1px_6px] bg-accent text-white">{n === 0 ? 'Default' : n + 1}</span>
+              )}
+              <span className="block p-[3px_4px] text-[10.5px] text-ink-2 truncate">{l.name}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-center gap-[10px] mt-[12px] text-[12px]">
+        <span className="text-muted">Pace</span>
+        <input type="range" min="0.85" max="1.15" step="0.01" value={speed} onChange={(e) => setSpeed(Number(e.target.value))}
+          className="w-[160px] accent-[var(--ink)]" aria-label={`${presenter.name}'s pace`} />
+        <code className="text-ink-2">{speed.toFixed(2)}×</code>
+        <span className="text-faint">{Math.abs(speed - 1) < 0.005 ? 'natural' : speed < 1 ? 'more measured' : 'brisker'} — the starting speed of every video {presenter.name} presents</span>
+        <span className="ml-auto flex gap-[8px]">
+          <button className="primary text-[12px] p-[4px_12px]" disabled={!changed || saving || !picked.length} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** One person in the cast, on one line: portrait, who, look and voice, ready. */
+function PresenterRow({ presenter: p, options, onSave, onRetire, onChanged, onFavorite }) {
+  const [open, setOpen] = useState(false);
+  const [styling, setStyling] = useState(false); // the Looks & pace panel
+  const [imageFailed, setImageFailed] = useState(false);
+  const image = (p.artworkUrl || p.avatar?.previewUrl) && !imageFailed ? (p.artworkUrl || p.avatar?.previewUrl) : null;
+  const persona = p.persona && (p.persona.voice || p.persona.signatureOpening) ? p.persona : null;
+  return (
+    <div className={'[&+&]:[border-top:1px_solid_var(--line)] ' + (p.isActive ? '' : 'opacity-50')}>
+      <div className="grid grid-cols-[44px_minmax(200px,1.2fr)_minmax(340px,1.4fr)_240px] gap-[14px] items-center p-[10px_14px] lte960:grid-cols-[44px_1fr]">
+        {image ? (
+          <img className="w-[44px] h-[44px] rounded-[8px] object-cover object-[center_22%] bg-surface-2" src={image} alt="" loading="lazy" onError={() => setImageFailed(true)} />
+        ) : (
+          <b className="w-[44px] h-[44px] grid place-items-center rounded-[8px] bg-surface-2 border border-solid border-line text-ink-2 text-[12px] font-mono" aria-hidden="true">{initials(p.name)}</b>
+        )}
+        <div className="min-w-0">
+          <b className="flex items-center gap-[6px] text-[13.5px] font-[580]">
+            <span className="truncate">{p.name}</span>
+            {p.ready
+              ? <Check size={13} className="flex-none text-ok" aria-label="Ready to produce" />
+              : <span className="flex-none text-[11px] font-normal text-warn">needs casting</span>}
+          </b>
+          <span className="block truncate text-[12px] text-muted" title={p.tagline || p.description}>
+            {p.upcoming > 0 && <span className="text-accent font-[560]">In {p.upcoming} upcoming video{p.upcoming === 1 ? '' : 's'} · </span>}
+            {p.tagline || p.description || ' '}
+          </span>
+        </div>
+        <div className="min-w-0 lte960:col-span-2"><CastRow presenter={p} options={options} onSave={onSave} /></div>
+        <span className="flex items-center justify-end gap-[2px] lte960:col-span-2">
+          {p.kind === 'personal' && (
+            <button type="button" className={'ghostbtn text-[12px] p-[4px_8px] ' + (styling ? 'text-ink' : 'text-muted')} aria-expanded={styling}
+              onClick={() => setStyling((o) => !o)} title="The outfits this persona wears and how fast they speak">
+              {p.looks?.length || 0} look{p.looks?.length === 1 ? '' : 's'}{p.speed ? ` · ${p.speed.toFixed(2)}×` : ''} <ChevronDown size={12} className={styling ? 'rotate-180' : ''} />
+            </button>
+          )}
+          {persona && (
+            <button type="button" className={'ghostbtn text-[12px] p-[4px_8px] ' + (open ? 'text-ink' : 'text-muted')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+              How they speak <ChevronDown size={12} className={open ? 'rotate-180' : ''} />
+            </button>
+          )}
+          {onFavorite && (
+            <button type="button" className={'ghostbtn p-[6px] ' + (p.favorite ? 'text-warn' : 'text-faint hover:text-ink')} aria-pressed={p.favorite}
+              title={p.favorite ? 'Favourite — listed first' : 'Favourite: keep at the top'} onClick={onFavorite}>
+              <Star size={14} fill={p.favorite ? 'currentColor' : 'none'} />
+            </button>
+          )}
+          <button type="button" className="ghostbtn p-[6px] text-faint hover:text-ink" title={p.isActive ? 'Retire — kept, out of the way' : 'Restore'} onClick={onRetire}>
+            {p.isActive ? <Archive size={13} /> : <RotateCcw size={13} />}
+          </button>
+        </span>
+      </div>
+      {styling && <PersonaStyle presenter={p} onSaved={onChanged} />}
+      {open && persona && (
+        <dl className="m-0 p-[0_14px_12px_72px] grid grid-cols-[auto_1fr] gap-[3px_10px] text-[12px] lte960:p-[0_14px_12px]">
+          {persona.voice && <><dt className={PERSONA_DT + ' text-faint'}>Voice</dt><dd className={PERSONA_DD + ' text-ink-2'}>{persona.voice}</dd></>}
+          {persona.signatureOpening && <><dt className={PERSONA_DT + ' text-faint'}>Opens</dt><dd className={PERSONA_DD + ' text-ink-2'}>{persona.signatureOpening}</dd></>}
+          {persona.signOff && <><dt className={PERSONA_DT + ' text-faint'}>Signs off</dt><dd className={PERSONA_DD + ' text-ink-2'}>{persona.signOff}</dd></>}
+          {persona.neverClaim && <><dt className={PERSONA_DT + ' text-warn'}>Never claims</dt><dd className={PERSONA_DD + ' text-warn'}>{persona.neverClaim}</dd></>}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 function PresenterHead({ presenter, tabId }) {
   const [imageFailed, setImageFailed] = useState(false);
   const isCharacter = tabId === 'characters';
@@ -256,6 +834,28 @@ function PresenterHead({ presenter, tabId }) {
   // with a thumbnail, rather than shown as the character.
   const performer = isCharacter && presenter.avatar;
   const caption = isCharacter ? null : (presenter.artworkUrl ? 'Custom artwork' : presenter.avatar?.name);
+
+  // You and presenters are people: a portrait beside the name reads as who it
+  // is. Only a character keeps the wide artwork, because the art is the point.
+  if (!isCharacter) {
+    return (
+      <div className="p-[12px_14px_6px] flex gap-[12px] items-start">
+        {hasImage ? (
+          <img className="flex-none w-[56px] h-[56px] rounded-[10px] object-cover object-[center_22%] bg-surface-2 border border-solid border-line"
+            src={imageUrl} alt={caption ? `${presenter.name} — ${caption}` : presenter.name} loading="lazy" onError={() => setImageFailed(true)} />
+        ) : (
+          <b className="flex-none w-[56px] h-[56px] grid place-items-center border border-solid border-line-2 rounded-[10px] bg-surface-2 text-ink-2 font-[620] text-[13px] font-mono" aria-hidden="true">
+            {initials(presenter.name)}
+          </b>
+        )}
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[14px] leading-[1.3] m-0">{presenter.name}</h3>
+          <p className="m-[2px_0_0] text-muted text-[12px] leading-[1.45] line-clamp-2">{presenter.tagline || presenter.description || 'No note yet.'}</p>
+          {caption && <p className="m-[3px_0_0] text-faint text-[11px] truncate" title={caption}>Look: {caption}</p>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

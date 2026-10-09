@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { DialogProvider } from './components/Dialog.jsx';
 import { createRoot } from 'react-dom/client';
 import { Lock, AlertCircle, Check, X, KeyRound } from 'lucide-react';
 import { StudioProvider, useStudio } from './context/studio-context.jsx';
@@ -9,6 +10,7 @@ import Plan from './pages/Plan.jsx';
 import Cast from './pages/Cast.jsx';
 import Library from './pages/Library.jsx';
 import Setup from './pages/Setup.jsx';
+import { AccountChip } from './components/Twin.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { api } from './services/api.js';
 import './style.css';
@@ -154,7 +156,10 @@ function App() {
               <button key={n} className={current === n ? 'on' : ''} onClick={() => setPage(n)}>{NAV_LABEL[n] ?? n}</button>
             ))}
           </nav>
-          <ProgramBadge go={setPage} />
+          <span className="flex items-center gap-[6px] justify-self-end lte880:col-[2] lte880:row-[1]">
+            <ProgramBadge go={setPage} />
+            <AccountChip />
+          </span>
         </div>
       </header>
       <main>
@@ -173,7 +178,7 @@ function App() {
           {current === 'Plan' && <Plan go={setPage} />}
           {current === 'Create' && <Create go={setPage} />}
           {current === 'Cast' && <Cast />}
-          {current === 'Library' && <Library />}
+          {current === 'Library' && <Library go={setPage} />}
           {current === 'Settings' && <Setup />}
         </ErrorBoundary>
       </main>
@@ -251,6 +256,8 @@ function Toast({ toast }) {
 
 createRoot(document.getElementById('root')).render(
   <StudioProvider>
-    <App />
+    <DialogProvider>
+      <App />
+    </DialogProvider>
   </StudioProvider>
 );

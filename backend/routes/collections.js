@@ -5,12 +5,14 @@ import { castingFor, setCasting } from '../lib/casting.js';
 import { localAssets } from '../lib/providers/index.js';
 import { month } from '../lib/calendar.js';
 import { ok, fail, route } from '../utils/respond.js';
+import { invite, syncConsent, withdrawInvite, consentReady, roleWord } from '../lib/consent.js';
 
 const router = Router();
 
 const person = (r) => ({
   id: r.id, name: r.name, role: r.role, representation: r.representation,
   consentScope: r.consent_scope, status: r.status, inviteToken: r.invite_token,
+  email: r.email ?? null, inviteUrl: r.invite_url ?? null, inviteStatus: r.invite_status ?? null, inviteRole: roleWord(r.invite_role),
   casting: castingFor(r.id),
 });
 
@@ -42,10 +44,29 @@ router.patch(
 
 router.get(
   '/people',
-  route(async (_req, res) =>
-    ok(res, getDb().prepare('SELECT * FROM people ORDER BY position, id').all().map(person))
-  )
+  route(async (req, res) => {
+    // Answers arrive on the consent service; bring them in before listing.
+    try { await syncConsent({ force: req.query.sync === '1' }); } catch { /* unreachable: list what is known */ }
+    return ok(res, getDb().prepare('SELECT * FROM people ORDER BY position, id').all().map(person));
+  })
 );
+
+router.get('/people/consent-status', route(async (_req, res) => ok(res, { ready: consentReady() })));
+
+/** Invite a collaborator by email: they answer on their own consent page. */
+router.post('/people/invites', route(async (req, res) => {
+  try {
+    const r = await invite(req.body ?? {});
+    return ok(res, { ...r, person: person(getDb().prepare('SELECT * FROM people WHERE id = ?').get(r.id)) },
+      r.emailed ? `Invite emailed to ${req.body.email}` : 'Invite created — copy the link to send it');
+  } catch (err) {
+    return fail(res, { NOT_CONFIGURED: 409, UNREACHABLE: 502, NAME_REQUIRED: 400 }[err.code] ?? 400, err.code ?? 'INVITE_FAILED', err.message);
+  }
+}));
+router.post('/people/:id/withdraw-invite', route(async (req, res) => {
+  try { await withdrawInvite(Number(req.params.id)); return ok(res, null, 'Invite withdrawn'); }
+  catch (err) { return fail(res, err.code === 'NOT_FOUND' ? 404 : 502, err.code ?? 'FAILED', err.message); }
+}));
 
 router.post(
   '/people/invite',
@@ -165,12 +186,17 @@ router.get(
       // heard of it" while /campaigns said purpose: null. Plan reads THIS one,
       // which is why the company/track layering was invisible on the page that
       // lists campaigns. Third endpoint pair today to disagree about one row.
-      rows.map((c) => ({
+      // A campaign whose every video is archived is archived with them.
+      rows.filter((c) => {
+        const all = db.prepare('SELECT COUNT(*) n FROM productions WHERE campaign_id = ?').get(c.id).n;
+        const live = db.prepare('SELECT COUNT(*) n FROM productions WHERE campaign_id = ? AND archived_at IS NULL').get(c.id).n;
+        return !(all > 0 && live === 0);
+      }).map((c) => ({
         id: c.id, name: c.name, description: c.description, mode: c.mode,
         companyId: c.company_id ?? null,
         purpose: c.purpose ?? null,
         audience: c.audience ?? null,
-        productions: db.prepare('SELECT COUNT(*) n FROM productions WHERE campaign_id = ?').get(c.id).n,
+        productions: db.prepare('SELECT COUNT(*) n FROM productions WHERE campaign_id = ? AND archived_at IS NULL').get(c.id).n,
       }))
     );
   })
@@ -184,8 +210,14 @@ router.get(
       // Everything the Library knows about each item. It used to return the
       // name and the kind, which is why a "HeyGen video" in here could not be
       // played, dated or told apart from any other.
-      getDb().prepare('SELECT * FROM assets ORDER BY position, id').all()
+      getDb().prepare(`SELECT a.*, p.title AS production_title, p.mode AS production_mode
+          FROM assets a LEFT JOIN productions p ON p.id = a.production_id WHERE a.hidden = 0 ORDER BY a.position, a.id`).all()
         .map((a) => ({
+          // Which program it belongs to, for the Content / Comedy switch: its
+          // video's, else anything from HeyGen is your business work, and the
+          // rest are the sample podcast items that came with the app.
+          program: a.production_mode ?? (a.provider === 'heygen' ? 'content' : 'comedy'),
+          productionTitle: a.production_title ?? null,
           id: a.id, name: a.name, kind: a.kind,
           provider: a.provider ?? null, remoteId: a.remote_id ?? null,
           url: a.url ?? null, thumbnailUrl: a.thumbnail_url ?? null,
@@ -223,9 +255,16 @@ router.get(
     const row = getDb().prepare('SELECT local_path FROM assets WHERE id = ?').get(Number(req.params.id));
     const { existsSync } = await import('node:fs');
     if (!row?.local_path || !existsSync(row.local_path)) return fail(res, 404, 'NOT_FOUND', 'No local file for this video');
-    return res.sendFile(row.local_path);
+    // ?download=1 saves it under its own name rather than playing it.
+    return req.query.download ? res.download(row.local_path) : res.sendFile(row.local_path);
   })
 );
+
+/** Hide a Library item without deleting it (hidden: false shows it again). */
+router.post('/library/:id/hide', route(async (req, res) => {
+  const r = getDb().prepare('UPDATE assets SET hidden = ? WHERE id = ?').run(req.body?.hidden === false ? 0 : 1, Number(req.params.id));
+  return r.changes ? ok(res, { id: Number(req.params.id) }, req.body?.hidden === false ? 'Shown again' : 'Hidden from the Library') : fail(res, 404, 'NOT_FOUND', 'No such item');
+}));
 
 router.delete(
   '/library/:id',

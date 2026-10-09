@@ -14,11 +14,15 @@ import * as artificialFunny from '../lib/publishers/artificial-funny.js';
 import { pushRenderJob, jobsForRender, pollJob } from '../lib/providers/index.js';
 import { isDryRun, providerMode, canGenerateLive } from '../lib/providers/mode.js';
 import { castingReadiness } from '../lib/casting.js';
-import { renderGate } from '../lib/segments.js';
+import { renderGate, buildSegments } from '../lib/segments.js';
+import { enqueue as queueVoice } from '../lib/voice-batch.js';
 import { productionLock } from '../lib/production-lock.js';
 import { madeBy } from '../lib/made-by.js';
 import { cleanRecordingAudio } from '../lib/assemble.js';
 import { keepRenderLocally } from '../lib/render-keep.js';
+import { costOf, budgetRefusal, budgetApplies } from '../lib/budget.js';
+import { chooseRenderPath } from '../lib/providers/heygen-route.js';
+import { usable } from '../lib/grants.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -190,7 +194,16 @@ router.post(
     if (action === 'accept') clearStale('script_versions', v.id);
 
     const affected = action === 'accept' ? markStaleFrom(id, 'script', `Script v${v.version} accepted`) : {};
-    return ok(res, { ...scriptState(id), stale: staleSummary(id), affected }, `Script v${v.version} ${action}ed`);
+    // Approving a script is the first of three decisions; what follows it is
+    // not one. Its lines are built and its voice is queued at once (on this
+    // Mac, free) — unless you record it yourself, where your voice is the take.
+    let voice = null;
+    const finished = !!db.prepare("SELECT 1 FROM brief_fields WHERE production_id = ? AND label = 'Completed asset' AND value != ''").get(id);
+    if (action === 'accept' && madeBy(id) !== 'self' && !finished) {
+      try { buildSegments(id); voice = queueVoice([id]) ? 'queued' : 'already queued'; } catch (err) { voice = `not started: ${err.message}`; }
+    }
+    return ok(res, { ...scriptState(id), stale: staleSummary(id), affected, voice },
+      `Script v${v.version} ${action}ed${voice === 'queued' ? ' — its voice is being made now' : ''}`);
   })
 );
 
@@ -277,7 +290,7 @@ const PUSH_GRACE_SECONDS = 120;
  * created for a video that did not exist yet. A progress bar that advances on
  * its own is not progress, it is an animation.
  */
-async function advanceRenders(productionId) {
+export async function advanceRenders(productionId) {
   const db = getDb();
   const live = db
     .prepare("SELECT * FROM render_versions WHERE production_id = ? AND status IN ('queued','processing')")
@@ -437,6 +450,12 @@ router.post(
     // Fixtures remains an explicit sandbox for exercising downstream export
     // and publication code. Any path that can reach HeyGen — including Test's
     // free, watermarked API-key route — must pass the whole approval chain.
+    // A share that has ended stops a render in every mode, Fixtures included:
+    // it is a question of permission, not of cost.
+    const castIds = [...new Set(getDb().prepare('SELECT presenter_id FROM segments WHERE production_id = ?').all(id).map((r) => r.presenter_id).filter(Boolean))];
+    const ended = castIds.map((pid) => usable(pid)).find((u) => !u.ok);
+    if (ended) return fail(res, 409, 'GRANT_ENDED', ended.reason);
+
     const lock = productionLock(id);
     const blockers = (lock?.blockers ?? []).filter((b) => !(fromRecording && b.key === 'voice'));
     if (providerMode() !== 'fixtures' && blockers.length) {
@@ -478,7 +497,12 @@ router.post(
       ? `${Math.floor(audio.seconds / 60)}:${String(Math.round(audio.seconds % 60)).padStart(2, '0')}`
       : estimateRuntime(segments);
     const minutes = duration.split(':').reduce((m, s, i) => (i === 0 ? Number(m) : Number(m) + Number(s) / 60), 0);
-    const cost = Math.round(minutes * 1.4 * 100) / 100;
+    // The customer's own monthly limit, for pay-as-you-go (API key) renders.
+    // A plan render spends plan credits and is not counted against it.
+    const renderPath = DRY_RUN() ? null : await chooseRenderPath();
+    const cost = budgetApplies(renderPath) ? costOf(minutes) : 0;
+    const overBudget = budgetApplies(renderPath) ? budgetRefusal(cost) : null;
+    if (overBudget) return fail(res, 402, overBudget.code, overBudget.message);
 
     const version =
       (db.prepare('SELECT MAX(version) m FROM render_versions WHERE production_id = ?').get(id).m ?? 0) + 1;
@@ -634,8 +658,11 @@ router.get(
       .prepare('SELECT * FROM exports WHERE production_id = ? AND file_path IS NOT NULL ORDER BY version DESC')
       .get(id);
 
+    // A video finished elsewhere (HeyGen, CapCut) has a file but no in-app export.
+    const { existsSync } = await import('node:fs');
+    const hasFile = db.prepare('SELECT local_path FROM assets WHERE production_id = ? AND local_path IS NOT NULL').all(id).some((r) => existsSync(r.local_path));
     return ok(res, {
-      hasExport: !!latestExport,
+      hasExport: !!latestExport || hasFile,
       targets: publishChannels.map((channel) => {
         const platform = channel.platform;
         const row = rows.find((r) => r.platform === platform);
@@ -661,6 +688,8 @@ router.get(
           preparedAt: row?.prepared_at ?? null,
           postId: row?.post_id ?? null,
           postUrl: row?.post_url ?? null,
+          postedByHand: !!row?.by_hand && row?.status === 'published',
+          postedAt: row?.by_hand ? row?.prepared_at : null,
           error: row?.error ?? null,
           // A "published" row with nothing to link to was written before this
           // build uploaded anything. The row is a record and is kept; what is
@@ -671,6 +700,65 @@ router.get(
     });
   })
 );
+
+/**
+ * The files to post: the finished video and any other shapes exported with it
+ * (9:16 for Shorts, Reels and TikTok; 1:1), newest first, each downloadable.
+ */
+router.get('/:id/post-files', route(async (req, res) => {
+  const { existsSync, statSync } = await import('node:fs');
+  const id = Number(req.params.id);
+  const rows = getDb().prepare(
+    `SELECT id, name, local_path, duration, created_at FROM assets
+      WHERE production_id = ? AND local_path IS NOT NULL ORDER BY id DESC`
+  ).all(id).filter((r) => existsSync(r.local_path));
+  // The shape is measured from the file, not guessed from its name: a HeyGen
+  // render called "…Approved v1" can be vertical.
+  const { execFile } = await import('node:child_process');
+  const probe = (file) => new Promise((done) => execFile('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', file],
+    { timeout: 8000 }, (err, out) => { const [w, h] = String(out ?? '').trim().split(',').map(Number); done(err || !w || !h ? null : { w, h }); }));
+  const shapeOf = (d, name) => {
+    if (!d) return /9x16/.test(name) ? '9:16' : /1x1/.test(name) ? '1:1' : '16:9';
+    const r = d.w / d.h;
+    return r < 0.8 ? '9:16' : r < 1.25 ? '1:1' : '16:9';
+  };
+  const seen = new Set();
+  const files = [];
+  for (const r of rows) {
+    const shape = shapeOf(await probe(r.local_path), r.name);
+    if (seen.has(shape)) continue;
+    seen.add(shape);
+    files.push({ id: r.id, name: r.name, shape, bytes: statSync(r.local_path).size, duration: r.duration ?? null, url: `/api/library/${r.id}/file?download=1` });
+  }
+  return ok(res, { files });
+}));
+
+/** You posted it yourself: record where, so the calendar and Today know it is live. */
+router.post('/:id/publications/:platform/posted', route(async (req, res) => {
+  const db = getDb();
+  const id = Number(req.params.id);
+  const { platform } = req.params;
+  if (!publishTargets.includes(platform)) return fail(res, 404, 'NOT_FOUND', 'Unknown platform');
+  if (req.body?.undo === true) {
+    db.prepare('DELETE FROM publications WHERE production_id = ? AND platform = ? AND by_hand = 1').run(id, platform);
+    return ok(res, { platform, posted: false }, `${platform}: not posted`);
+  }
+  const raw = String(req.body?.url ?? '').trim();
+  let url = null;
+  if (raw) {
+    try { const u = new URL(raw); if (!/^https?:$/.test(u.protocol)) throw new Error(); url = u.toString(); }
+    catch { return fail(res, 400, 'BAD_URL', 'That does not look like a link — paste the post’s address, or leave it empty.'); }
+  }
+  const latestExport = db.prepare('SELECT id FROM exports WHERE production_id = ? AND file_path IS NOT NULL ORDER BY version DESC').get(id);
+  db.prepare(
+    `INSERT INTO publications (production_id, export_id, platform, mode, status, prepared_at, post_id, post_url, error, by_hand)
+     VALUES (?,?,?,'publish','published',datetime('now'),?,?,NULL,1)
+     ON CONFLICT(production_id, platform) DO UPDATE SET
+       export_id = excluded.export_id, mode = 'publish', by_hand = 1, status = 'published', stale = 0, stale_reason = NULL,
+       prepared_at = excluded.prepared_at, post_id = excluded.post_id, post_url = excluded.post_url, error = NULL`
+  ).run(id, latestExport?.id ?? null, platform, url ?? `posted-by-hand:${Date.now()}`, url);
+  return ok(res, { platform, posted: true, url }, `Marked as posted on ${platform}`);
+}));
 
 router.post(
   '/:id/publications/:platform',

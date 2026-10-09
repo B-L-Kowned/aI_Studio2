@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, ArrowRight, Check, Clock, Headphones, Lightbulb, RefreshCw, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
+import { useDialog, Modal } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import { PageHead } from '../components/Section.jsx';
+import ProgramWork from '../components/ProgramWork.jsx';
 
 /**
  * Today: the production manager. Where the register stands against your three
@@ -36,34 +38,45 @@ const fmtDate = (iso) => {
 };
 const dueWords = (d) => (d == null ? '' : d < 0 ? `${-d}d late` : d === 0 ? 'due today' : `due in ${d}d`);
 
-function DeadlineForm({ deadlines, onSave, onCancel, first }) {
+const PRIORITY_HINT = { P1: 'Your most important videos', P2: 'Next in line', P3: 'Everything else, and anything unprioritised' };
+
+/** Your three deadlines, in a dialog: one date per priority. */
+function DeadlineDialog({ deadlines, onSave, onClose }) {
   const [form, setForm] = useState({ P1: deadlines.P1 ?? '', P2: deadlines.P2 ?? '', P3: deadlines.P3 ?? '' });
+  const [saving, setSaving] = useState(false);
+  const save = async () => { setSaving(true); try { await onSave(form); } finally { setSaving(false); } };
   return (
-    <form className="flex flex-wrap items-center gap-x-[14px] gap-y-[10px] p-[12px_16px] rounded-lg border border-solid border-line bg-surface"
-      onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
-      {first && (
-        <span className="flex items-center gap-[8px] text-[13px] text-ink font-[560] mr-[4px]" title="Every video is due by its priority's date (unprioritised count as P3). A single video can still have its own date.">
-          <CalendarDays size={15} className="text-accent" /> Deadlines
-        </span>
-      )}
-      {['P1', 'P2', 'P3'].map((p) => (
-        <label key={p} className="flex items-center gap-[6px] text-[12px] font-semibold text-muted">
-          {p}
-          <input type="date" className="text-[12.5px] p-[4px_6px] w-[132px]" value={form[p]} onChange={(e) => setForm((f) => ({ ...f, [p]: e.target.value }))} />
-        </label>
-      ))}
-      <span className="ml-auto flex gap-[8px]">
-        {onCancel && <button type="button" onClick={onCancel}>Cancel</button>}
-        <button className="primary" type="submit">Save</button>
-      </span>
-    </form>
+    <Modal title="Deadlines" width={440} onClose={onClose}
+      footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save'}</button></>}>
+      <p className="m-[0_0_12px] text-[12.5px] text-muted">Each video is due by its priority's date. A single video can still carry its own date.</p>
+      <div className="grid gap-[10px]">
+        {['P1', 'P2', 'P3'].map((p) => (
+          <label key={p} className="grid grid-cols-[34px_1fr_150px] items-center gap-[10px]">
+            <b className="text-[13px]">{p}</b>
+            <span className="text-[12px] text-muted">{PRIORITY_HINT[p]}</span>
+            <input type="date" className="text-[12.5px] p-[5px_7px]" value={form[p]} onChange={(e) => setForm((f) => ({ ...f, [p]: e.target.value }))} />
+          </label>
+        ))}
+      </div>
+    </Modal>
   );
 }
 
 const H = 'text-[11.5px] tracking-[.06em] uppercase text-faint font-semibold m-[0_0_8px] flex items-center gap-[6px]';
 
+// Today is built from the register of IDed business videos, which is
+// Content's. In Comedy it is the list of bits instead.
 export default function Home({ go }) {
-  const { openProduction, setPendingStage, setPendingView, setPendingDate, mutate, scopeMode } = useStudio();
+  const { scopeMode } = useStudio();
+  if (scopeMode === 'comedy') return <ProgramWork go={go} title="Today" />;
+  return <ContentToday go={go} />;
+}
+
+function ContentToday({ go }) {
+  const [ending, setEnding] = useState([]);
+  useEffect(() => { api.grants().then((g) => setEnding(g.endingSoon ?? [])).catch(() => {}); }, []);
+  const { openProduction, setPendingStage, setPendingView, setPendingDate, mutate, scopeMode, notify } = useStudio();
+  const dialog = useDialog();
   const [m, setM] = useState(null);
   const [week, setWeek] = useState(null);           // the calendar strip and campaigns (the schedule)
   const [weekStart, setWeekStart] = useState(null);
@@ -87,7 +100,8 @@ export default function Home({ go }) {
   };
   const makeVoice = async () => {
     const ids = m.queues.makeVoice.ids;
-    if (!window.confirm(`Make your voice for ${ids.length} video${ids.length === 1 ? '' : 's'}? It runs free on this Mac — leave it overnight. You still listen and approve.`)) return;
+    if (!await dialog.confirm({ title: `Make the voice for ${ids.length} video${ids.length === 1 ? '' : 's'}?`,
+      body: 'Made on this Mac, free, a few seconds a line. You still listen to and approve every line.', confirmLabel: 'Make the voice' })) return;
     try { await mutate(() => api.queueVoice(ids), null); } catch { /* reported */ }
   };
   const park = async (e) => {
@@ -98,10 +112,37 @@ export default function Home({ go }) {
     try { await mutate(() => api.addIdea({ text }), null); } catch { setIdea(text); }
   };
   const hasDates = Object.keys(m.deadlines ?? {}).length > 0;
+  const openSharing = () => { try { sessionStorage.setItem('cast-view', 'sharing'); } catch { /* storage blocked */ } go('Cast'); };
   const Q = m.queues;
+  // Voice approved means ready to render: one decision starts them all. A render
+  // spends HeyGen credits, so it asks once, plainly, for the whole batch.
+  const renderAll = async () => {
+    const n = Q.render.count;
+    if (n === 1) { openAt(Q.render.first, 'Make'); return; }
+    // The dollar limit covers pay-as-you-go (API key) renders; a plan spends its own credits.
+    const pocket = (await api.heygenStatus().catch(() => null))?.pocket;
+    const budget = pocket === 'key' ? await api.budget().catch(() => null) : null;
+    if (budget && !budget.set) {
+      if (await dialog.confirm({ title: 'Choose a monthly HeyGen limit first', confirmLabel: 'Choose a limit',
+        body: 'Renders are charged to your own HeyGen account. Set how much a month the studio may spend there, and a batch can never run past it.' })) {
+        try { sessionStorage.setItem('settings-section', 'heygen'); } catch { /* storage blocked */ }
+        go('Settings');
+      }
+      return;
+    }
+    if (!await dialog.confirm({ title: `Start ${n} renders on HeyGen?`, tone: 'warn', confirmLabel: `Render ${n}`,
+      body: `Each render uses your HeyGen credits. Videos without an approved look are skipped and named afterwards.${budget?.set ? ` You have $${budget.remaining.toFixed(2)} of your $${budget.monthlyCap} monthly limit left; renders that would pass it are skipped.` : ''}` })) return;
+    const skipped = [];
+    let started = 0;
+    for (const id of Q.render.ids) {
+      try { await api.startRender(id, true); started++; } catch (err) { skipped.push(err.message); }
+    }
+    notify(`${started} render${started === 1 ? '' : 's'} started${skipped.length ? ` · ${skipped.length} skipped — ${skipped[0]}` : ''}`, skipped.length ? 'error' : 'ok');
+  };
   const fitDrafts = async () => {
     const n = Q.fit.count;
-    if (!window.confirm(`Fit ${n} draft${n === 1 ? '' : 's'} to time? Each is rewritten on this Mac (about a minute a video) and kept as a new draft to compare, keep or undo — nothing is approved. Leave it running overnight.`)) return;
+    if (!await dialog.confirm({ title: `Fit ${n} draft${n === 1 ? '' : 's'} to time?`, confirmLabel: 'Fit to time',
+      body: 'Each is rewritten on this Mac, about a minute a video, and kept as a new draft you can compare, keep or undo. Nothing is approved — leave it running overnight.' })) return;
     await mutate(() => api.queueEnhance(Q.fit.ids), null).catch(() => {});
   };
   const queue = (key, label, hint, action) => (Q[key]?.count > 0) && (
@@ -138,8 +179,15 @@ export default function Home({ go }) {
       <div className="grid grid-cols-[minmax(0,1fr)_340px] gap-[22px] items-start lte960:grid-cols-[1fr]">
         {/* ================= the work ================= */}
         <div className="flex flex-col gap-[22px] min-w-0">
-          {!hasDates || editing ? (
-            <DeadlineForm first={!hasDates} deadlines={m.deadlines ?? {}} onSave={saveDeadlines} onCancel={hasDates ? () => setEditing(false) : null} />
+          {editing && <DeadlineDialog deadlines={m.deadlines ?? {}} onSave={saveDeadlines} onClose={() => setEditing(false)} />}
+          {!hasDates ? (
+            <button type="button" onClick={() => setEditing(true)}
+              className="flex items-center gap-[10px] w-full text-left p-[10px_14px] rounded-lg border border-dashed border-line-2 bg-transparent hover:bg-surface hover:border-line">
+              <CalendarDays size={15} className="text-accent flex-none" />
+              <span className="text-[13px] text-ink font-[560]">Set your deadlines</span>
+              <span className="text-[12.5px] text-muted">One date for each priority, so Today can tell you what is late and the pace you need.</span>
+              <ArrowRight size={13} className="ml-auto text-muted" />
+            </button>
           ) : (
             <section>
               <h2 className={H}>Pace <button className="ghostbtn ml-auto p-0 text-[11.5px] normal-case tracking-normal font-normal text-muted hover:text-ink" onClick={() => setEditing(true)}>change deadlines</button></h2>
@@ -168,6 +216,15 @@ export default function Home({ go }) {
             </section>
           )}
 
+          {ending.length > 0 && (
+            <button type="button" onClick={openSharing}
+              className="flex items-center gap-[8px] w-full text-left p-[8px_12px] rounded-lg border border-solid border-warn-line bg-warn-soft text-warn text-[12.5px] hover:brightness-[.98]">
+              <Clock size={14} className="flex-none" />
+              <span>{ending.map((g) => `${g.direction === 'out' ? `${g.counterpart}'s access to ${g.presenter?.name ?? 'your twin'}` : `Your access to ${g.counterpart}'s likeness`} ends ${g.daysLeft === 0 ? 'today' : g.daysLeft === 1 ? 'tomorrow' : `in ${g.daysLeft} days`}`).join(' · ')}</span>
+              <ArrowRight size={13} className="ml-auto flex-none" />
+            </button>
+          )}
+
           <section>
             <h2 className={H}>Waiting on you</h2>
             {/* auto-fit: however many queues there are, they fill the row. */}
@@ -182,7 +239,7 @@ export default function Home({ go }) {
                 try { sessionStorage.setItem('record-session', JSON.stringify(Q.record.ids)); } catch { /* storage blocked */ }
                 openAt(Q.record.first, 'Make');
               })}
-              {queue('render', 'To render', 'Render', () => openAt(Q.render.first, 'Make'))}
+              {queue('render', 'Ready to render', Q.render?.count > 1 ? 'Render all' : 'Render', renderAll)}
               {queue('export', 'To export', 'Edit', () => openAt(Q.export.first, 'Edit'))}
               {queue('publish', 'To publish', 'Finish', () => openAt(Q.publish.first, 'Finish'))}
             </div>

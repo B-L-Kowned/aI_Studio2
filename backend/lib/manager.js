@@ -1,4 +1,5 @@
 import { getDb } from '../db/index.js';
+import { localDay } from '../utils/local-date.js';
 import { thinDrafts } from './enhance.js';
 import { buildRegister } from '../routes/register.js';
 
@@ -11,7 +12,7 @@ import { buildRegister } from '../routes/register.js';
 const PRIORITIES = ['P1', 'P2', 'P3'];
 const STALL_DAYS = 7;
 const DAY = 86400000;
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDay();
 const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY);
 
 export function deadlines() {
@@ -87,7 +88,7 @@ export function manager() {
   });
   // The whole register at the current pace, in priority order.
   const leftAll = videos.filter((v) => !v.done).length;
-  const projected = pace > 0 ? new Date(Date.now() + (leftAll / pace) * 7 * DAY).toISOString().slice(0, 10) : null;
+  const projected = pace > 0 ? localDay(new Date(Date.now() + (leftAll / pace) * 7 * DAY)) : null;
 
   const open = videos.filter((v) => !v.done);
   const late = open.filter((v) => v.daysLeft != null && v.daysLeft < 0).sort((a, b) => a.daysLeft - b.daysLeft);

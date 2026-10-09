@@ -25,6 +25,7 @@ export default function HeyGenLook() {
   const [workflow, setWorkflow] = useState(null);
   const [form, setForm] = useState(null);
   const [showMotion, setShowMotion] = useState(false);
+  const [allLooks, setAllLooks] = useState(false);
   const [defaultNote, setDefaultNote] = useState(null);
   // The 20-look grid is for choosing; once a look is approved (or a starting
   // look is set for every video) it folds to one line until you change it.
@@ -43,7 +44,8 @@ export default function HeyGenLook() {
     const d = o.default;
     setForm({
       presenterId: performer.id,
-      avatarAssetId: base?.look?.id ?? d?.avatarAssetId ?? performer.looks.find((l) => /sweatshirt/i.test(l.name))?.id ?? performer.looks[0]?.id,
+      // The persona's default outfit before the house look: who presents decides what they wear.
+      avatarAssetId: base?.look?.id ?? o.persona?.lookIds?.[0] ?? d?.avatarAssetId ?? performer.looks.find((l) => /sweatshirt/i.test(l.name))?.id ?? performer.looks[0]?.id,
       backgroundKind: base?.backgroundKind ?? d?.backgroundKind ?? o.settings.backgroundKind,
       backgroundValue: base?.backgroundValue ?? d?.backgroundValue ?? o.settings.backgroundValue,
       aspect: base?.aspect ?? d?.aspect ?? o.settings.aspect,
@@ -132,18 +134,43 @@ export default function HeyGenLook() {
       })()}
 
       {showPicker && <>
-      <div className={SUBHEAD_PLAN}>Look — outfit and setting ({performer.looks.length})</div>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(118px,1fr))] gap-[8px]">
-        {performer.looks.map((l) => (
-          <button key={l.id} type="button" onClick={() => set({ avatarAssetId: l.id })}
-            className={LOOK_TILE + (l.id === form.avatarAssetId ? ' border-accent [box-shadow:0_0_0_2px_var(--accent)]' : ' border-line hover:border-line-2')}
-            title={l.name}>
-            {l.previewUrl ? <img src={l.previewUrl} alt="" loading="lazy" /> : <div className="h-[118px] grid place-items-center text-faint"><ImageIcon /></div>}
-            <span className="block p-[5px_7px] text-[11px] leading-[1.3] truncate text-ink-2">{l.name}</span>
-            {l.avatarType === 'digital_twin' && <span className="absolute top-[5px] left-[5px] text-[9.5px] bg-ink text-[#fff] rounded-[3px] p-[1px_5px]">VIDEO TWIN</span>}
-          </button>
-        ))}
-      </div>
+      {(() => {
+        // The persona presenting this video wears a few of these; those come
+        // first, and the rest are a click away rather than twenty to scan.
+        const mine = new Set(opts.persona?.lookIds ?? []);
+        const own = performer.looks.filter((l) => mine.has(l.id));
+        const rest = performer.looks.filter((l) => !mine.has(l.id));
+        const showRest = !own.length || allLooks || rest.some((l) => l.id === form.avatarAssetId);
+        const tiles = (list) => (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(118px,1fr))] gap-[8px]">
+            {list.map((l) => (
+              <button key={l.id} type="button" onClick={() => set({ avatarAssetId: l.id })}
+                className={LOOK_TILE + (l.id === form.avatarAssetId ? ' border-accent [box-shadow:0_0_0_2px_var(--accent)]' : ' border-line hover:border-line-2')}
+                title={l.name}>
+                {l.previewUrl ? <img src={l.previewUrl} alt="" loading="lazy" /> : <div className="h-[118px] grid place-items-center text-faint"><ImageIcon /></div>}
+                <span className="block p-[5px_7px] text-[11px] leading-[1.3] truncate text-ink-2">{l.name}</span>
+                {l.avatarType === 'digital_twin' && <span className="absolute top-[5px] left-[5px] text-[9.5px] bg-ink text-[#fff] rounded-[3px] p-[1px_5px]">VIDEO TWIN</span>}
+              </button>
+            ))}
+          </div>
+        );
+        return (
+          <>
+            {own.length > 0 && <>
+              <div className={SUBHEAD_PLAN}>{opts.persona.name}’s looks ({own.length})</div>
+              {tiles(own)}
+            </>}
+            {showRest ? <>
+              <div className={SUBHEAD_PLAN}>{own.length ? 'Other looks' : 'Look — outfit and setting'} ({rest.length})</div>
+              {tiles(rest)}
+            </> : (
+              <button type="button" className="ghostbtn text-[12px] text-accent p-0 mt-[8px]" onClick={() => setAllLooks(true)}>
+                Show your other {rest.length} looks
+              </button>
+            )}
+          </>
+        );
+      })()}
 
       <div className="grid grid-cols-[1fr_1fr_1fr] gap-[12px] mt-[16px] lte800:grid-cols-[1fr]">
         <label className={FORM_LABEL}>Background

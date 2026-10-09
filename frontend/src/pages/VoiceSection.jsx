@@ -2,11 +2,14 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Check, AlertCircle, RefreshCw, Mic, Play, Upload, Plus, Trash2 } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
+import { Modal } from '../components/Dialog.jsx';
+import { SectionHead } from '../components/SettingsUI.jsx';
 
 const H2 = 'm-[0_0_4px]';
 const SUBHEAD = 'text-[11px] tracking-[.07em] text-faint font-[600] m-[26px_0_8px] uppercase';
 const CARD = 'border border-solid border-line rounded-lg p-[14px_16px] bg-surface [&+&]:mt-[10px]';
-const SLIDER_ROW = 'grid grid-cols-[150px_minmax(0,520px)_60px] items-center gap-[12px] mt-[10px] lte860:grid-cols-[1fr_44px]';
+const SLIDER = 'grid grid-cols-[minmax(0,1fr)_104px] items-center gap-[10px]';
+const SLIDER_LABEL = 'block text-[12px] text-ink-2 mb-[4px]';
 
 /**
  * Your voice, made on this computer. The audition IS the shipping audio, so
@@ -19,6 +22,7 @@ export default function VoiceSection() {
   const [file, setFile] = useState(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const picker = useRef(null);
 
   const load = useCallback(() => api.localVoices().then(setData).catch(() => setData({ voices: [], service: null })), []);
@@ -41,10 +45,7 @@ export default function VoiceSection() {
 
   return (
     <>
-      <h2 className={H2}>Your voice</h2>
-      <p className="muted" title="Auditions are free in every mode, and the take you approve is the audio the video uses. Cast it on a presenter in Cast.">
-        Your voice, made on this Mac — free, and the take you approve is what the video uses.
-      </p>
+      <SectionHead title="Your voice" lead="Your voice, made on this Mac — free, and the take you approve is exactly what the video uses." />
 
       <div className={'notice ' + (ready ? '' : 'warn')}>
         {ready ? <Check /> : <AlertCircle />}
@@ -58,7 +59,11 @@ export default function VoiceSection() {
         <button onClick={load}><RefreshCw size={13} /> Re-check</button>
       </div>
 
-      <div className={SUBHEAD}>Voices</div>
+      <div className="flex items-center gap-[10px] m-[26px_0_8px]">
+        <span className="text-[11px] tracking-[.07em] text-faint font-[600] uppercase">Voices</span>
+        <button type="button" className="ml-auto text-[12px] p-[4px_11px]" onClick={() => setSwitching(true)}>Switch voice…</button>
+      </div>
+      {switching && <SwitchVoice local={data?.voices ?? []} onClose={() => setSwitching(false)} />}
       {data?.voices?.length === 0 && <p className="muted">No voice yet — add a recording below.</p>}
       {data?.voices?.map((v) => <VoiceCard key={v.id} voice={v} ready={ready} onSaved={load} />)}
 
@@ -121,50 +126,112 @@ function VoiceCard({ voice, ready, onSaved }) {
         <b className="text-[13.5px]">{voice.name}</b>
         <span className="text-faint text-[11.5px]">
           from {voice.referenceSeconds ?? '?'}s of audio · local · free
-          {voice.naturalWpm ? ` · natural pace ${voice.naturalWpm} wpm (measured over ${Math.round(voice.paceSeconds)}s)` : ''}
+          {voice.naturalWpm ? ` · natural pace ${voice.naturalWpm} wpm` : ''}
         </span>
+        {dirty && <button className="primary ml-auto text-[12px] p-[4px_12px]" onClick={save}>Save delivery</button>}
       </div>
 
-      <div className={SLIDER_ROW}>
-        <span className="text-[12px] text-ink-2 lte860:col-span-2">Expressiveness <small className="text-faint">calm ↔ animated</small></span>
-        <input type="range" min="0.25" max="1" step="0.05" value={exaggeration}
-          onChange={(e) => setExaggeration(Number(e.target.value))} aria-label="Expressiveness" />
-        <code className="text-[11.5px] text-muted text-right">{exaggeration.toFixed(2)}</code>
-      </div>
-      <div className={SLIDER_ROW}>
-        <span className="text-[12px] text-ink-2 lte860:col-span-2">Speed <small className="text-faint">default for every video · 1× = natural</small></span>
-        <input type="range" min="0.75" max="1.25" step="0.01" value={speed}
-          onChange={(e) => setSpeed(Number(e.target.value))} aria-label="Speed" />
-        <code className="text-[11.5px] text-muted text-right">
-          {speed.toFixed(2)}×{voice.naturalWpm ? <span className="block">{Math.round(voice.naturalWpm * speed)} wpm</span> : null}
-        </code>
-      </div>
-      <button type="button" className="ghostbtn text-[11.5px] text-muted p-[2px_0] mt-[6px]" onClick={() => setAdvanced((v) => !v)}>
-        {advanced ? 'Hide' : 'Show'} advanced
-      </button>
-      {advanced && (
-        <div className={SLIDER_ROW}>
-          <span className="text-[12px] text-ink-2 lte860:col-span-2">Steadiness <small className="text-faint">looser ↔ steadier</small></span>
-          <input type="range" min="0" max="1" step="0.05" value={cfgWeight}
-            onChange={(e) => setCfgWeight(Number(e.target.value))} aria-label="Steadiness" />
-          <code className="text-[11.5px] text-muted text-right">{cfgWeight.toFixed(2)}</code>
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-[14px_28px] mt-[12px] lte860:grid-cols-[1fr]">
+        {/* How it sounds */}
+        <div className="grid gap-[12px] content-start">
+          <label>
+            <span className={SLIDER_LABEL}>Expressiveness <small className="text-faint">calm ↔ animated</small></span>
+            <span className={SLIDER}>
+              <input type="range" min="0.25" max="1" step="0.05" value={exaggeration}
+                onChange={(e) => setExaggeration(Number(e.target.value))} aria-label="Expressiveness" />
+              <code className="text-[11.5px] text-muted text-right">{exaggeration.toFixed(2)}</code>
+            </span>
+          </label>
+          <label>
+            <span className={SLIDER_LABEL}>Speed <small className="text-faint">default for every video · 1× = natural</small></span>
+            <span className={SLIDER}>
+              <input type="range" min="0.75" max="1.25" step="0.01" value={speed}
+                onChange={(e) => setSpeed(Number(e.target.value))} aria-label="Speed" />
+              <code className="text-[11.5px] text-muted text-right">{speed.toFixed(2)}×{voice.naturalWpm ? ` · ${Math.round(voice.naturalWpm * speed)}` : ''}</code>
+            </span>
+          </label>
+          {advanced && (
+            <label>
+              <span className={SLIDER_LABEL}>Steadiness <small className="text-faint">looser ↔ steadier</small></span>
+              <span className={SLIDER}>
+                <input type="range" min="0" max="1" step="0.05" value={cfgWeight}
+                  onChange={(e) => setCfgWeight(Number(e.target.value))} aria-label="Steadiness" />
+                <code className="text-[11.5px] text-muted text-right">{cfgWeight.toFixed(2)}</code>
+              </span>
+            </label>
+          )}
+          <button type="button" className="ghostbtn justify-self-start text-[11.5px] text-muted p-0" onClick={() => setAdvanced((v) => !v)}>
+            {advanced ? 'Hide' : 'Show'} advanced
+          </button>
         </div>
-      )}
 
-      <div className="flex gap-[8px] flex-wrap items-center mt-[12px]">
-        <input className="flex-1 min-w-[220px]" placeholder="Test sentence (optional)" value={text}
-          onChange={(e) => setText(e.target.value)} />
-        <button onClick={speak} disabled={!ready || speaking}>
-          <Play size={13} /> {speaking ? 'Speaking… (~20s)' : 'Hear it'}
-        </button>
-        {dirty && <button className="primary" onClick={save}>Save delivery</button>}
+        {/* Hear it */}
+        <div className="grid gap-[8px] content-start">
+          <span className={SLIDER_LABEL}>Hear it</span>
+          <div className="flex gap-[8px]">
+            <input className="flex-1 min-w-0" placeholder="A sentence to try (optional)" value={text} onChange={(e) => setText(e.target.value)} />
+            <button onClick={speak} disabled={!ready || speaking}>
+              <Play size={13} /> {speaking ? 'Speaking…' : 'Play'}
+            </button>
+          </div>
+          {sample && <audio className="w-full" src={sample} controls autoPlay />}
+          <p className="text-faint text-[11px] m-0">
+            Changes affect future takes only; approved takes keep their audio. Each video can set its own speed on its Script screen.
+          </p>
+        </div>
       </div>
-      {sample && <audio className="w-full mt-[10px]" src={sample} controls autoPlay />}
-      <p className="text-faint text-[11px] m-[8px_0_0]">
-        Changing delivery affects future auditions only; takes you already approved keep their audio.
-        Each video can set its own speed on its Script screen to fit its target length.
-      </p>
     </div>
+  );
+}
+
+/**
+ * Switch the voice your personas speak in: your local clones (free) and, once
+ * the account can be read, your own HeyGen voices. Applies to every persona at
+ * once; a single persona can still differ under Cast → Edit → Look & voice.
+ */
+function SwitchVoice({ local, onClose }) {
+  const { mutate, notify } = useStudio();
+  const [heygen, setHeygen] = useState(null);
+  const [personas, setPersonas] = useState([]);
+  const [pick, setPick] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    api.providerAssets('heygen', { kind: 'voice', pool: 'mine', limit: 100 }).then((r) => setHeygen(r.items ?? [])).catch(() => setHeygen([]));
+    api.presenters().then((r) => {
+      const list = r?.tabs?.find((t) => t.id === 'personal')?.presenters ?? [];
+      setPersonas(list);
+      setPick(list[0]?.voice?.id ?? null);
+    }).catch(() => {});
+  }, []);
+  const current = personas[0]?.voice?.id ?? null;
+  const apply = async () => {
+    setSaving(true);
+    try {
+      for (const p of personas) await mutate(() => api.castPresenter(p.id, { voiceAssetId: pick }), null, { silent: true });
+      notify(`All ${personas.length} personas now speak in this voice.`, 'ok');
+      onClose();
+    } catch { /* reported */ } finally { setSaving(false); }
+  };
+  const OPTION = (on) => 'flex items-center gap-[10px] w-full text-left p-[9px_11px] rounded-lg border border-solid ' + (on ? 'border-accent bg-accent-soft' : 'border-line bg-surface hover:border-line-2');
+  const row = (v, sub) => (
+    <button key={v.id} type="button" className={OPTION(pick === v.id)} onClick={() => setPick(v.id)}>
+      <span className="min-w-0 flex-1"><b className="block text-[13px] font-[560] text-ink truncate">{v.name}</b><span className="block text-[11.5px] text-muted">{sub}</span></span>
+      {current === v.id && <span className="text-[11px] text-ok font-[600]">In use</span>}
+    </button>
+  );
+  return (
+    <Modal title="Switch voice" width={520} onClose={onClose}
+      footer={<><button onClick={onClose}>Cancel</button>
+        <button className="primary" disabled={!pick || pick === current || saving} onClick={apply}>{saving ? 'Switching…' : `Use for all ${personas.length} personas`}</button></>}>
+      <p className="m-[0_0_10px] text-[12.5px] text-muted">The voice every persona speaks in. Takes already approved keep their audio; new takes use this voice.</p>
+      <p className="m-[0_0_6px] text-[11px] font-[600] tracking-[.06em] uppercase text-faint">On this Mac · free</p>
+      <div className="grid gap-[6px]">{local.map((v) => row(v, `${v.referenceSeconds ?? '?'}s sample · ${v.naturalWpm ?? '—'} wpm`))}</div>
+      <p className="m-[14px_0_6px] text-[11px] font-[600] tracking-[.06em] uppercase text-faint">Your HeyGen voices · uses credits</p>
+      {heygen === null ? <p className="m-0 text-[12.5px] text-muted">Loading…</p>
+        : heygen.length ? <div className="grid gap-[6px] max-h-[220px] overflow-auto">{heygen.map((v) => row(v, [v.language, v.gender].filter(Boolean).join(' · ') || 'HeyGen voice'))}</div>
+        : <p className="m-0 text-[12.5px] text-muted">None read yet. Your HeyGen voices appear here once Generation is set to Test or Live, so the studio may read your account.</p>}
+      <p className="m-[12px_0_0] text-[11.5px] text-faint">To add another free voice, record one under “New voice from a recording” below.</p>
+    </Modal>
   );
 }
 

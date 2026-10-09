@@ -6,6 +6,8 @@ import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import { Section } from '../components/Section.jsx';
+import { useBudget, BudgetMeter, BudgetPicker } from '../components/Budget.jsx';
+import { SectionHead } from '../components/SettingsUI.jsx';
 
 /**
  * Your actual HeyGen account: videos, avatars, credits.
@@ -30,7 +32,8 @@ const POCKET_CLASS = {
 const CONN_P = 'm-[6px_0_0] text-[12.5px] leading-[1.55]';
 
 export default function HeyGen({ embedded }) {
-  const { mutate, notify } = useStudio();
+  const { mutate, notify, workspace, reload: reloadWorkspace } = useStudio();
+  const [reading, setReading] = useState(false);
   const [status, setStatus] = useState(null);
   const [videos, setVideos] = useState(null);
   const [assets, setAssets] = useState([]);
@@ -40,6 +43,8 @@ export default function HeyGen({ embedded }) {
   const [assetQuery, setAssetQuery] = useState('');
   const [assetKind, setAssetKind] = useState('all');
   const [assetLimit, setAssetLimit] = useState(ASSET_PAGE);
+  const [budget, , setBudget] = useBudget();
+  const [editingBudget, setEditingBudget] = useState(false);
 
   const load = useCallback(async () => {
     const s = await api.heygenStatus();
@@ -71,7 +76,7 @@ export default function HeyGen({ embedded }) {
 
   return (
     <>
-      {embedded ? <h2 className="m-[0_0_12px] text-[17px]">HeyGen account</h2> : <h1>HeyGen</h1>}
+      {embedded ? <SectionHead title="HeyGen account" lead="Your HeyGen plan, its credits, and the looks and voices it holds." /> : <h1>HeyGen</h1>}
       {/* One line: whether you are signed in, and the one thing to do about it. */}
       <div className={`flex flex-wrap items-center gap-x-[12px] gap-y-[8px] rounded-lg p-[10px_14px] mb-[16px] ${POCKET_CLASS[status.pocket] ?? ''}`}>
         <b className="inline-flex items-center gap-[7px] text-[13.5px] font-[580]">
@@ -84,7 +89,7 @@ export default function HeyGen({ embedded }) {
           {connected ? 'Renders use the plan you already pay for.' : 'Sign in to use the plan you already pay for, see your videos and refresh avatar pictures.'}
           {status.recommendation && <span className="text-warn"> {status.recommendation}</span>}
         </span>
-        {status.credits != null && <span className="credits"><Wallet size={13} /> {status.credits} credits</span>}
+        {status.credits != null && <span className="credits" title={status.creditsResetAt ? `Premium credits reset on ${new Date(status.creditsResetAt).toLocaleDateString()}` : ''}><Wallet size={13} /> {status.credits} premium credits{status.creditsResetAt ? ` · reset ${new Date(status.creditsResetAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</span>}
         <span className="flex items-center gap-[6px]">
           <button className="ghostbtn p-[5px]" title="Refresh" aria-label="Refresh" onClick={load}><RefreshCw size={14} /></button>
           {connected
@@ -93,13 +98,62 @@ export default function HeyGen({ embedded }) {
         </span>
       </div>
 
-      {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
+      {/* Signed in, but the studio is still set not to contact HeyGen: one click to read the account. */}
+      {connected && workspace?.providerMode?.mode === 'fixtures' ? (
+        <div className="flex flex-wrap items-center gap-[10px] m-[-6px_0_16px] p-[10px_14px] rounded-lg border border-solid border-line bg-surface">
+          <span className="flex-1 min-w-[260px] text-[12.5px] text-ink-2">
+            <b className="font-[600]">One more step: let the studio read your account.</b>{' '}
+            <span className="text-muted">Loads your videos, looks, voices and credits. Reading is free; nothing renders until you choose to.</span>
+          </span>
+          <button className="primary" disabled={reading} onClick={async () => {
+            setReading(true);
+            try {
+              await mutate(() => api.setProviderMode('live_read', false), null);
+              await reloadWorkspace?.();
+              await mutate(() => api.syncProvider('heygen'), null, { silent: true }).catch(() => {});
+              setErr(null);
+              await load();
+            } catch { /* reported */ } finally { setReading(false); }
+          }}>{reading ? 'Reading…' : 'Read my account'}</button>
+        </div>
+      ) : err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
+
+      {/* Your HeyGen account, your money: the studio spends only up to a limit you choose. */}
+      {/* Signed in to a plan: renders spend its credits, so the plan is what to show. */}
+      {connected && status.pocket !== 'key' && (
+        <Section title="Your plan" meta={typeof status.plan === 'string' ? status.plan : (status.plan?.name ?? status.plan?.label ?? 'connected by sign-in')}>
+          <p className="m-0 text-[12.5px] text-ink-2 leading-[1.55]">
+            Renders use your plan’s credits{status.credits != null ? <> — <b className="font-[600]">{status.credits} premium credits left</b>{status.creditsResetAt ? `, back on ${new Date(status.creditsResetAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}` : ''}</> : ''}. HeyGen stops when they run out, so nothing here can overspend.
+            {status.credits === 0 && <span className="block mt-[6px] text-warn">With none left, avatar renders on your plan wait until they reset — or add credits in HeyGen.</span>}
+            {' '}<span className="text-muted">A plan has no free test render; a free, watermarked test needs a pay-as-you-go API key (Settings → Connections), and a monthly dollar limit applies only to that.</span>
+          </p>
+        </Section>
+      )}
+
+      {budget && (!connected || status.pocket === 'key') && (
+        <Section title="Monthly limit" meta={budget.set ? 'renders stop before passing it' : 'choose one before your first paid render'}>
+          {!connected && status.pocket === 'none' && (
+            <p className="m-[0_0_10px] text-[12.5px] text-muted leading-[1.5]">
+              Two ways to connect HeyGen: <b className="text-ink font-[560]">sign in</b> above to use a web plan you pay for monthly, or paste an <b className="text-ink font-[560]">API key</b> under Settings → Connections to pay as you go. Either way it is your own account.
+            </p>
+          )}
+          {budget.set && !editingBudget ? (
+            <div className="flex flex-wrap items-center gap-[12px]">
+              <div className="flex-1 min-w-[260px]"><BudgetMeter budget={budget} /></div>
+              <button onClick={() => setEditingBudget(true)}>Change limit</button>
+            </div>
+          ) : (
+            <BudgetPicker budget={budget} onSaved={(b) => { setBudget(b); setEditingBudget(false); }} />
+          )}
+          {budget.atLimit && <p className="sectionnote warn"><AlertCircle size={14} /> This month's limit is reached. Nothing more renders until {budget.resetsOn} unless you raise it.</p>}
+        </Section>
+      )}
 
       {/* Your videos only exist once signed in; until then the bar above says so. */}
       {connected && (
-        <Section title="Your videos" meta={`${videos?.length ?? 0} in your account`}>
+        <Section title="Your videos" meta={videos === null ? 'checking your account…' : `${videos.length} in your account${videos.length ? ` · ${videos.filter((v) => v.imported).length} in the studio` : ''}`}>
           {videos === null ? (
-            <p className="sectionempty">Loading…</p>
+            <p className="sectionempty">Asking HeyGen about each of your videos…</p>
           ) : videos.length === 0 ? (
             <p className="sectionempty">No videos in this account yet.</p>
           ) : (
@@ -113,10 +167,12 @@ export default function HeyGen({ embedded }) {
                   <div className="flex gap-[8px] items-center text-[11.5px] text-muted">
                     <span className={'vchip ' + (v.status === 'completed' ? 'complete' : v.status)}>{v.status}</span>
                     {v.duration && <span>{Math.round(v.duration)}s</span>}
-                    <button className="ml-auto ghostbtn p-[2px_4px] text-[11.5px] text-accent" disabled={v.status !== 'completed'}
-                      onClick={() => mutate(() => api.importHeygenVideo(v.id), null).then(load)}>
-                      <Download size={12} /> Import
-                    </button>
+                    {v.imported
+                      ? <span className="ml-auto inline-flex items-center gap-[4px] text-[11.5px] text-ok"><Check size={12} /> In the studio</span>
+                      : <button className="ml-auto ghostbtn p-[2px_4px] text-[11.5px] text-accent" disabled={v.status !== 'completed'}
+                          onClick={() => mutate(() => api.importHeygenVideo(v.id), null).then(load)}>
+                          <Download size={12} /> Import
+                        </button>}
                   </div>
                 </div>
               ))}
@@ -156,7 +212,7 @@ export default function HeyGen({ embedded }) {
           return (
             <>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[12px]">
-                {shown.map((a) => <AssetTile key={a.id} asset={a} />)}
+                {shown.map((a) => <AssetTile key={a.id} asset={a} onHide={async () => { await mutate(() => api.hideAsset(a.id), null).catch(() => {}); await load(); }} />)}
               </div>
               {shown.length < matched.length && (
                 <p className="sectionnote">
@@ -190,7 +246,7 @@ export default function HeyGen({ embedded }) {
  * One avatar or voice: its picture (kept on this Mac, so it does not go blank
  * when HeyGen's link expires) or, for a voice, a play button for its sample.
  */
-function AssetTile({ asset: a }) {
+function AssetTile({ asset: a, onHide }) {
   const [broken, setBroken] = useState(false);
   const [playing, setPlaying] = useState(false);
   const audio = React.useRef(null);
@@ -205,7 +261,7 @@ function AssetTile({ asset: a }) {
     el.play().then(() => setPlaying(true)).catch(() => setBroken(true));
   };
   return (
-    <figure className="m-0 flex flex-col gap-[6px] min-w-0" title={`${a.name}\n${a.remoteId}`}>
+    <figure className="group/tile m-0 flex flex-col gap-[6px] min-w-0" title={`${a.name}\n${a.remoteId}`}>
       <div className="relative aspect-[4/5] rounded-lg overflow-hidden bg-canvas border border-solid border-line grid place-items-center">
         {!voice && a.previewUrl && !broken
           ? <img src={a.previewUrl} alt="" loading="lazy" onError={() => setBroken(true)} className="absolute inset-0 w-full h-full object-cover object-[center_25%]" />
@@ -216,6 +272,11 @@ function AssetTile({ asset: a }) {
               </button>
             : <span className="text-[22px] font-[600] text-faint tracking-[.02em]" title="The preview link expired — sign in and Sync to refresh it">{initials}</span>}
         {a.isFixture && <span className="absolute top-[6px] left-[6px] text-[10px] bg-warn-soft text-warn rounded p-[1px_6px]">sample</span>}
+        {/* An avatar in your account that is not you: hide it from the studio (it stays in HeyGen). */}
+        {!voice && onHide && (
+          <button type="button" onClick={onHide} title="Not you? Hide it from the studio — it stays in your HeyGen account"
+            className="absolute top-[6px] right-[6px] text-[11px] p-[2px_8px] rounded-full opacity-0 group-hover/tile:opacity-100 focus-visible:opacity-100 [transition:opacity_.12s]">Not me</button>
+        )}
       </div>
       <figcaption className="min-w-0">
         <b className="block text-[12.5px] font-[560] text-ink truncate">{a.name.trim() || 'Untitled'}</b>

@@ -15,7 +15,7 @@ const router = Router();
 // Fixtures promises that nothing leaves this machine — reads included. Sign-in
 // is exempt: connecting is something you ask for, not a call made for you.
 const offline = (res) => fail(res, 409, 'FIXTURES_MODE',
-  'Fixtures mode makes no HeyGen calls. Switch to Test or Live to read your account.');
+  'The studio is set not to contact HeyGen yet. Choose “Read my account” to load your videos, looks and credits — reading costs nothing.');
 
 /**
  * Which pocket is in use, and why it matters.
@@ -51,6 +51,8 @@ router.get(
       mcp: m,
       plan: account?.subscription?.plan ?? account?.plan ?? null,
       credits,
+      // When premium credits come back, so "0" never reads as "gone for good".
+      creditsResetAt: account?.subscription?.credits?.premium_credits?.resets_at ?? null,
       renderPath: await chooseRenderPath(),
       capabilities: await mcpCapabilities(),
       key: { connected: !!key?.connected, verified: !!key?.verified, hint: key?.hint ?? null },
@@ -162,7 +164,29 @@ router.get(
   route(async (req, res) => {
     if (!canReadLive()) return offline(res);
     try {
-      return ok(res, await mcp.listVideos(Number(req.query.limit ?? 20)));
+      const listed = await mcp.listVideos(Number(req.query.limit ?? 20));
+      // HeyGen's list leaves out videos made in its web editor, so the account
+      // looked empty with fifteen finished videos in it. Every video the studio
+      // knows of is asked about directly; ones deleted in HeyGen drop out.
+      const known = getDb().prepare(
+        "SELECT remote_id, id, production_id FROM assets WHERE provider = 'heygen' AND remote_id IS NOT NULL ORDER BY id DESC"
+      ).all();
+      const have = new Set(listed.map((v) => v.id));
+      const found = await Promise.all(known.filter((k) => !have.has(k.remote_id)).map(async (k) => {
+        try {
+          const v = await mcp.getVideo(k.remote_id);
+          return v?.id ? {
+            id: String(v.id), title: String(v.title || 'Untitled'), status: String(v.status || 'unknown'),
+            createdAt: typeof v.created_at === 'number' ? v.created_at : null,
+            thumbnailUrl: v.thumbnail_url ?? null, videoUrl: v.video_url ?? null, duration: v.duration ?? null,
+          } : null;
+        } catch { return null; } // deleted in HeyGen
+      }));
+      const inStudio = new Map(known.map((k) => [k.remote_id, k]));
+      const videos = [...listed, ...found.filter(Boolean)]
+        .map((v) => ({ ...v, imported: inStudio.has(v.id), productionId: inStudio.get(v.id)?.production_id ?? null }))
+        .sort((x, y) => (y.createdAt ?? 0) - (x.createdAt ?? 0));
+      return ok(res, videos);
     } catch (err) {
       return fail(res, err instanceof mcp.NotConnected ? 409 : 502, 'MCP_ERROR', err.message);
     }

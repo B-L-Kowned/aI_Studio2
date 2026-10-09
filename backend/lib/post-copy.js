@@ -39,8 +39,20 @@ function chaptersFor(ctx) {
   const total = sections.reduce((n, s) => n + s.words, 0);
   if (sections.length < 3 || !total) return '';
   const spoken = ctx.duration ?? (total / review.wpm) * 60;
+  // YouTube shows chapters only when there are three or more, each at least
+  // ten seconds long — under a minute there is nothing to divide.
+  if (spoken < 60) return '';
+  // A section too short to be its own chapter (under ten seconds) is folded
+  // into the one before it, so the chapters always pass YouTube's rule.
+  const starts = [];
   let at = 0;
-  return sections.map((s) => { const line = `${clock(at)} ${s.title}`; at += (s.words / total) * spoken; return line; }).join('\n');
+  for (const s of sections) {
+    const t = Math.round(at);
+    if (!starts.length || t - starts[starts.length - 1].t >= 10) starts.push({ t, title: s.title });
+    at += (s.words / total) * spoken;
+  }
+  if (starts.length < 3) return '';
+  return starts.map((c) => `${clock(c.t)} ${c.title}`).join('\n');
 }
 
 export function draftCopy(productionId) {

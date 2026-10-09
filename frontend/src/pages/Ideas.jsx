@@ -154,7 +154,7 @@ export default function Ideas({ go, tabs }) {
                       onPick={() => shapeIt(i)} options={[{ id: 'shape', label: 'Shape it',
                         detail: 'A working title, who it is for and its one point — from the idea and what the company has already published.' }]} />
                     <button
-                      className="primary"
+                      className="text-[12.5px] p-[4px_11px]"
                       title="Turn this into a production"
                       onClick={() => setPromoting(i)}
                     >

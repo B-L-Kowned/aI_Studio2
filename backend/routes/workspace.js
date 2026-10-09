@@ -11,6 +11,10 @@ import { ollamaStatus } from '../lib/llm-runtime.js';
 import { programState } from '../lib/programs.js';
 import { modeSummary, setProviderMode } from '../lib/providers/mode.js';
 import { ok, fail, route } from '../utils/respond.js';
+import { budgetState, setBudget } from '../lib/budget.js';
+import { storageRoot } from '../lib/exporter.js';
+import { tierState, setTier, pullTier } from '../lib/model-tier.js';
+import { components } from '../lib/components.js';
 
 const router = Router();
 
@@ -26,7 +30,8 @@ export function workspaceState() {
     templates: templatesFor(w.entitlement),
     licenseHint: w.license_key_hint,
     storageProvider: w.storage_provider,
-    storagePath: w.storage_path,
+    // Where exports really land: the seeded placeholder path is never shown as if it were used.
+    storagePath: storageRoot(),
     llmProvider: w.llm_provider,
     onboarded: !!w.onboarded_at,
     onboardedAt: w.onboarded_at,
@@ -49,6 +54,27 @@ router.get(
   '/workspace/llm/status',
   route(async (_req, res) => ok(res, { ollama: await ollamaStatus() }))
 );
+
+/** What this computer has for each job, and the one step that fixes what is missing. */
+router.get('/workspace/components', route(async (_req, res) => ok(res, await components())));
+
+// Which local model writes: light (2 GB, default) or full (9 GB, optional).
+router.get('/workspace/llm/tier', route(async (_req, res) => ok(res, await tierState())));
+router.put('/workspace/llm/tier', route(async (req, res) => {
+  try { setTier(req.body?.tier); } catch (err) { return fail(res, 400, err.code, err.message); }
+  return ok(res, await tierState(), 'Saved');
+}));
+router.post('/workspace/llm/tier/download', route(async (req, res) => {
+  try { await pullTier(req.body?.tier); } catch (err) { return fail(res, err.code === 'BUSY' ? 409 : err.code === 'LLM_OFFLINE' ? 503 : 400, err.code, err.message); }
+  return ok(res, await tierState(), 'Download started');
+}));
+
+// The customer's own HeyGen spending limit: what is spent this month, against it.
+router.get('/workspace/budget', route(async (_req, res) => ok(res, budgetState())));
+router.put('/workspace/budget', route(async (req, res) => {
+  try { return ok(res, setBudget(req.body ?? {}), 'Monthly limit saved'); }
+  catch (err) { return fail(res, 400, err.code ?? 'BAD_BUDGET', err.message); }
+}));
 
 // --- Onboarding step 1: license -------------------------------------------
 router.post(

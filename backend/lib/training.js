@@ -14,16 +14,16 @@ import { renderGate } from './segments.js';
 /**
  * ONE function decides order for every reader.
  *
- * `collection_position` is nullable and never backfilled, so a course that has
- * never been ordered by hand is served exactly the newest-first list it was
- * served before the column existed. NULLs sort last and fall back to newest.
+ * `collection_position` is nullable and never backfilled. A course that has
+ * never been ordered by hand follows its titles, which carry the register id
+ * (T01, T02…), so lessons read in the order they were planned. NULLs sort last.
  */
 export function collectionOrderBy() {
   return `ORDER BY
     CASE WHEN collection_position IS NULL THEN 1 ELSE 0 END,
     collection_position,
-    created_at DESC,
-    id DESC`;
+    title COLLATE NOCASE,
+    id`;
 }
 
 function lessonProgress(productionId) {
@@ -61,18 +61,22 @@ export const LESSON_STATE = {
   ready: { label: 'Ready', done: true },
 };
 
-/** Courses with their lessons. A campaign with no productions is still a course. */
+/**
+ * Courses with their lessons: the tracks whose purpose is training. A go-to-
+ * market or investor track is a campaign, not a course, so it is not listed
+ * here. A training track with no productions is still a course.
+ */
 export function courses() {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT * FROM campaigns WHERE mode IN ('content','both') ORDER BY position, id`
+      `SELECT * FROM campaigns WHERE mode IN ('content','both') AND purpose = 'training' ORDER BY position, id`
     )
     .all();
 
   return rows.map((c) => {
     const lessons = db
-      .prepare(`SELECT * FROM productions WHERE campaign_id = ? ${collectionOrderBy()}`)
+      .prepare(`SELECT * FROM productions WHERE campaign_id = ? AND archived_at IS NULL ${collectionOrderBy()}`)
       .all(c.id)
       .map((p, i) => {
         const { state, gate } = lessonProgress(p.id);

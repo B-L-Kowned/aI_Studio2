@@ -40,6 +40,10 @@ function LocalVoice({ data, optional, castable, run, production, busy, reload })
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState('');
   const [changing, setChanging] = useState(false);
+  const made = segments.filter((s) => s.take?.audioUrl && !s.needsAudition);
+  const approved = segments.filter((s) => s.heard);
+  const missing = segments.filter((s) => s.needsAudition);
+  const unapproved = made.filter((s) => !s.heard);
   // Every line heard by Whisper: the words it could not find, to listen to first.
   const [check, setCheck] = useState(null); // null | 'busy' | { checked, lines, words, seconds }
   const [checkAt, setCheckAt] = useState(0);
@@ -47,6 +51,19 @@ function LocalVoice({ data, optional, castable, run, production, busy, reload })
     setCheck('busy');
     try { setCheck(await api.voiceCheck(production.id)); setCheckAt(0); } catch { setCheck(null); }
   };
+  // Made in the background since the script was approved: follow it as the
+  // lines land, then check them without being asked — the check is cached.
+  useEffect(() => {
+    if (!missing.length) return undefined;
+    const t = setInterval(async () => {
+      const b = await api.voiceBatch().catch(() => null);
+      if (b?.items?.some((x) => x.productionId === production.id && ['queued', 'running'].includes(x.state))) reload();
+    }, 4000);
+    return () => clearInterval(t);
+  }, [missing.length, production.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (made.length && !missing.length && check == null) runCheck();
+  }, [made.length, missing.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const suspectsOf = (id) => (check && check !== 'busy' ? check.lines.find((l) => l.segmentId === id)?.suspects.map((x) => x.i) : undefined);
   const goSuspect = (k) => {
     const l = check.lines[k % check.lines.length];
@@ -54,10 +71,6 @@ function LocalVoice({ data, optional, castable, run, production, busy, reload })
     setCheckAt(k + 1);
   };
 
-  const made = segments.filter((s) => s.take?.audioUrl && !s.needsAudition);
-  const approved = segments.filter((s) => s.heard);
-  const missing = segments.filter((s) => s.needsAudition);
-  const unapproved = made.filter((s) => !s.heard);
   const seconds = made.reduce((n, s) => n + (s.take?.duration ?? 0), 0);
   const voiceName = speakers[0]?.presenter?.name ?? 'not cast';
 
@@ -312,7 +325,7 @@ export default function SegmentsStage({ optional = false, goToStage }) {
       </div>
 
       {confirm?.kind === 'all' && (
-        <PaidConfirm
+        <PaidConfirm path={path}
           title={`Audition ${pendingAudition} line${pendingAudition === 1 ? '' : 's'} on your HeyGen plan?`}
           detail="Each line is real speech in the voice that will ship, and each one uses credits."
           confirmLabel="Yes — audition and charge my plan"

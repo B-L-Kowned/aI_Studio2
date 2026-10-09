@@ -164,6 +164,7 @@ export function localAssets(providerId, kind) {
     // called "Pat (Studio)" is indistinguishable from a real avatar otherwise,
     // and the whole point of the catalogue is to show what YOUR account holds.
     isFixture: String(r.remote_id).startsWith('fx_'),
+    hidden: !!r.hidden,
   }));
 }
 

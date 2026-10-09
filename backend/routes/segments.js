@@ -11,6 +11,8 @@ import { renderViaKey } from '../lib/providers/heygen-key-render.js';
 import { chooseRenderPath } from '../lib/providers/heygen-route.js';
 import { ok, fail, route } from '../utils/respond.js';
 import { readThrough } from '../lib/readthrough.js';
+import { costOf, budgetRefusal, budgetApplies } from '../lib/budget.js';
+import { usable } from '../lib/grants.js';
 import { createReadStream, existsSync } from 'node:fs';
 
 const router = Router();
@@ -28,7 +30,7 @@ const view = (id) => {
 };
 // Known refusals by code; anything else from an audition is the provider failing.
 const STATUS = {
-  NOT_FOUND: 404, NO_SCRIPT: 409, CONFIRMATION_REQUIRED: 402,
+  NOT_FOUND: 404, NO_SCRIPT: 409, CONFIRMATION_REQUIRED: 402, BUDGET_NOT_SET: 402, BUDGET_CAP: 402, GRANT_ENDED: 409,
   EMPTY: 400, NO_PRESENTER: 409, NO_VOICE: 409, NO_AUDIO: 409, STALE: 409,
   TOO_LONG: 400, VOICE_OFFLINE: 503, VOICE_FAILED: 502, UNCONFIRMED: 409,
 };
@@ -148,6 +150,10 @@ router.post(
 
     const seg = segmentsFor(id).find((s) => s.id === segmentId);
     if (!seg) return fail(res, 404, 'NOT_FOUND', 'Segment not found');
+    // Permission comes before readiness: an ended share is the answer even
+    // when something else about the line is not ready yet.
+    const share = usable(seg.presenter?.id);
+    if (!share.ok) return fail(res, 409, 'GRANT_ENDED', share.reason);
     if (seg.blockedBy) {
       return fail(res, 409, 'GATE_' + seg.blockedBy.toUpperCase(),
         {
@@ -177,6 +183,10 @@ router.post(
         'This render is charged to your HeyGen plan. Confirm to continue.');
     }
 
+    const lineCost = budgetApplies(path) ? costOf(Math.max(1, seg.text.split(/\s+/).length) / 140) : 0;
+    const overBudget = budgetApplies(path) ? budgetRefusal(lineCost) : null;
+    if (overBudget) return fail(res, 402, overBudget.code, overBudget.message);
+
     const version =
       (db.prepare('SELECT MAX(version) m FROM segment_renders WHERE segment_id = ?').get(segmentId).m ?? 0) + 1;
 
@@ -197,10 +207,10 @@ router.post(
         : await renderViaKey({ segments: [line], title, resolution, testMode: path.testMode });
 
       db.prepare(
-        `INSERT INTO segment_renders (segment_id, take_id, version, provider, remote_id, status)
-         VALUES (?,?,?,?,?,?)`
+        `INSERT INTO segment_renders (segment_id, take_id, version, provider, remote_id, status, cost_estimate)
+         VALUES (?,?,?,?,?,?,?)`
       ).run(segmentId, seg.take?.id ?? null, version,
-            path.path === 'mcp' ? 'heygen_mcp' : 'heygen', result.video_id, 'queued');
+            path.path === 'mcp' ? 'heygen_mcp' : 'heygen', result.video_id, 'queued', lineCost);
 
       return ok(res, view(id),
         `Segment ${seg.position + 1} queued at ${resolution}` +

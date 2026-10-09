@@ -1,6 +1,8 @@
 import { getDb } from '../db/index.js';
 import { generateStructured, ollamaStatus, LlmRuntimeError } from './llm-runtime.js';
+import { tierOrder } from './model-tier.js';
 import { scriptTiming } from './script-timing.js';
+import { personaFor } from './personas.js';
 
 /*
  * Two kinds of help with a script, kept apart on purpose:
@@ -21,11 +23,6 @@ const confirmsOf = (t) => String(t ?? '').match(CONFIRM_RE) ?? [];
 
 // Model preference for writing, best first. A model tuned for code still
 // writes clean prose; the 8B one ignores length targets (measured 2026-10-08).
-// Measured on three real drafts (2026-10-08): the general 14B writes fresher
-// prose but invented pricing claims ("you only pay for the sessions that help
-// you"); the coder 14B stays with what the draft says and hits length better.
-// Inventing is the worse failure, so it goes first.
-const WRITING_MODELS = ['qwen2.5-coder:14b', 'qwen2.5:14b', 'qwen2.5:14b-instruct', 'qwen2.5:7b', 'llama3.1:8b'];
 
 export async function writingModel(preferred = null) {
   const status = await ollamaStatus();
@@ -34,10 +31,11 @@ export async function writingModel(preferred = null) {
   }
   const installed = status.models ?? [];
   if (preferred && (installed.includes(preferred) || installed.includes(`${preferred}:latest`))) return preferred;
-  const wanted = process.env.ENHANCE_MODEL ? [process.env.ENHANCE_MODEL, ...WRITING_MODELS] : WRITING_MODELS;
+  // The customer's tier (Settings → Model routing) decides the order.
+  const wanted = process.env.ENHANCE_MODEL ? [process.env.ENHANCE_MODEL, ...tierOrder()] : tierOrder();
   const model = wanted.find((m) => installed.includes(m) || installed.includes(`${m}:latest`));
   if (!model) {
-    throw Object.assign(new Error(`No writing model is installed. Run: ollama pull ${WRITING_MODELS[0]}`), { code: 'NO_MODEL' });
+    throw Object.assign(new Error('No local writing model is installed yet. Download the light model (2 GB) in Settings → Model routing.'), { code: 'NO_MODEL' });
   }
   return model;
 }
@@ -225,6 +223,20 @@ export const enhanceJob = (productionId) => {
 // learner…", "One verified signup…") are not facts; a model given them writes
 // them into the script as if they were. Only fields that state something go in.
 const INSTRUCTION_RE = /^(confirm|verify|one verified|one audience|match the|tbd|to be confirmed|check)\b/i;
+/** How the persona presenting this video speaks: style to follow, limits to keep. */
+function voiceOf(productionId) {
+  const p = personaFor(productionId);
+  const v = p?.persona;
+  if (!v) return '';
+  return [
+    `SPEAKER: ${p.name}.`,
+    v.voice && `How they speak: ${v.voice}`,
+    v.signatureOpening && `How they open: ${v.signatureOpening}`,
+    v.signOff && `How they close: ${v.signOff}`,
+    v.neverClaim && `They never: ${v.neverClaim}`,
+  ].filter(Boolean).join('\n');
+}
+
 function factsOf(brief) {
   const keep = ['Company', 'Audience', 'Goal', 'CTA', 'Website', 'Source summary', 'Visual plan', 'Format'];
   return keep.filter((k) => brief[k] && !INSTRUCTION_RE.test(brief[k].trim())).map((k) => `${k}: ${brief[k]}`).join('\n');
@@ -313,6 +325,7 @@ async function runEnhance(job, productionId, mode) {
       `VIDEO: ${title}`,
       `SECTION ${gi + 1} of ${groups.length}: ${g.title}`,
       SECTION_TASK[mode](want),
+      voiceOf(productionId),
       `FACTS (the only facts you may use besides the draft):\n${facts || '(none)'}`,
       `THE WHOLE DRAFT, for context:\n${draft}`,
       written.length ? `ALREADY WRITTEN (sections before this one — do not repeat them):\n${written.flatMap((w) => w.lines).join('\n')}` : '',

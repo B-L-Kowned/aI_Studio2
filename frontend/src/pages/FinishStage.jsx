@@ -19,7 +19,7 @@ export default function FinishStage({ goToStage }) {
     <div className="stagepane">
       <h2>Finish</h2>
       {completedAsset ? (
-        <p>The finished video is on record — the register shows it done. Publish it below.</p>
+        <p>The finished video is on record — the register shows it done. Post it below.</p>
       ) : (
         <>
           <p>Two ways to the finished video. Either one marks it done.</p>
