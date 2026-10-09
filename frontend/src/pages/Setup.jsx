@@ -367,13 +367,13 @@ function PublishingSection() {
   const { meta } = useStudio();
   return (
     <>
-      <SectionHead title="Publishing" lead="Where finished videos go. Artificial Funny can post directly; for the others, Finish prepares the whole package — video, captions, title, description and hashtags — and you post it." />
+      <SectionHead title="Publishing" lead="No logins needed. Finish gives you the video file and its title, description and hashtags to copy; you upload it to each site yourself. Only your own site, Artificial Funny, can be posted to directly." />
       <Card>
         {meta.publishTargets.map((c) => (
           <Row key={c.platform} label={c.platform} hint={c.domain ?? c.detail}>
             {c.direct
               ? <><Pill tone="accent">Posts directly</Pill><span className="text-[11.5px] text-faint">once its key is added under Connections</span></>
-              : <Pill>You post it · package ready in Finish</Pill>}
+              : <Pill>You upload it · video and post text in Finish</Pill>}
           </Row>
         ))}
       </Card>
