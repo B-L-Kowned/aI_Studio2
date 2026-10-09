@@ -7,6 +7,7 @@ import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import { Section } from '../components/Section.jsx';
 import { useBudget, BudgetMeter, BudgetPicker } from '../components/Budget.jsx';
+import { SectionHead } from '../components/SettingsUI.jsx';
 
 /**
  * Your actual HeyGen account: videos, avatars, credits.
@@ -75,7 +76,7 @@ export default function HeyGen({ embedded }) {
 
   return (
     <>
-      {embedded ? <h2 className="m-[0_0_12px] text-[17px]">HeyGen account</h2> : <h1>HeyGen</h1>}
+      {embedded ? <SectionHead title="HeyGen account" lead="Your HeyGen plan, its credits, and the looks and voices it holds." /> : <h1>HeyGen</h1>}
       {/* One line: whether you are signed in, and the one thing to do about it. */}
       <div className={`flex flex-wrap items-center gap-x-[12px] gap-y-[8px] rounded-lg p-[10px_14px] mb-[16px] ${POCKET_CLASS[status.pocket] ?? ''}`}>
         <b className="inline-flex items-center gap-[7px] text-[13.5px] font-[580]">

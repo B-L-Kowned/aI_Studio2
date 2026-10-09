@@ -3,6 +3,7 @@ import { Check, AlertCircle, RefreshCw, Mic, Play, Upload, Plus, Trash2 } from '
 import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import { Modal } from '../components/Dialog.jsx';
+import { SectionHead } from '../components/SettingsUI.jsx';
 
 const H2 = 'm-[0_0_4px]';
 const SUBHEAD = 'text-[11px] tracking-[.07em] text-faint font-[600] m-[26px_0_8px] uppercase';
@@ -44,10 +45,7 @@ export default function VoiceSection() {
 
   return (
     <>
-      <h2 className={H2}>Your voice</h2>
-      <p className="muted" title="Auditions are free in every mode, and the take you approve is the audio the video uses. Cast it on a presenter in Cast.">
-        Your voice, made on this Mac — free, and the take you approve is what the video uses.
-      </p>
+      <SectionHead title="Your voice" lead="Your voice, made on this Mac — free, and the take you approve is exactly what the video uses." />
 
       <div className={'notice ' + (ready ? '' : 'warn')}>
         {ready ? <Check /> : <AlertCircle />}
