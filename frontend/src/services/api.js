@@ -314,6 +314,7 @@ export const api = {
   importTwinPackage: (file) => request('/twin-packages/import', { method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream' } }),
   makeTwinVoice: (presenterId) => post(`/presenters/${presenterId}/twin/voice`),
   buildTwinLook: (presenterId) => post(`/presenters/${presenterId}/twin/look`, { confirm: true }),
+  components: () => get('/workspace/components'),
   modelTier: () => get('/workspace/llm/tier'),
   setModelTier: (tier) => request('/workspace/llm/tier', { method: 'PUT', body: JSON.stringify({ tier }) }),
   downloadModelTier: (tier) => post('/workspace/llm/tier/download', { tier }),

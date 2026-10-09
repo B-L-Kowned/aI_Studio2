@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Check, AlertCircle, Lock, RefreshCw, KeyRound, HardDrive,
-  Sparkles, Video, Plug, Mic, Clapperboard, ChevronDown,
+  Sparkles, Video, Plug, Mic, Clapperboard, ChevronDown, Laptop, ExternalLink,
 } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { useDialog } from '../components/Dialog.jsx';
@@ -14,6 +14,7 @@ import { SectionHead, Card, Row, Pill } from '../components/SettingsUI.jsx';
 
 const SECTIONS = [
   // What you touch while making videos first; the install's plumbing last.
+  { id: 'mac', label: 'This Mac', icon: Laptop },
   { id: 'voice', label: 'Your voice', icon: Mic },
   { id: 'heygen', label: 'HeyGen account', icon: Video },
   { id: 'generation', label: 'Rendering', icon: Clapperboard },
@@ -68,6 +69,7 @@ export default function Setup() {
 
         {/* One readable column: settings are read, not scanned across a wide screen. */}
         <div className="min-w-0 max-w-[880px]">
+          {section === 'mac' && <ThisMacSection go={setSection} />}
           {section === 'license' && <LicenseSection />}
           {section === 'connections' && <ConnectionsSection />}
           {section === 'ai' && <AiSection />}
@@ -356,6 +358,57 @@ function StorageSection() {
         </Row>
       </Card>
       {err && <p className="oberr mt-[10px]"><AlertCircle size={14} /> {err}</p>}
+    </>
+  );
+}
+
+// ----------------------------------------------------------------- this mac
+const STATUS_PILL = {
+  ready: ['ok', 'Ready'], starting: ['accent', 'Starting'], stopped: ['warn', 'Stopped'],
+  missing: ['warn', 'Missing'], blocked: ['muted', 'Waiting'],
+};
+
+/**
+ * What this computer has for each job, and the one step that fixes what is
+ * missing. The first thing to look at on a new install; nothing downloads
+ * without being asked.
+ */
+function ThisMacSection({ go }) {
+  const { mutate } = useStudio();
+  const [data, setData] = useState(null);
+  const load = useCallback(() => api.components().then(setData).catch(() => setData(null)), []);
+  useEffect(() => { load(); }, [load]);
+  const act = async (fix) => {
+    if (fix.kind === 'action' && fix.action === 'download-light') { await mutate(() => api.downloadModelTier('light'), null).catch(() => {}); setTimeout(load, 1500); }
+    if (fix.kind === 'goto') go(fix.section);
+  };
+  return (
+    <>
+      <SectionHead title="This Mac" lead="What this computer has for each job the studio does. Anything missing says what it is for, how big it is, and the one step to get it." />
+      {data && (
+        <p className="m-[0_0_12px] text-[12.5px] text-muted">
+          {data.ready === data.total ? 'Everything is ready.' : `${data.ready} of ${data.total} ready.`}
+          <button className="ghostbtn p-0 ml-[8px] text-[12.5px] text-accent" onClick={load}><RefreshCw size={11} /> Check again</button>
+        </p>
+      )}
+      <Card>
+        {!data ? <Row label="Checking…" /> : data.components.map((c) => {
+          const [tone, word] = STATUS_PILL[c.status] ?? ['muted', c.status];
+          return (
+            <Row key={c.id} label={c.label} hint={c.for}>
+              <Pill tone={tone}>{c.status === 'ready' && <Check size={11} />} {word}</Pill>
+              <span className="text-[12px] text-muted">{c.detail ?? ''}{c.size && c.size !== 'online' ? `${c.detail ? ' · ' : ''}${c.size}` : ''}</span>
+              {c.fix && (
+                <span className="ml-auto">
+                  {c.fix.kind === 'link' && <a className="inline-flex items-center gap-[5px] text-[12.5px] p-[4px_11px] rounded-md border border-solid border-line bg-surface text-ink no-underline hover:border-line-2" href={c.fix.url} target="_blank" rel="noreferrer">{c.fix.label} <ExternalLink size={11} /></a>}
+                  {(c.fix.kind === 'action' || c.fix.kind === 'goto') && <button className="text-[12.5px] p-[4px_11px]" onClick={() => act(c.fix)}>{c.fix.label}</button>}
+                  {c.fix.kind === 'note' && <span className="text-[11.5px] text-faint">{c.fix.label}</span>}
+                </span>
+              )}
+            </Row>
+          );
+        })}
+      </Card>
     </>
   );
 }

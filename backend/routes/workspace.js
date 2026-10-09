@@ -14,6 +14,7 @@ import { ok, fail, route } from '../utils/respond.js';
 import { budgetState, setBudget } from '../lib/budget.js';
 import { storageRoot } from '../lib/exporter.js';
 import { tierState, setTier, pullTier } from '../lib/model-tier.js';
+import { components } from '../lib/components.js';
 
 const router = Router();
 
@@ -53,6 +54,9 @@ router.get(
   '/workspace/llm/status',
   route(async (_req, res) => ok(res, { ollama: await ollamaStatus() }))
 );
+
+/** What this computer has for each job, and the one step that fixes what is missing. */
+router.get('/workspace/components', route(async (_req, res) => ok(res, await components())));
 
 // Which local model writes: light (2 GB, default) or full (9 GB, optional).
 router.get('/workspace/llm/tier', route(async (_req, res) => ok(res, await tierState())));
