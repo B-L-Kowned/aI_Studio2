@@ -35,7 +35,7 @@ function searchablePresenter(presenter) {
 
 function initials(name = '') {
   return name
-    .split(/\s+/)
+    .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean)
     .slice(0, 2)
     .map((word) => word[0])
@@ -173,7 +173,7 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
                     value={query} onChange={(e) => setQuery(e.target.value)} aria-label={`Search ${word}s`} />
                 </label>
               )}
-              <button onClick={() => setBrowsing((b) => !b)}>{browsing ? 'Close HeyGen avatars' : <><Plus size={14} /> Add from HeyGen</>}</button>
+              {comedy && <button onClick={() => setBrowsing((b) => !b)}>{browsing ? 'Close HeyGen avatars' : <><Plus size={14} /> Add from HeyGen</>}</button>}
               <button onClick={() => setAdding(true)}><Plus size={14} /> New {word}</button>
               {!comedy && <button className="ghostbtn text-muted" onClick={() => setImporting(true)} title="Someone shared their twin card with you">Add a shared twin</button>}
             </>}>
@@ -194,10 +194,11 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
             })()
               : <p className="sectionempty">{comedy
                 ? 'No characters yet. Create one, or bring in a HeyGen avatar to perform one.'
-                : 'Every video in your register is presented by you. Add someone here only when another person appears on camera.'}</p>}
+                : 'Every video in your register is presented by you. None added yet. To put someone else on camera, use one of your HeyGen avatars below.'}</p>}
           </Section>
         )}
-        {browsing && (!show || show === 'cast') && <HeyGenBrowser onUse={useAvatar} />}
+        {/* Content presenters come from HeyGen, so the catalogue is the page, not a hidden drawer. */}
+        {(browsing || !comedy) && (!show || show === 'cast') && <HeyGenBrowser onUse={useAvatar} />}
         {after}
         {adding && <NewPresenter kind={comedy ? 'character' : 'avatar'} onClose={() => setAdding(false)} onDone={load} />}
       </>
@@ -390,6 +391,7 @@ function HeyGenBrowser({ onUse }) {
   const [res, setRes] = useState(null);
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(null);
+  const [broken, setBroken] = useState(() => new Set());
   useEffect(() => {
     let live = true;
     const t = setTimeout(() => {
@@ -426,7 +428,11 @@ function HeyGenBrowser({ onUse }) {
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[10px]">
             {items.map((a) => (
               <figure key={a.id} className="m-0 group relative border border-solid border-line rounded-md overflow-hidden bg-surface">
-                <img className="block w-full aspect-square object-cover object-[center_22%] bg-surface-2" src={a.previewUrl} alt={a.name} loading="lazy" />
+                {/* HeyGen's picture links expire; until a sign-in refreshes them, initials, not a broken image. */}
+                {a.previewUrl && !broken.has(a.id)
+                  ? <img className="block w-full aspect-square object-cover object-[center_22%] bg-surface-2" src={a.previewUrl} alt="" loading="lazy"
+                      onError={() => setBroken((cur) => new Set(cur).add(a.id))} />
+                  : <div className="w-full aspect-square grid place-items-center bg-surface-2 text-[22px] font-[600] text-faint" aria-hidden="true">{initials(a.name)}</div>}
                 <figcaption className="p-[6px_8px] text-[11.5px] leading-[1.35] text-ink-2 truncate" title={a.name}>{a.name}</figcaption>
                 <button type="button" disabled={busy === a.id}
                   className="absolute left-[8px] right-[8px] bottom-[34px] text-[11.5px] p-[5px_8px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [transition:opacity_.12s]"
