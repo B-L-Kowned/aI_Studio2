@@ -51,6 +51,8 @@ router.get(
       mcp: m,
       plan: account?.subscription?.plan ?? account?.plan ?? null,
       credits,
+      // When premium credits come back, so "0" never reads as "gone for good".
+      creditsResetAt: account?.subscription?.credits?.premium_credits?.resets_at ?? null,
       renderPath: await chooseRenderPath(),
       capabilities: await mcpCapabilities(),
       key: { connected: !!key?.connected, verified: !!key?.verified, hint: key?.hint ?? null },

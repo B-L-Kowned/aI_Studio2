@@ -132,6 +132,7 @@ export const api = {
     const qs = p.toString();
     return get(`/providers/${id}/assets${qs ? `?${qs}` : ''}`);
   },
+  hideAsset: (id, hidden = true) => post(`/provider-assets/${id}/hide`, { hidden }),
   providerJobs: () => get('/provider-jobs'),
 
   // training — the content program. Courses are campaigns, lessons are videos.

@@ -48,6 +48,12 @@ router.get('/provider-assets/:id/preview', route(async (req, res) => {
   return createReadStream(hit.file).pipe(res);
 }));
 
+/** Not you: hidden everywhere in the studio, left untouched in HeyGen. */
+router.post('/provider-assets/:id/hide', route(async (req, res) => {
+  const r = getDb().prepare('UPDATE provider_assets SET hidden = ? WHERE id = ?').run(req.body?.hidden === false ? 0 : 1, Number(req.params.id));
+  return r.changes ? ok(res, { id: Number(req.params.id) }, req.body?.hidden === false ? 'Shown again' : 'Hidden from the studio') : fail(res, 404, 'NOT_FOUND', 'No such asset');
+}));
+
 router.get(
   '/providers/:id/assets',
   route(async (req, res) => {
@@ -57,7 +63,7 @@ router.get(
     // wants the handful that match what you typed.
     const q = String(req.query.q ?? '').trim().toLowerCase();
     const limit = Math.min(Number(req.query.limit) || 50, 200);
-    const all = localAssets(req.params.id, req.query.kind);
+    const all = localAssets(req.params.id, req.query.kind).filter((a) => !a.hidden);
     const owned = all.filter((a) => a.owned);
     // Yours first — but an account with nothing of its own gets the catalogue
     // rather than an empty picker. "Show only yours" is useless advice when you

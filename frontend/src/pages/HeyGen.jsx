@@ -88,7 +88,7 @@ export default function HeyGen({ embedded }) {
           {connected ? 'Renders use the plan you already pay for.' : 'Sign in to use the plan you already pay for, see your videos and refresh avatar pictures.'}
           {status.recommendation && <span className="text-warn"> {status.recommendation}</span>}
         </span>
-        {status.credits != null && <span className="credits"><Wallet size={13} /> {status.credits} credits</span>}
+        {status.credits != null && <span className="credits" title={status.creditsResetAt ? `Premium credits reset on ${new Date(status.creditsResetAt).toLocaleDateString()}` : ''}><Wallet size={13} /> {status.credits} premium credits{status.creditsResetAt ? ` · reset ${new Date(status.creditsResetAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</span>}
         <span className="flex items-center gap-[6px]">
           <button className="ghostbtn p-[5px]" title="Refresh" aria-label="Refresh" onClick={load}><RefreshCw size={14} /></button>
           {connected
@@ -122,7 +122,8 @@ export default function HeyGen({ embedded }) {
       {connected && status.pocket !== 'key' && (
         <Section title="Your plan" meta={typeof status.plan === 'string' ? status.plan : (status.plan?.name ?? status.plan?.label ?? 'connected by sign-in')}>
           <p className="m-0 text-[12.5px] text-ink-2 leading-[1.55]">
-            Renders use your plan’s credits{status.credits != null ? <> — <b className="font-[600]">{status.credits} left</b></> : ''}. HeyGen stops when they run out, so nothing here can overspend.
+            Renders use your plan’s credits{status.credits != null ? <> — <b className="font-[600]">{status.credits} premium credits left</b>{status.creditsResetAt ? `, back on ${new Date(status.creditsResetAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}` : ''}</> : ''}. HeyGen stops when they run out, so nothing here can overspend.
+            {status.credits === 0 && <span className="block mt-[6px] text-warn">With none left, avatar renders on your plan wait until they reset — or add credits in HeyGen.</span>}
             {' '}<span className="text-muted">A plan has no free test render; a free, watermarked test needs a pay-as-you-go API key (Settings → Connections), and a monthly dollar limit applies only to that.</span>
           </p>
         </Section>
@@ -208,7 +209,7 @@ export default function HeyGen({ embedded }) {
           return (
             <>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[12px]">
-                {shown.map((a) => <AssetTile key={a.id} asset={a} />)}
+                {shown.map((a) => <AssetTile key={a.id} asset={a} onHide={async () => { await mutate(() => api.hideAsset(a.id), null).catch(() => {}); await load(); }} />)}
               </div>
               {shown.length < matched.length && (
                 <p className="sectionnote">
@@ -242,7 +243,7 @@ export default function HeyGen({ embedded }) {
  * One avatar or voice: its picture (kept on this Mac, so it does not go blank
  * when HeyGen's link expires) or, for a voice, a play button for its sample.
  */
-function AssetTile({ asset: a }) {
+function AssetTile({ asset: a, onHide }) {
   const [broken, setBroken] = useState(false);
   const [playing, setPlaying] = useState(false);
   const audio = React.useRef(null);
@@ -257,7 +258,7 @@ function AssetTile({ asset: a }) {
     el.play().then(() => setPlaying(true)).catch(() => setBroken(true));
   };
   return (
-    <figure className="m-0 flex flex-col gap-[6px] min-w-0" title={`${a.name}\n${a.remoteId}`}>
+    <figure className="group/tile m-0 flex flex-col gap-[6px] min-w-0" title={`${a.name}\n${a.remoteId}`}>
       <div className="relative aspect-[4/5] rounded-lg overflow-hidden bg-canvas border border-solid border-line grid place-items-center">
         {!voice && a.previewUrl && !broken
           ? <img src={a.previewUrl} alt="" loading="lazy" onError={() => setBroken(true)} className="absolute inset-0 w-full h-full object-cover object-[center_25%]" />
@@ -268,6 +269,11 @@ function AssetTile({ asset: a }) {
               </button>
             : <span className="text-[22px] font-[600] text-faint tracking-[.02em]" title="The preview link expired — sign in and Sync to refresh it">{initials}</span>}
         {a.isFixture && <span className="absolute top-[6px] left-[6px] text-[10px] bg-warn-soft text-warn rounded p-[1px_6px]">sample</span>}
+        {/* An avatar in your account that is not you: hide it from the studio (it stays in HeyGen). */}
+        {!voice && onHide && (
+          <button type="button" onClick={onHide} title="Not you? Hide it from the studio — it stays in your HeyGen account"
+            className="absolute top-[6px] right-[6px] text-[11px] p-[2px_8px] rounded-full opacity-0 group-hover/tile:opacity-100 focus-visible:opacity-100 [transition:opacity_.12s]">Not me</button>
+        )}
       </div>
       <figcaption className="min-w-0">
         <b className="block text-[12.5px] font-[560] text-ink truncate">{a.name.trim() || 'Untitled'}</b>

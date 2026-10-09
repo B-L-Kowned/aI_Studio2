@@ -172,6 +172,9 @@ const ADDED_COLUMNS = [
   ['workspace', 'llm_tier', 'TEXT'],
   // A twin someone shared with you: owner, wardrobe and voice references, grant.
   ['presenters', 'twin_source', 'TEXT'],
+  // "Not me": an avatar in your account the studio should not offer. Kept
+  // across syncs, since the sync never writes this column.
+  ['provider_assets', 'hidden', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 function migrate(db) {

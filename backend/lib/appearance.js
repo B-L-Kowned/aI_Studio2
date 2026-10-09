@@ -44,7 +44,7 @@ export function looksFor(presenterId) {
   // unreachable while the picker stopped at the group. Its group comes first.
   if (p.kind === 'personal') {
     return db.prepare(
-      `SELECT * FROM provider_assets WHERE kind = 'avatar' AND owned = 1
+      `SELECT * FROM provider_assets WHERE kind = 'avatar' AND owned = 1 AND hidden = 0
         ORDER BY (group_id IS NOT NULL AND group_id = ?) DESC, (group_id IS NULL), name`
     ).all(own?.group_id ?? null).map(serializeLook);
   }

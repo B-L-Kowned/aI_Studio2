@@ -534,7 +534,13 @@ export async function voicesByOwnership() {
   const mine = await allVoices({ ownership: 'private' }).catch(() => []);
   const mineIds = new Set(mine.map((v) => v.voice_id));
   const everything = await allVoices();
-  return everything.map((v) => ({ ...v, owned: mineIds.has(v.voice_id) }));
+  // Your private voices are not in the public list, so marking public entries
+  // as yours found none of them: they are added in their own right.
+  const seen = new Set(everything.map((v) => v.voice_id));
+  return [
+    ...mine.filter((v) => !seen.has(v.voice_id)).map((v) => ({ ...v, owned: true })),
+    ...everything.map((v) => ({ ...v, owned: mineIds.has(v.voice_id) })),
+  ];
 }
 
 /**
