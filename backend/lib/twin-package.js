@@ -118,6 +118,24 @@ function sourceOf(presenterId) {
   return { p, src: JSON.parse(p.twin_source) };
 }
 
+/**
+ * A picture becomes a HeyGen photo-avatar look: uploaded straight to HeyGen,
+ * then made into a look — in an existing avatar group (one of your personas'
+ * identity) when one is given, else as a new one.
+ */
+export async function photoToHeyGenLook({ bytes, contentType, filename, name, avatarGroupId = null }) {
+  const sum = crypto.createHash('sha256').update(bytes).digest('hex');
+  const up = await mcp.callTool('create_asset_upload', { filename, contentType, sizeBytes: bytes.length, checksumSha256: sum });
+  const assetId = up?.asset_id ?? up?.id;
+  const url = up?.upload_url ?? up?.url;
+  if (!assetId || !url) throw bad('HeyGen did not return an upload address.', 'HEYGEN_UPLOAD');
+  const put = await fetch(url, { method: 'PUT', body: bytes, headers: { 'Content-Type': contentType }, signal: AbortSignal.timeout(60_000) });
+  if (!put.ok) throw bad(`HeyGen refused the picture (${put.status}).`, 'HEYGEN_UPLOAD');
+  await mcp.callTool('complete_asset_upload', { assetId, checksumSha256: sum });
+  const made = await mcp.callTool('create_photo_avatar', { name, file: { type: 'asset_id', asset_id: assetId }, ...(avatarGroupId ? { avatarGroupId } : {}) });
+  return { assetId, made };
+}
+
 /** Their voice, made on this Mac from the sample in the package — free. */
 export async function makeTwinVoice(presenterId) {
   const { p, src } = sourceOf(presenterId);
@@ -142,15 +160,7 @@ export async function buildTwinLook(presenterId, { confirm = false } = {}) {
   if (!f || !existsSync(f.abs)) throw bad('The package has no picture to build a look from.', 'NO_LOOK');
   const ext = extname(f.abs).toLowerCase();
   const contentType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
-  const bytes = readFileSync(f.abs);
-  const up = await mcp.callTool('create_asset_upload', { filename: basename(f.abs), contentType, sizeBytes: bytes.length, checksumSha256: f.sha256 });
-  const assetId = up?.asset_id ?? up?.id;
-  const url = up?.upload_url ?? up?.url;
-  if (!assetId || !url) throw bad('HeyGen did not return an upload address.', 'HEYGEN_UPLOAD');
-  const put = await fetch(url, { method: 'PUT', body: bytes, headers: { 'Content-Type': contentType }, signal: AbortSignal.timeout(60_000) });
-  if (!put.ok) throw bad(`HeyGen refused the picture (${put.status}).`, 'HEYGEN_UPLOAD');
-  await mcp.callTool('complete_asset_upload', { assetId, checksumSha256: f.sha256 });
-  const made = await mcp.callTool('create_photo_avatar', { name: `${p.name} — ${f.name ?? 'shared look'}`, file: { type: 'asset_id', asset_id: assetId } });
+  const { assetId, made } = await photoToHeyGenLook({ bytes: readFileSync(f.abs), contentType, filename: basename(f.abs), name: `${p.name} — ${f.name ?? 'shared look'}` });
   src.heygen = { assetId, avatar: made, at: new Date().toISOString() };
   getDb().prepare('UPDATE presenters SET twin_source = ? WHERE id = ?').run(JSON.stringify(src), presenterId);
   return { started: true, heygen: made };

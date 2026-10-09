@@ -569,6 +569,9 @@ function PersonaEditor({ presenter: p, tab: initialTab, options, onCast, onClose
   const [meta, setMeta] = useState(null);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const dialog = useDialog();
+  const { mutate } = useStudio();
   useEffect(() => {
     api.presenterPersona(p.id).then((d) => {
       setMeta(d);
@@ -629,7 +632,23 @@ function PersonaEditor({ presenter: p, tab: initialTab, options, onCast, onClose
           )}
           {tab === 'outfits' && (
             <div>
-              <p className="m-[0_0_10px] text-[12.5px] text-muted">Tick the outfits {form.name} wears — from your own HeyGen looks. The first ticked is the default for new videos; any of them can be chosen per video in Render.</p>
+              <div className="flex flex-wrap items-start gap-[10px] m-[0_0_10px]">
+                <p className="m-0 flex-1 min-w-[260px] text-[12.5px] text-muted">Tick the outfits {form.name} wears — from your own HeyGen looks. The first ticked is the default for new videos; any of them can be chosen per video in Render.</p>
+                <label className="cursor-pointer inline-flex items-center gap-[6px] text-[12.5px] p-[5px_11px] rounded-md border border-solid border-line bg-surface hover:border-line-2" title="A photo of you in the outfit — a phone photo, or an image made from one">
+                  <Plus size={13} /> {photoBusy ? 'Sending to HeyGen…' : 'Add a look from a photo'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={photoBusy}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]; e.target.value = '';
+                      if (!file) return;
+                      const ok = await dialog.confirm({ title: `Make a new look for ${form.name}?`, confirmLabel: 'Make the look', tone: 'warn',
+                        body: 'The photo is sent to your HeyGen account and made into a look in this persona’s own identity, so the face stays yours. It may use HeyGen credits, and appears here after the next sync.' });
+                      if (!ok) return;
+                      setPhotoBusy(true);
+                      try { await mutate(() => api.addLookFromPhoto(p.id, file, file.name.replace(/\.[^.]+$/, '')), null); } catch { /* reported */ }
+                      finally { setPhotoBusy(false); }
+                    }} />
+                </label>
+              </div>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-[8px] max-h-[46vh] overflow-auto p-[2px]">
                 {meta.wearable.map((l) => {
                   const n = form.assetIds.indexOf(l.id);

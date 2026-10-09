@@ -6,7 +6,8 @@ import { WORKSTREAMS } from './register.js';
 import { twinCard, importCard, readCard, needsFor } from '../lib/twin-card.js';
 import express from 'express';
 import { rmSync } from 'node:fs';
-import { buildPackage, importPackage, makeTwinVoice, buildTwinLook } from '../lib/twin-package.js';
+import { buildPackage, importPackage, makeTwinVoice, buildTwinLook, photoToHeyGenLook } from '../lib/twin-package.js';
+import * as mcp from '../lib/providers/heygen-mcp.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -73,6 +74,27 @@ router.post('/presenters/:id/twin/voice', route(async (req, res) => {
 router.post('/presenters/:id/twin/look', route(async (req, res) => {
   try { return ok(res, await buildTwinLook(Number(req.params.id), { confirm: req.body?.confirm === true }), 'Building their look in your HeyGen'); }
   catch (err) { return fail(res, { CONFIRMATION_REQUIRED: 402, NOT_CONNECTED: 409 }[err.code] ?? 400, err.code ?? 'ERROR', err.message); }
+}));
+
+/**
+ * Add a look to one of your personas from a photo of you (a phone photo, or an
+ * image made from one). It goes into that persona's own HeyGen identity, so
+ * the face stays yours; it appears in Outfits once HeyGen has made it.
+ */
+router.post('/presenters/:id/looks/from-photo', express.raw({ type: ['image/*'], limit: '25mb' }), route(async (req, res) => {
+  if (req.query.confirm !== '1') return fail(res, 402, 'CONFIRMATION_REQUIRED', 'Making a look in HeyGen uses your account. Confirm to continue.');
+  if (!mcp.isConnected()) return fail(res, 409, 'NOT_CONNECTED', 'Sign in to HeyGen first (Settings → HeyGen account).');
+  const db = getDb();
+  const p = db.prepare('SELECT * FROM presenters WHERE id = ?').get(Number(req.params.id));
+  if (!p || p.kind !== 'personal') return fail(res, 400, 'NOT_YOURS', 'Looks from a photo are for your own personas.');
+  if (!Buffer.isBuffer(req.body) || req.body.length < 10_000) return fail(res, 400, 'EMPTY', 'That picture is too small to make a look from.');
+  const group = p.avatar_asset_id ? db.prepare('SELECT group_id FROM provider_assets WHERE id = ?').get(p.avatar_asset_id)?.group_id : null;
+  const type = String(req.headers['content-type'] ?? 'image/jpeg').split(';')[0];
+  const name = `${p.name} — ${String(req.query.name ?? 'new look').slice(0, 60)}`;
+  try {
+    const r = await photoToHeyGenLook({ bytes: req.body, contentType: type, filename: `look.${type.split('/')[1] ?? 'jpg'}`, name, avatarGroupId: group });
+    return ok(res, { name, ...r }, 'HeyGen is making the look — it appears in Outfits after the next sync');
+  } catch (err) { return fail(res, 502, err.code ?? 'HEYGEN_ERROR', err.message); }
 }));
 
 export default router;

@@ -312,6 +312,7 @@ export const api = {
   previewTwinCard: (card) => post('/twin-cards/preview', { card }).then((r) => r.data),
   importTwinCard: (card) => post('/twin-cards/import', { card }),
   importTwinPackage: (file) => request('/twin-packages/import', { method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream' } }),
+  addLookFromPhoto: (presenterId, file, name) => request(`/presenters/${presenterId}/looks/from-photo?confirm=1&name=${encodeURIComponent(name ?? '')}`, { method: 'POST', body: file, headers: { 'Content-Type': file.type || 'image/jpeg' } }),
   makeTwinVoice: (presenterId) => post(`/presenters/${presenterId}/twin/voice`),
   buildTwinLook: (presenterId) => post(`/presenters/${presenterId}/twin/look`, { confirm: true }),
   components: () => get('/workspace/components'),
