@@ -5,8 +5,8 @@ import { useStudio } from '../context/studio-context.jsx';
 import { PageHead, Tabs } from '../components/Section.jsx';
 
 /**
- * Cast — the same tabs in both programs: You (your likeness), Personas (who
- * you play, and which videos each presents by default), the
+ * Cast — the same tabs in both programs: You (yourself and the personas you
+ * play — one list, each with its outfits, pace and default videos), the
  * program's cast (Presenters in Content, Characters in Comedy — made here or
  * brought in from HeyGen), and Collaborators (people you invited).
  */
@@ -20,7 +20,6 @@ export default function Cast() {
   const bar = (
     <Tabs value={view} onChange={setView} items={[
       { id: 'you', label: 'You' },
-      { id: 'personas', label: 'Personas' },
       { id: 'cast', label: comedy ? 'Characters' : 'Presenters' },
       { id: 'collaborators', label: 'Collaborators' },
     ]} />

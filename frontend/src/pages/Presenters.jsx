@@ -135,18 +135,12 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
           actions={<button onClick={() => setShowRetired((v) => !v)}>{showRetired ? 'Hide retired' : 'Show retired'}</button>}
           tabs={tabsNode} />
         {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
-        {you && (!show || show === 'you') && (() => {
-          const likeness = you.presenters.filter((p) => !p.persona);
+        {you && (!show || show === 'you' || show === 'personas') && (() => {
+          // You and the roles you play are one list: yourself first (the
+          // default when no persona fits a video), then each persona.
+          const all = [...you.presenters].sort((x, y) => (!!x.persona - !!y.persona) || x.id - y.id);
           return (
-            <Section title="You" meta="your likeness — the face and voice every persona is built on">
-              {likeness.length ? rowsOf(likeness) : <p className="sectionempty">No likeness of you yet.</p>}
-            </Section>
-          );
-        })()}
-        {you && show === 'personas' && (() => {
-          const personas = you.presenters.filter((p) => p.persona);
-          return (
-            <Section title="Personas" meta={`${personas.length} — who you play, and which videos each presents`}
+            <Section title="You" meta={`yourself and ${all.length - 1} persona${all.length === 2 ? '' : 's'} — personality, outfits, pace, and which videos each presents`}
               actions={<button onClick={async () => {
                 const name = await dialog.prompt({ title: 'New persona', label: 'Name', placeholder: 'Pat the Coach',
                   body: 'A persona is you in a role. Give it a name now; its personality, outfits, pace and the videos it presents are set next.',
@@ -158,11 +152,12 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
                   return r;
                 });
               }}><Plus size={14} /> New persona</button>}>
-              {personas.length ? (
+              {all.length ? (
                 <div className="border border-solid border-line rounded-lg bg-surface overflow-clip">
-                  {personas.map((p) => <PersonaCard key={p.id} presenter={p} onChanged={load} />)}
+                  {all.map((p) => <PersonaCard key={p.id} presenter={p} onChanged={load} options={data.options}
+                    onCast={(body) => run(() => api.castPresenter(p.id, body))} />)}
                 </div>
-              ) : <p className="sectionempty">No personas yet. A persona is you in a role — its personality, outfits, pace, and the videos it presents.</p>}
+              ) : <p className="sectionempty">No likeness of you yet.</p>}
             </Section>
           );
         })()}
@@ -453,7 +448,7 @@ function HeyGenBrowser({ onUse }) {
  * A persona, whole: who they are, how they speak, what they wear, how fast,
  * and which videos they present when a video does not choose for itself.
  */
-function PersonaCard({ presenter: p, onChanged }) {
+function PersonaCard({ presenter: p, onChanged, options, onCast }) {
   const [open, setOpen] = useState(false);
   const [meta, setMeta] = useState(null);   // workstreams + companies to choose from
   const [form, setForm] = useState(null);
@@ -484,12 +479,14 @@ function PersonaCard({ presenter: p, onChanged }) {
         {image ? <img className="w-[44px] h-[44px] rounded-[8px] object-cover object-[center_22%] bg-surface-2" src={image} alt="" loading="lazy" />
           : <b className="w-[44px] h-[44px] grid place-items-center rounded-[8px] bg-surface-2 border border-solid border-line text-[12px]">{initials(p.name)}</b>}
         <div className="min-w-0">
-          <b className="block text-[13.5px] font-[580] truncate">{p.name}</b>
+          <b className="flex items-center gap-[6px] text-[13.5px] font-[580] min-w-0"><span className="truncate">{p.name}</span>
+            {!p.persona && <span className="flex-none text-[10px] font-semibold tracking-[.05em] uppercase text-muted bg-canvas border border-solid border-line rounded-[3px] p-[1px_6px]">Yourself</span>}</b>
           <span className="block truncate text-[12px] text-muted">{p.tagline || p.description || 'No description yet'}</span>
         </div>
         <div className="min-w-0 text-[12px] lte960:col-span-2">
           <span className="text-muted">Presents: </span>
-          {used.length ? <span className="text-ink-2">{used.join(' · ')}</span> : <span className="text-faint">only when chosen for a video</span>}
+          {used.length ? <span className="text-ink-2">{used.join(' · ')}</span>
+            : <span className="text-faint">{p.persona ? 'only when chosen for a video' : 'any video no persona presents'}</span>}
           <span className="block text-faint">{p.looks?.length || 0} look{p.looks?.length === 1 ? '' : 's'} · {p.speed ? `${p.speed.toFixed(2)}×` : 'natural pace'}</span>
         </div>
         <button className="text-[12px] p-[4px_11px] lte960:col-span-2 lte960:justify-self-end" onClick={edit} aria-expanded={open}>
@@ -536,6 +533,11 @@ function PersonaCard({ presenter: p, onChanged }) {
           <div className="flex gap-[8px]">
             <button className="primary text-[12.5px]" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
             <button className="text-[12.5px]" onClick={() => setOpen(false)}>Cancel</button>
+          </div>
+          <div>
+            <span className={FIELD}>Default look and voice</span>
+            <p className="m-[2px_0_6px] text-[11.5px] text-faint">The voice is how this persona sounds — record a sample in its tone under Settings → Your voice, then choose it here.</p>
+            <div className="max-w-[640px]"><CastRow presenter={p} options={options} onSave={onCast} /></div>
           </div>
           <div>
             <span className={FIELD}>Outfits and pace</span>
