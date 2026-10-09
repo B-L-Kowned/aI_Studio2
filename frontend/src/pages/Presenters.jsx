@@ -500,9 +500,8 @@ function PersonaCard({ presenter: p, onChanged, options, onCast }) {
   const looks = p.looks ?? [];
   return (
     <div className="[&+&]:[border-top:1px_solid_var(--line)]">
-      <div className="grid grid-cols-[44px_minmax(220px,1fr)_minmax(200px,1fr)_auto_auto] gap-[14px] items-center p-[10px_14px] lte960:grid-cols-[44px_1fr]">
-        {image ? <img className="w-[44px] h-[44px] rounded-[8px] object-cover object-[center_22%] bg-surface-2" src={image} alt="" loading="lazy" />
-          : <b className="w-[44px] h-[44px] grid place-items-center rounded-[8px] bg-surface-2 border border-solid border-line text-[12px]">{initials(p.name)}</b>}
+      <div className="grid grid-cols-[44px_minmax(220px,1fr)_minmax(200px,1fr)_220px_auto] gap-[14px] items-center p-[10px_14px] lte960:grid-cols-[44px_1fr]">
+        <LookThumb look={image ? { previewUrl: image, name: p.name } : { name: p.name }} className="w-[44px] h-[44px] rounded-[8px] text-[12px]" />
         <div className="min-w-0">
           <b className="flex items-center gap-[6px] text-[13.5px] font-[580] min-w-0"><span className="truncate">{p.name}</span>
             {!p.persona && <span className="flex-none text-[10px] font-semibold tracking-[.05em] uppercase text-muted bg-canvas border border-solid border-line rounded-[3px] p-[1px_6px]">Yourself</span>}</b>
@@ -516,9 +515,9 @@ function PersonaCard({ presenter: p, onChanged, options, onCast }) {
         </div>
         {/* The outfits, seen at a glance; click to change them. */}
         <button type="button" onClick={() => setEditing('outfits')} title="Change the outfits"
-          className="flex items-center gap-[4px] p-[3px] rounded-md border border-solid border-line bg-surface hover:border-line-2 lte960:col-span-2 lte960:justify-self-start">
+          className="flex items-center gap-[4px] p-[3px] rounded-md border border-solid border-line bg-surface hover:border-line-2 justify-self-end lte960:col-span-2 lte960:justify-self-start">
           {looks.slice(0, 4).map((l) => (
-            <img key={l.id} src={l.previewUrl} alt="" className="w-[30px] h-[30px] rounded-[5px] object-cover object-[center_22%] bg-surface-2" loading="lazy" />
+            <LookThumb key={l.id} look={l} className="w-[30px] h-[30px] rounded-[5px] text-[10px]" />
           ))}
           <span className="text-[11.5px] text-muted p-[0_6px]">{looks.length} outfit{looks.length === 1 ? '' : 's'}</span>
         </button>
@@ -532,6 +531,15 @@ function PersonaCard({ presenter: p, onChanged, options, onCast }) {
         onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged?.(); }} />}
     </div>
   );
+}
+
+/** A look's picture, or its initials once HeyGen's link has expired (sign in to refresh). */
+function LookThumb({ look, className }) {
+  const [broken, setBroken] = useState(false);
+  if (!look?.previewUrl || broken) {
+    return <span className={`grid place-items-center bg-surface-2 text-faint font-[600] ${className}`} title={`${look?.name ?? ''} — picture refreshes when you sign in to HeyGen`}>{initials(look?.name)}</span>;
+  }
+  return <img src={look.previewUrl} alt="" loading="lazy" onError={() => setBroken(true)} className={`object-cover object-[center_22%] bg-surface-2 ${className}`} />;
 }
 
 const EDIT_TABS = [['who', 'Who they are'], ['outfits', 'Outfits & pace'], ['voice', 'Look & voice'], ['presents', 'What they present']];
@@ -613,7 +621,7 @@ function PersonaEditor({ presenter: p, tab: initialTab, options, onCast, onClose
                   return (
                     <button key={l.id} type="button" onClick={() => toggleLook(l.id)} title={l.name} aria-pressed={n >= 0}
                       className={'relative p-0 rounded-md overflow-hidden border-[2px] border-solid bg-surface ' + (n >= 0 ? 'border-accent' : 'border-transparent opacity-80 hover:opacity-100')}>
-                      <img className="block w-full aspect-square object-cover object-[center_22%] bg-surface-2" src={l.previewUrl} alt="" loading="lazy" />
+                      <LookThumb look={l} className="w-full aspect-square text-[20px]" />
                       {n >= 0 && <span className="absolute top-[4px] left-[4px] text-[10px] font-semibold rounded-full p-[1px_6px] bg-accent text-white">{n === 0 ? 'Default' : n + 1}</span>}
                       <span className="block p-[3px_5px] text-[11px] text-ink-2 truncate">{l.name}</span>
                     </button>

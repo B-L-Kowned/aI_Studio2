@@ -39,6 +39,15 @@ export function looksFor(presenterId) {
   const p = db.prepare('SELECT * FROM presenters WHERE id = ?').get(presenterId);
   if (!p) return [];
   const own = p.avatar_asset_id ? db.prepare('SELECT * FROM provider_assets WHERE id = ?').get(p.avatar_asset_id) : null;
+  // A persona is you: it can wear any look of yours, not just those in its
+  // avatar's group — HPB's looks live outside the main group, and were
+  // unreachable while the picker stopped at the group. Its group comes first.
+  if (p.kind === 'personal') {
+    return db.prepare(
+      `SELECT * FROM provider_assets WHERE kind = 'avatar' AND owned = 1
+        ORDER BY (group_id IS NOT NULL AND group_id = ?) DESC, (group_id IS NULL), name`
+    ).all(own?.group_id ?? null).map(serializeLook);
+  }
   if (!own) return [];
   if (!own.group_id) return [serializeLook(own)];
   return db.prepare(
