@@ -250,7 +250,8 @@ router.get(
     const row = getDb().prepare('SELECT local_path FROM assets WHERE id = ?').get(Number(req.params.id));
     const { existsSync } = await import('node:fs');
     if (!row?.local_path || !existsSync(row.local_path)) return fail(res, 404, 'NOT_FOUND', 'No local file for this video');
-    return res.sendFile(row.local_path);
+    // ?download=1 saves it under its own name rather than playing it.
+    return req.query.download ? res.download(row.local_path) : res.sendFile(row.local_path);
   })
 );
 

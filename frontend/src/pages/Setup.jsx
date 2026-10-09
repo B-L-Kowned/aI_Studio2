@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Check, AlertCircle, Lock, RefreshCw, KeyRound, HardDrive,
-  Sparkles, Video, Share2, Plug, Mic, Clapperboard, ChevronDown,
+  Sparkles, Video, Plug, Mic, Clapperboard, ChevronDown,
 } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { useDialog } from '../components/Dialog.jsx';
@@ -18,7 +18,6 @@ const SECTIONS = [
   { id: 'heygen', label: 'HeyGen account', icon: Video },
   { id: 'generation', label: 'Rendering', icon: Clapperboard },
   { id: 'storage', label: 'Storage', icon: HardDrive },
-  { id: 'publishing', label: 'Publishing', icon: Share2 },
   { id: 'connections', label: 'Connections', icon: Plug },
   { id: 'ai', label: 'Writing model', icon: Sparkles },
   { id: 'license', label: 'Licence', icon: KeyRound },
@@ -76,7 +75,6 @@ export default function Setup() {
           {section === 'voice' && <VoiceSection />}
           {section === 'heygen' && <HeyGen embedded />}
           {section === 'storage' && <StorageSection />}
-          {section === 'publishing' && <PublishingSection />}
         </div>
       </div>
     </>
@@ -358,25 +356,6 @@ function StorageSection() {
         </Row>
       </Card>
       {err && <p className="oberr mt-[10px]"><AlertCircle size={14} /> {err}</p>}
-    </>
-  );
-}
-
-// --------------------------------------------------------------- publishing
-function PublishingSection() {
-  const { meta } = useStudio();
-  return (
-    <>
-      <SectionHead title="Publishing" lead="No logins needed. Finish gives you the video file and its title, description and hashtags to copy; you upload it to each site yourself. Only your own site, Artificial Funny, can be posted to directly." />
-      <Card>
-        {meta.publishTargets.map((c) => (
-          <Row key={c.platform} label={c.platform} hint={c.domain ?? c.detail}>
-            {c.direct
-              ? <><Pill tone="accent">Posts directly</Pill><span className="text-[11.5px] text-faint">once its key is added under Connections</span></>
-              : <Pill>You upload it · video and post text in Finish</Pill>}
-          </Row>
-        ))}
-      </Card>
     </>
   );
 }

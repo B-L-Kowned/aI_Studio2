@@ -319,6 +319,8 @@ export const api = {
   cancelRender: (id, renderId) => post(`/productions/${id}/render/${renderId}/cancel`),
   applyEdit: (id, renderId, body) => post(`/productions/${id}/render/${renderId}/edit`, body),
   createExport: (id) => post(`/productions/${id}/export`),
+  postFiles: (id) => get(`/productions/${id}/post-files`),
+  markPosted: (id, platform, url, undo = false) => post(`/productions/${id}/publications/${encodeURIComponent(platform)}/posted`, { url, undo }),
   publications: (id) => get(`/productions/${id}/publications`),
   // Channel names may contain spaces ("Artificial Funny"), so the segment is encoded.
   publish: (id, platform, mode) =>

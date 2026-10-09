@@ -177,6 +177,8 @@ const ADDED_COLUMNS = [
   ['provider_assets', 'hidden', 'INTEGER NOT NULL DEFAULT 0'],
   // A presenter you reach for first: listed at the top, and a filter of its own.
   ['presenters', 'favorite', 'INTEGER NOT NULL DEFAULT 0'],
+  // You posted it yourself and told the studio where.
+  ['publications', 'by_hand', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 function migrate(db) {
