@@ -9,6 +9,7 @@ import ConnectionsSection from './ConnectionsSection.jsx';
 import VoiceSection from './VoiceSection.jsx';
 import { PageHead } from '../components/Section.jsx';
 import HeyGen from './HeyGen.jsx';
+import { useBudget } from '../components/Budget.jsx';
 
 const SECTIONS = [
   // What you touch while making videos first; the install's plumbing last.
@@ -168,13 +169,15 @@ function LicenseSection() {
         <span className="text-[14px] font-[600] capitalize">{workspace.program?.noun?.one ?? 'Project'}</span>
       </Row>
 
-      <Row label={`Capabilities (${workspace.capabilities.length})`} hint="Granted by this key">
-        <div className="flex gap-[5px] flex-wrap mt-[10px]">
+      {/* Internal names, kept for support, folded away from everyday reading. */}
+      <details className="mt-[14px] text-[12px] text-muted">
+        <summary className="cursor-pointer select-none">Technical details · {workspace.capabilities.length} capabilities granted by this key</summary>
+        <div className="flex gap-[5px] flex-wrap mt-[8px]">
           {workspace.capabilities.map((c) => (
             <code key={c} className="text-[11px] bg-surface border border-solid border-line text-muted p-[4px_8px] rounded-sm">{c}</code>
           ))}
         </div>
-      </Row>
+      </details>
     </>
   );
 }
@@ -306,6 +309,7 @@ function GenerationSection({ onHeyGen }) {
   const [err, setErr] = useState(null);
 
   const [hg, setHg] = useState(null);
+  const [budget] = useBudget();
   const load = useCallback(async () => {
     setProviders(await api.providers());
     setHg(await api.heygenStatus().catch(() => null));
@@ -368,6 +372,14 @@ function GenerationSection({ onHeyGen }) {
         I understand Live mode makes real, billable generation calls.
       </label>
       {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
+      {budget && (
+        <p className="m-[4px_0_0] text-[12.5px] text-muted">
+          {budget.set
+            ? <>Paid renders stop at your monthly limit: <b className="text-ink font-[560]">${budget.spent.toFixed(2)} of ${budget.monthlyCap}</b> used.</>
+            : <>Before Live can render, choose a monthly limit for your HeyGen account.</>}{' '}
+          <button className="ghostbtn p-0 text-accent text-[12.5px]" onClick={() => onHeyGen?.()}>{budget.set ? 'Change it' : 'Choose a limit'}</button>
+        </p>
+      )}
 
       <h3 className={SUBHEAD}>Catalogue</h3>
       {providers.map((p) => (
@@ -381,13 +393,13 @@ function GenerationSection({ onHeyGen }) {
               : p.id === 'heygen' && <button onClick={() => onHeyGen?.()}>Sign in…</button>}
           </Row>
           {p.lastSyncAt && (
-            <Row label="" hint="">
+            <div className="m-[-4px_0_8px]">
               <div className="flex gap-[16px] flex-wrap text-[12px] text-muted">
                 <span>quota <b className="text-ink [font-variant-numeric:tabular-nums]">{p.quotaRemaining ?? '—'}</b></span>
                 {Object.entries(p.assets).map(([k, n]) => <span key={k}>{k}s <b className="text-ink [font-variant-numeric:tabular-nums]">{n}</b></span>)}
-                <span>synced <b className="text-ink [font-variant-numeric:tabular-nums]">{p.lastSyncAt}</b></span>
+                <span>synced <b className="text-ink [font-variant-numeric:tabular-nums]">{p.lastSyncAt.slice(0, 16).replace('T', ' ')}</b></span>
               </div>
-            </Row>
+            </div>
           )}
           {!p.endpointsVerified && pm.mode !== 'fixtures' && (
             <div className="notice warn">
@@ -422,8 +434,8 @@ function StorageSection() {
     <>
       <h2 className={H2}>Storage</h2>
       <p className="muted">
-        Projects are addressed through a storage provider, never a raw path. Changing this
-        never moves existing files silently.
+        Where finished videos and exports are saved. Changing it does not move videos
+        already saved.
       </p>
 
       <Row label="Location">
@@ -441,7 +453,7 @@ function StorageSection() {
       </Row>
 
       {provider === 'local' && (
-        <Row label="Project root">
+        <Row label="Folder">
           <div className="flex gap-[7px] items-center flex-1 min-w-0">
             <input className="flex-1 min-w-[150px]" value={path} onChange={(e) => setPath(e.target.value)} placeholder="~/AI Video Studio" />
           </div>
@@ -456,31 +468,24 @@ function StorageSection() {
 
 // --------------------------------------------------------------- publishing
 function PublishingSection() {
-  const { workspace, setWorkspace, meta, mutate } = useStudio();
-  const state = Object.fromEntries((workspace.connections ?? []).map((c) => [c.platform, c.status]));
+  const { meta } = useStudio();
 
   return (
     <>
       <h2 className={H2}>Publishing</h2>
       <p className="muted">
-        All optional. Every channel supports <b>Prepare only</b>, which builds a complete
-        upload package with nothing connected.
+        Where finished videos go. Artificial Funny posts directly; for the others the
+        studio prepares a complete upload package and you post it.
       </p>
 
       {meta.publishTargets.map((c) => (
         <Row key={c.platform} label={c.platform} hint={c.domain ?? c.detail}>
           {c.kind === 'owned' && <span className="owntag">Owned</span>}
-          <button
-            className={state[c.platform] === 'connected' ? '' : 'primary'}
-            onClick={() =>
-              mutate(
-                () => api.setConnection(c.platform, state[c.platform] === 'connected' ? 'disconnected' : 'connected'),
-                (r) => setWorkspace(r.data)
-              )
-            }
-          >
-            {state[c.platform] === 'connected' ? <><Check size={13} /> Connected</> : 'Connect'}
-          </button>
+          <span className="text-[12px] text-muted" title="Finish builds the upload package: the video, captions, title, description and hashtags">
+            {c.direct
+              ? 'Posts directly once its key is added under Connections'
+              : 'Prepare only · you post it, the package is ready in Finish'}
+          </span>
         </Row>
       ))}
     </>

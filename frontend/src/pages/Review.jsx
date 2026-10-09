@@ -30,7 +30,7 @@ function BriefPanel({ item, onFit, fitting }) {
   const fact = (label, value) => value && (
     <div><dt className="text-[10.5px] tracking-[.07em] uppercase text-faint font-semibold">{label}</dt>
       {INSTRUCTION.test(value.trim())
-        ? <dd className="m-[2px_0_0] text-[12.5px] text-faint italic leading-[1.45]" title={value}>Not set yet — Fill the gaps in the video’s brief</dd>
+        ? <dd className="m-[2px_0_0] text-[12.5px] text-faint italic leading-[1.45]" title={value}>Not set yet · add it in the video’s brief</dd>
         : <dd className="m-[2px_0_0] text-[13px] text-ink-2 leading-[1.45]">{value}</dd>}
     </div>
   );

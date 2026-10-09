@@ -62,8 +62,12 @@ const FILTER_KEYS = ['q', 'stage', 'pri', 'fmt', 'ws', 'co', 'need', 'sort'];
 const VIEW_KEY = 'register-view';
 function initialView() {
   let search = window.location.search;
+  const fromUrl = !!search;
   if (!search) { try { search = sessionStorage.getItem(VIEW_KEY) ?? ''; } catch { /* storage blocked */ } }
   const p = new URLSearchParams(search);
+  // Filters are where you work, so they come back; a search was for one moment,
+  // and finding the register narrowed to one video later reads as missing rows.
+  if (!fromUrl) p.delete('q');
   return Object.fromEntries(FILTER_KEYS.map((k) => [k, p.get(k) ?? '']));
 }
 

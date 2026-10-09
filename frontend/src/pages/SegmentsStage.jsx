@@ -40,6 +40,10 @@ function LocalVoice({ data, optional, castable, run, production, busy, reload })
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState('');
   const [changing, setChanging] = useState(false);
+  const made = segments.filter((s) => s.take?.audioUrl && !s.needsAudition);
+  const approved = segments.filter((s) => s.heard);
+  const missing = segments.filter((s) => s.needsAudition);
+  const unapproved = made.filter((s) => !s.heard);
   // Every line heard by Whisper: the words it could not find, to listen to first.
   const [check, setCheck] = useState(null); // null | 'busy' | { checked, lines, words, seconds }
   const [checkAt, setCheckAt] = useState(0);
@@ -67,10 +71,6 @@ function LocalVoice({ data, optional, castable, run, production, busy, reload })
     setCheckAt(k + 1);
   };
 
-  const made = segments.filter((s) => s.take?.audioUrl && !s.needsAudition);
-  const approved = segments.filter((s) => s.heard);
-  const missing = segments.filter((s) => s.needsAudition);
-  const unapproved = made.filter((s) => !s.heard);
   const seconds = made.reduce((n, s) => n + (s.take?.duration ?? 0), 0);
   const voiceName = speakers[0]?.presenter?.name ?? 'not cast';
 

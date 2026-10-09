@@ -12,6 +12,7 @@ import { programState } from '../lib/programs.js';
 import { modeSummary, setProviderMode } from '../lib/providers/mode.js';
 import { ok, fail, route } from '../utils/respond.js';
 import { budgetState, setBudget } from '../lib/budget.js';
+import { storageRoot } from '../lib/exporter.js';
 import { tierState, setTier, pullTier } from '../lib/model-tier.js';
 
 const router = Router();
@@ -28,7 +29,8 @@ export function workspaceState() {
     templates: templatesFor(w.entitlement),
     licenseHint: w.license_key_hint,
     storageProvider: w.storage_provider,
-    storagePath: w.storage_path,
+    // Where exports really land: the seeded placeholder path is never shown as if it were used.
+    storagePath: storageRoot(),
     llmProvider: w.llm_provider,
     onboarded: !!w.onboarded_at,
     onboardedAt: w.onboarded_at,

@@ -78,7 +78,13 @@ export default function PostCopy() {
       )}
 
       <div className="grid gap-[12px] p-[12px_16px_16px]">
-        {FIELDS.map((f) => (
+        {FIELDS.map((f) => (f.key === 'chapters' && !copy.chapters ? (
+          // No chapters is a decision, not a blank: a video under a minute has none.
+          <div key="chapters" className="grid grid-cols-[110px_minmax(0,1fr)] gap-[12px] items-baseline lte800:grid-cols-[1fr]">
+            <span className="text-[11px] tracking-[.06em] uppercase font-semibold text-ink-2">Chapters</span>
+            <span className="text-[12.5px] text-muted">None. Chapters are added for videos over a minute, from the outline and where each part is actually said.</span>
+          </div>
+        ) : (
           <label key={`${f.key}-${copy[f.key]}`} className="grid grid-cols-[110px_minmax(0,1fr)_auto] gap-[12px] items-start lte800:grid-cols-[1fr]">
             <span className="pt-[7px] text-[11px] tracking-[.06em] uppercase font-semibold text-ink-2">
               {f.label}
@@ -97,7 +103,7 @@ export default function PostCopy() {
               {copied === f.key ? <Check size={13} className="text-ok" /> : <Copy size={13} />}
             </button>
           </label>
-        ))}
+        )))}
       </div>
     </section>
   );

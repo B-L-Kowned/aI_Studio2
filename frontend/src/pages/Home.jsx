@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, ArrowRight, Check, Clock, Headphones, Lightbulb, RefreshCw, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
-import { useDialog } from '../components/Dialog.jsx';
+import { useDialog, Modal } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import { PageHead } from '../components/Section.jsx';
@@ -37,27 +37,27 @@ const fmtDate = (iso) => {
 };
 const dueWords = (d) => (d == null ? '' : d < 0 ? `${-d}d late` : d === 0 ? 'due today' : `due in ${d}d`);
 
-function DeadlineForm({ deadlines, onSave, onCancel, first }) {
+const PRIORITY_HINT = { P1: 'Your most important videos', P2: 'Next in line', P3: 'Everything else, and anything unprioritised' };
+
+/** Your three deadlines, in a dialog: one date per priority. */
+function DeadlineDialog({ deadlines, onSave, onClose }) {
   const [form, setForm] = useState({ P1: deadlines.P1 ?? '', P2: deadlines.P2 ?? '', P3: deadlines.P3 ?? '' });
+  const [saving, setSaving] = useState(false);
+  const save = async () => { setSaving(true); try { await onSave(form); } finally { setSaving(false); } };
   return (
-    <form className="flex flex-wrap items-center gap-x-[14px] gap-y-[10px] p-[12px_16px] rounded-lg border border-solid border-line bg-surface"
-      onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
-      {first && (
-        <span className="flex items-center gap-[8px] text-[13px] text-ink font-[560] mr-[4px]" title="Every video is due by its priority's date (unprioritised count as P3). A single video can still have its own date.">
-          <CalendarDays size={15} className="text-accent" /> Deadlines
-        </span>
-      )}
-      {['P1', 'P2', 'P3'].map((p) => (
-        <label key={p} className="flex items-center gap-[6px] text-[12px] font-semibold text-muted">
-          {p}
-          <input type="date" className="text-[12.5px] p-[4px_6px] w-[132px]" value={form[p]} onChange={(e) => setForm((f) => ({ ...f, [p]: e.target.value }))} />
-        </label>
-      ))}
-      <span className="ml-auto flex gap-[8px]">
-        {onCancel && <button type="button" onClick={onCancel}>Cancel</button>}
-        <button className="primary" type="submit">Save</button>
-      </span>
-    </form>
+    <Modal title="Deadlines" width={440} onClose={onClose}
+      footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save'}</button></>}>
+      <p className="m-[0_0_12px] text-[12.5px] text-muted">Each video is due by its priority's date. A single video can still carry its own date.</p>
+      <div className="grid gap-[10px]">
+        {['P1', 'P2', 'P3'].map((p) => (
+          <label key={p} className="grid grid-cols-[34px_1fr_150px] items-center gap-[10px]">
+            <b className="text-[13px]">{p}</b>
+            <span className="text-[12px] text-muted">{PRIORITY_HINT[p]}</span>
+            <input type="date" className="text-[12.5px] p-[5px_7px]" value={form[p]} onChange={(e) => setForm((f) => ({ ...f, [p]: e.target.value }))} />
+          </label>
+        ))}
+      </div>
+    </Modal>
   );
 }
 
@@ -165,8 +165,15 @@ export default function Home({ go }) {
       <div className="grid grid-cols-[minmax(0,1fr)_340px] gap-[22px] items-start lte960:grid-cols-[1fr]">
         {/* ================= the work ================= */}
         <div className="flex flex-col gap-[22px] min-w-0">
-          {!hasDates || editing ? (
-            <DeadlineForm first={!hasDates} deadlines={m.deadlines ?? {}} onSave={saveDeadlines} onCancel={hasDates ? () => setEditing(false) : null} />
+          {editing && <DeadlineDialog deadlines={m.deadlines ?? {}} onSave={saveDeadlines} onClose={() => setEditing(false)} />}
+          {!hasDates ? (
+            <button type="button" onClick={() => setEditing(true)}
+              className="flex items-center gap-[10px] w-full text-left p-[10px_14px] rounded-lg border border-dashed border-line-2 bg-transparent hover:bg-surface hover:border-line">
+              <CalendarDays size={15} className="text-accent flex-none" />
+              <span className="text-[13px] text-ink font-[560]">Set your deadlines</span>
+              <span className="text-[12.5px] text-muted">One date for each priority, so Today can tell you what is late and the pace you need.</span>
+              <ArrowRight size={13} className="ml-auto text-muted" />
+            </button>
           ) : (
             <section>
               <h2 className={H}>Pace <button className="ghostbtn ml-auto p-0 text-[11.5px] normal-case tracking-normal font-normal text-muted hover:text-ink" onClick={() => setEditing(true)}>change deadlines</button></h2>

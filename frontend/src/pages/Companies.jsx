@@ -242,7 +242,7 @@ export default function Companies({ go, tabs }) {
                   <span className={VIDEOS} aria-label={`${t.productions} videos`}>
                     {t.productions}
                   </span>
-                  <button className={TRACK_BUTTON} onClick={() => setEditing(t.id)}>Edit</button>
+                  <button className={`${TRACK_BUTTON} ghostbtn text-[12px] p-[3px_9px] text-muted hover:text-ink`} onClick={() => setEditing(t.id)}>Edit</button>
                 </div>
               ))}
             </div>

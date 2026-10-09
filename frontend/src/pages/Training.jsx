@@ -169,7 +169,7 @@ export default function Training({ go, goView, tabs }) {
 
             {!isOrdering && !c.ordered && c.counts.lessons > 1 && (
               <p className="sectionnote">
-                Newest first. Set an order to fix the sequence lessons are taught in.
+                In register order. Set an order to change the sequence lessons are taught in.
               </p>
             )}
           </Section>

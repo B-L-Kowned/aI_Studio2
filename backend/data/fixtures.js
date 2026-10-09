@@ -92,7 +92,10 @@ export const calendarEntries = [
 // direct push to the site rather than a third-party social API. It is listed
 // first because it is the only one that never depends on someone else's uptime.
 export const publishChannels = [
-  { platform: 'Artificial Funny', domain: 'artificialfunny.com', kind: 'owned',
+  // `direct`: the studio can post there itself. The others get a complete upload
+  // package (video, captions, title, description) to post yourself; a Connect
+  // button for them would claim a connection nothing behind it makes.
+  { platform: 'Artificial Funny', domain: 'artificialfunny.com', kind: 'owned', direct: true,
     detail: 'Owned site · direct publish via site API' },
   { platform: 'YouTube',   kind: 'social', detail: 'Long-form and Shorts' },
   { platform: 'LinkedIn',  kind: 'social', detail: 'Native video post' },
