@@ -76,10 +76,11 @@ export function AccountChip() {
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-[6px] [border:0] bg-transparent p-[4px_6px] rounded-sm text-[11.5px] text-faint hover:bg-canvas hover:text-muted"
+        className={'inline-flex items-center gap-[6px] whitespace-nowrap shrink-0 p-[5px_10px] rounded-md text-[12px] border border-solid '
+          + (account.signedIn ? 'border-transparent bg-transparent text-ink-2 hover:bg-canvas' : 'border-line bg-surface text-ink hover:border-line-2')}
         title={account.signedIn ? 'Your AuthenTech account' : 'Optional: sign in to share twins with consent'}>
         <UserRound size={13} />
-        <span>{account.signedIn ? (account.profile?.name ?? 'Signed in') : 'Sign in'}</span>
+        <span>{account.signedIn ? (account.profile?.name ?? 'Signed in') : 'Sign in to AuthenTech'}</span>
       </button>
       {open && <AccountDialog account={account} onClose={() => setOpen(false)} onChanged={reload} />}
     </>
