@@ -6,6 +6,8 @@ import {
 import { ok, fail, route } from '../utils/respond.js';
 import { createReadStream } from 'node:fs';
 import { cachedFile, cachePreview, linkExpired } from '../lib/preview-cache.js';
+import * as mcp from '../lib/providers/heygen-mcp.js';
+import { canReadLive } from '../lib/providers/mode.js';
 
 const router = Router();
 
@@ -41,7 +43,19 @@ router.post(
 router.get('/provider-assets/:id/preview', route(async (req, res) => {
   const row = getDb().prepare('SELECT * FROM provider_assets WHERE id = ?').get(Number(req.params.id));
   if (!row) return fail(res, 404, 'NOT_FOUND', 'No such asset');
-  const hit = cachedFile(row.id) ?? await cachePreview(row);
+  let hit = cachedFile(row.id) ?? await cachePreview(row);
+  // An expired link on a look you use: ask HeyGen for a fresh one (a free read)
+  // rather than leaving a blank tile until the next full sync.
+  if (!hit && row.kind === 'avatar' && row.provider === 'heygen' && mcp.isConnected() && canReadLive()) {
+    try {
+      const look = await mcp.callTool('get_avatar_look', { lookId: row.remote_id });
+      const url = look?.preview_image_url ?? look?.image_url ?? null;
+      if (url) {
+        getDb().prepare('UPDATE provider_assets SET preview_url = ? WHERE id = ?').run(url, row.id);
+        hit = await cachePreview({ ...row, preview_url: url });
+      }
+    } catch { /* not reachable: fall through to the plain answer */ }
+  }
   if (!hit) return fail(res, 404, 'NO_PREVIEW', 'The preview link has expired — sync HeyGen to refresh it');
   res.type(hit.type ?? 'image/jpeg');
   res.set('Cache-Control', 'private, max-age=86400');

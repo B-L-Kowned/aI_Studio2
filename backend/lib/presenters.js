@@ -42,6 +42,13 @@ function serialize(r) {
     looks: r.kind === 'personal' ? personaLooks(r.id) : [],
     speed: r.speed ?? null,
     useFor: r.kind === 'personal' ? useForOf(r) : null,
+    favorite: !!r.favorite,
+    // Videos still to make that this presenter is cast in.
+    upcoming: db.prepare(
+      `SELECT COUNT(DISTINCT s.production_id) n FROM segments s
+        WHERE s.presenter_id = ?
+          AND NOT EXISTS (SELECT 1 FROM brief_fields b WHERE b.production_id = s.production_id AND b.label = 'Completed asset' AND b.value != '')`
+    ).get(r.id).n,
   };
 }
 
@@ -60,7 +67,7 @@ export function presentersFor(programs, { includeRetired = false } = {}) {
       .prepare(
         `SELECT * FROM presenters
          WHERE kind = ?${includeRetired ? '' : ' AND is_active = 1'}
-         ORDER BY position, id`
+         ORDER BY favorite DESC, position, id`
       )
       .all(kind);
     return { ...info, presenters: rows.map(serialize) };

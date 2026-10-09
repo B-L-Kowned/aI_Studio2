@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Check, AlertCircle, Plus, X, Archive, RotateCcw, ChevronDown, Search } from 'lucide-react';
+import { Check, AlertCircle, Plus, X, Archive, RotateCcw, ChevronDown, Search, Star } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
 import { useDialog, Modal } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
@@ -62,6 +62,7 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState(null);
   const [query, setQuery] = useState('');
+  const [only, setOnly] = useState('all'); // all | favorites | upcoming
   const [visibleCount, setVisibleCount] = useState(ROSTER_PAGE_SIZE);
   const [browsing, setBrowsing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -117,6 +118,7 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
         <PresenterRow key={p.id} presenter={p} options={data.options}
           onSave={(body) => run(() => api.castPresenter(p.id, body))}
           onRetire={() => run(() => api.retirePresenter(p.id, !p.isActive))}
+          onFavorite={() => run(() => api.favoritePresenter(p.id, !p.favorite))}
           onChanged={load} />
       ))}
     </div>
@@ -179,10 +181,23 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
             </>}>
             {importing && <ImportTwinDialog onClose={() => setImporting(false)} onAdded={load} />}
             {others.presenters.length ? (() => {
-              const found = others.presenters.filter((p) => !normalizedQuery || searchablePresenter(p).includes(normalizedQuery));
+              const found = others.presenters
+                .filter((p) => only === 'all' || (only === 'favorites' ? p.favorite : p.upcoming > 0))
+                .filter((p) => !normalizedQuery || searchablePresenter(p).includes(normalizedQuery));
+              const chip = (id, label, n) => (
+                <button key={id} type="button" onClick={() => setOnly(id)}
+                  className={'text-[12px] p-[3px_10px] rounded-full border border-solid ' + (only === id ? 'bg-ink text-white border-ink' : 'bg-surface text-ink-2 border-line')}>
+                  {label} <span className={only === id ? 'opacity-70' : 'text-faint'}>{n}</span>
+                </button>
+              );
               return (
                 <>
-                  {found.length ? rowsOf(found.slice(0, visibleCount)) : <p className="sectionempty">No {word} matches “{query.trim()}”.</p>}
+                  <div className="flex flex-wrap gap-[6px] mb-[10px]" role="group" aria-label="Show">
+                    {chip('all', 'All', others.presenters.length)}
+                    {chip('favorites', '★ Favorites', others.presenters.filter((p) => p.favorite).length)}
+                    {chip('upcoming', 'In upcoming videos', others.presenters.filter((p) => p.upcoming > 0).length)}
+                  </div>
+                  {found.length ? rowsOf(found.slice(0, visibleCount)) : <p className="sectionempty">{only !== 'all' && !normalizedQuery ? (only === 'favorites' ? 'No favourites yet — star a presenter to keep them at the top.' : 'None of these presenters is cast in a video still to make.') : `No ${word} matches “${query.trim()}”.`}</p>}
                   {found.length > visibleCount && (
                     <div className="flex items-center gap-[10px] pt-[10px] text-[12px] text-muted">
                       Showing {visibleCount} of {found.length}
@@ -728,7 +743,7 @@ function PersonaStyle({ presenter, onSaved }) {
 }
 
 /** One person in the cast, on one line: portrait, who, look and voice, ready. */
-function PresenterRow({ presenter: p, options, onSave, onRetire, onChanged }) {
+function PresenterRow({ presenter: p, options, onSave, onRetire, onChanged, onFavorite }) {
   const [open, setOpen] = useState(false);
   const [styling, setStyling] = useState(false); // the Looks & pace panel
   const [imageFailed, setImageFailed] = useState(false);
@@ -749,7 +764,10 @@ function PresenterRow({ presenter: p, options, onSave, onRetire, onChanged }) {
               ? <Check size={13} className="flex-none text-ok" aria-label="Ready to produce" />
               : <span className="flex-none text-[11px] font-normal text-warn">needs casting</span>}
           </b>
-          <span className="block truncate text-[12px] text-muted" title={p.tagline || p.description}>{p.tagline || p.description || ' '}</span>
+          <span className="block truncate text-[12px] text-muted" title={p.tagline || p.description}>
+            {p.upcoming > 0 && <span className="text-accent font-[560]">In {p.upcoming} upcoming video{p.upcoming === 1 ? '' : 's'} · </span>}
+            {p.tagline || p.description || ' '}
+          </span>
         </div>
         <div className="min-w-0 lte960:col-span-2"><CastRow presenter={p} options={options} onSave={onSave} /></div>
         <span className="flex items-center justify-end gap-[2px] lte960:col-span-2">
@@ -762,6 +780,12 @@ function PresenterRow({ presenter: p, options, onSave, onRetire, onChanged }) {
           {persona && (
             <button type="button" className={'ghostbtn text-[12px] p-[4px_8px] ' + (open ? 'text-ink' : 'text-muted')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
               How they speak <ChevronDown size={12} className={open ? 'rotate-180' : ''} />
+            </button>
+          )}
+          {onFavorite && (
+            <button type="button" className={'ghostbtn p-[6px] ' + (p.favorite ? 'text-warn' : 'text-faint hover:text-ink')} aria-pressed={p.favorite}
+              title={p.favorite ? 'Favourite — listed first' : 'Favourite: keep at the top'} onClick={onFavorite}>
+              <Star size={14} fill={p.favorite ? 'currentColor' : 'none'} />
             </button>
           )}
           <button type="button" className="ghostbtn p-[6px] text-faint hover:text-ink" title={p.isActive ? 'Retire — kept, out of the way' : 'Restore'} onClick={onRetire}>

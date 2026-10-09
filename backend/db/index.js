@@ -175,6 +175,8 @@ const ADDED_COLUMNS = [
   // "Not me": an avatar in your account the studio should not offer. Kept
   // across syncs, since the sync never writes this column.
   ['provider_assets', 'hidden', 'INTEGER NOT NULL DEFAULT 0'],
+  // A presenter you reach for first: listed at the top, and a filter of its own.
+  ['presenters', 'favorite', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 function migrate(db) {

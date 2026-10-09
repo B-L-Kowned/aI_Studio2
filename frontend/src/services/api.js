@@ -89,6 +89,7 @@ export const api = {
   savePresenterPersona: (id, body) => request(`/presenters/${id}/persona`, { method: 'PUT', body: JSON.stringify(body) }),
   videoPersona: (id) => get(`/productions/${id}/persona`),
   setVideoPersona: (id, personaId) => request(`/productions/${id}/persona`, { method: 'PUT', body: JSON.stringify({ personaId }) }),
+  favoritePresenter: (id, favorite) => post(`/presenters/${id}/favorite`, { favorite }),
   retirePresenter: (id, active) => post(`/presenters/${id}/retire`, { active }),
   setMadeBy: (ids, madeBy) => post('/productions/made-by', { ids, madeBy }),
   consentStatus: () => get('/people/consent-status'),

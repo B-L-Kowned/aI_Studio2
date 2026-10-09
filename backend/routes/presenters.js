@@ -103,6 +103,12 @@ router.patch(
 );
 
 // Retire rather than delete: productions that already cast them keep resolving.
+// Favourite: listed first, and one click to filter to.
+router.post('/presenters/:id/favorite', route(async (req, res) => {
+  const r = getDb().prepare('UPDATE presenters SET favorite = ? WHERE id = ?').run(req.body?.favorite === false ? 0 : 1, Number(req.params.id));
+  return r.changes ? ok(res, { id: Number(req.params.id), favorite: req.body?.favorite !== false }) : fail(res, 404, 'NOT_FOUND', 'No such presenter');
+}));
+
 router.post(
   '/presenters/:id/retire',
   route(async (req, res) => {
