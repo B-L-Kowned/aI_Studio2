@@ -206,7 +206,7 @@ router.get(
       // name and the kind, which is why a "HeyGen video" in here could not be
       // played, dated or told apart from any other.
       getDb().prepare(`SELECT a.*, p.title AS production_title, p.mode AS production_mode
-          FROM assets a LEFT JOIN productions p ON p.id = a.production_id ORDER BY a.position, a.id`).all()
+          FROM assets a LEFT JOIN productions p ON p.id = a.production_id WHERE a.hidden = 0 ORDER BY a.position, a.id`).all()
         .map((a) => ({
           // Which program it belongs to, for the Content / Comedy switch: its
           // video's, else anything from HeyGen is your business work, and the
@@ -254,6 +254,12 @@ router.get(
     return req.query.download ? res.download(row.local_path) : res.sendFile(row.local_path);
   })
 );
+
+/** Hide a Library item without deleting it (hidden: false shows it again). */
+router.post('/library/:id/hide', route(async (req, res) => {
+  const r = getDb().prepare('UPDATE assets SET hidden = ? WHERE id = ?').run(req.body?.hidden === false ? 0 : 1, Number(req.params.id));
+  return r.changes ? ok(res, { id: Number(req.params.id) }, req.body?.hidden === false ? 'Shown again' : 'Hidden from the Library') : fail(res, 404, 'NOT_FOUND', 'No such item');
+}));
 
 router.delete(
   '/library/:id',

@@ -1,3 +1,4 @@
+import ProgramWork from '../components/ProgramWork.jsx';
 import React, { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, Check, ChevronLeft, ArrowRight } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
@@ -24,7 +25,7 @@ const STALE_KEY = { Script: 'script', Make: 'render', Edit: 'export', Finish: 'p
 export default function Create({ go }) {
   const [stage, setStageRaw] = useState('Script');
   const [steps, setSteps] = useState(null);
-  const { production, saveState, pendingStage, setPendingStage } = useStudio();
+  const { production, saveState, pendingStage, setPendingStage, inScope, scopeMode } = useStudio();
   const setStage = useCallback((s) => setStageRaw(toStep(s)), []);
 
   // Opened from the schedule, which knows where the work is stuck.
@@ -43,6 +44,11 @@ export default function Create({ go }) {
 
   // No open production (a fresh workspace, or the current one failed to load)
   // used to throw here and blank the page.
+  // The open video belongs to the other program: show this program's work
+  // rather than a Content video while you are in Comedy (or the reverse).
+  if (production && scopeMode && !inScope(production.mode)) {
+    return <ProgramWork go={go} title="Create" lead="Pick one to open — the last one you had open belongs to the other program." />;
+  }
   if (!production) {
     return (
       <p className="sectionempty">

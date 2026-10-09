@@ -179,6 +179,8 @@ const ADDED_COLUMNS = [
   ['presenters', 'favorite', 'INTEGER NOT NULL DEFAULT 0'],
   // You posted it yourself and told the studio where.
   ['publications', 'by_hand', 'INTEGER NOT NULL DEFAULT 0'],
+  // Kept but not shown: seed samples, and videos since deleted in HeyGen.
+  ['assets', 'hidden', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 function migrate(db) {

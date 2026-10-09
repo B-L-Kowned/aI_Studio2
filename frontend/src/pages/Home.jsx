@@ -5,6 +5,7 @@ import { useDialog, Modal } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import { PageHead } from '../components/Section.jsx';
+import ProgramWork from '../components/ProgramWork.jsx';
 
 /**
  * Today: the production manager. Where the register stands against your three
@@ -63,7 +64,15 @@ function DeadlineDialog({ deadlines, onSave, onClose }) {
 
 const H = 'text-[11.5px] tracking-[.06em] uppercase text-faint font-semibold m-[0_0_8px] flex items-center gap-[6px]';
 
+// Today is built from the register of IDed business videos, which is
+// Content's. In Comedy it is the list of bits instead.
 export default function Home({ go }) {
+  const { scopeMode } = useStudio();
+  if (scopeMode === 'comedy') return <ProgramWork go={go} title="Today" />;
+  return <ContentToday go={go} />;
+}
+
+function ContentToday({ go }) {
   const [ending, setEnding] = useState([]);
   useEffect(() => { api.grants().then((g) => setEnding(g.endingSoon ?? [])).catch(() => {}); }, []);
   const { openProduction, setPendingStage, setPendingView, setPendingDate, mutate, scopeMode, notify } = useStudio();
