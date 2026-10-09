@@ -151,9 +151,9 @@ export default function HeyGen({ embedded }) {
 
       {/* Your videos only exist once signed in; until then the bar above says so. */}
       {connected && (
-        <Section title="Your videos" meta={`${videos?.length ?? 0} in your account`}>
+        <Section title="Your videos" meta={videos === null ? 'checking your account…' : `${videos.length} in your account${videos.length ? ` · ${videos.filter((v) => v.imported).length} in the studio` : ''}`}>
           {videos === null ? (
-            <p className="sectionempty">Loading…</p>
+            <p className="sectionempty">Asking HeyGen about each of your videos…</p>
           ) : videos.length === 0 ? (
             <p className="sectionempty">No videos in this account yet.</p>
           ) : (
@@ -167,10 +167,12 @@ export default function HeyGen({ embedded }) {
                   <div className="flex gap-[8px] items-center text-[11.5px] text-muted">
                     <span className={'vchip ' + (v.status === 'completed' ? 'complete' : v.status)}>{v.status}</span>
                     {v.duration && <span>{Math.round(v.duration)}s</span>}
-                    <button className="ml-auto ghostbtn p-[2px_4px] text-[11.5px] text-accent" disabled={v.status !== 'completed'}
-                      onClick={() => mutate(() => api.importHeygenVideo(v.id), null).then(load)}>
-                      <Download size={12} /> Import
-                    </button>
+                    {v.imported
+                      ? <span className="ml-auto inline-flex items-center gap-[4px] text-[11.5px] text-ok"><Check size={12} /> In the studio</span>
+                      : <button className="ml-auto ghostbtn p-[2px_4px] text-[11.5px] text-accent" disabled={v.status !== 'completed'}
+                          onClick={() => mutate(() => api.importHeygenVideo(v.id), null).then(load)}>
+                          <Download size={12} /> Import
+                        </button>}
                   </div>
                 </div>
               ))}
