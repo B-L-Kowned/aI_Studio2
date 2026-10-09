@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, Download, ExternalLink, Upload, UserRound } from 'lucide-react';
-import { Modal } from './Dialog.jsx';
+import { Modal, useDialog } from './Dialog.jsx';
 import { api } from '../services/api.js';
 import { useStudio } from '../context/studio-context.jsx';
 
@@ -112,19 +112,12 @@ export function ShareTwinDialog({ presenter, onClose }) {
       scopes: f.parts, mode: f.how, days: f.days ? Number(f.days) : null }), null).catch(() => null);
     if (!g) return;
     setShared(g.data);
-    const card = await api.twinCard(presenter.id, g.data.id);
-    const keep = new Set(f.parts);
-    const shared = {
-      ...card,
-      wardrobe: keep.has('appearance') ? card.wardrobe : [],
-      voice: keep.has('voice') ? card.voice : null,
-      personality: keep.has('personality') ? card.personality : { voice: '', signatureOpening: '', signOff: '', neverClaim: '' },
-      sharing: { mode: f.how, for: f.name || null, expires_in_days: f.days ? Number(f.days) : null },
-    };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(shared, null, 2)], { type: 'application/json' }));
+    // The package: the card plus a picture of each look and the voice sample,
+    // each fingerprinted — what the other person's app rebuilds the twin from.
     const a = document.createElement('a');
-    a.href = url; a.download = `${presenter.name.replace(/[^\w-]+/g, '-').toLowerCase()}.twin.json`; a.click();
-    URL.revokeObjectURL(url);
+    a.href = `/api/presenters/${presenter.id}/twin-package?grant=${g.data.id}`;
+    a.download = '';
+    a.click();
   };
   if (signIn) return <AccountDialog account={account} onClose={() => setSignIn(false)} onChanged={reload} />;
   const canSend = account?.signedIn && account.canShare;
@@ -132,7 +125,7 @@ export function ShareTwinDialog({ presenter, onClose }) {
     <Modal title={`Share ${presenter.name}`} width={560} onClose={onClose}
       footer={<>
         <button onClick={onClose}>Cancel</button>
-        <button disabled={!f.parts.length || !f.name.trim()} onClick={download} title={f.name.trim() ? 'A file with the personality, outfits and voice settings — never your samples' : 'Say who it is for first'}><Download size={13} /> Download twin card</button>
+        <button disabled={!f.parts.length || !f.name.trim()} onClick={download} title={f.name.trim() ? 'One file: the card, a picture of each look and the voice sample — send it to them yourself' : 'Say who it is for first'}><Download size={13} /> Download twin package</button>
         <button className="primary" disabled={!f.parts.length || !f.email.trim() || (account?.signedIn && !canSend)}
           onClick={() => (account?.signedIn ? null : setSignIn(true))}
           title={account?.signedIn ? 'Opens once AuthenTech twin sharing is live — download the card meanwhile' : 'Sharing with consent uses an AuthenTech account'}>
@@ -183,7 +176,7 @@ export function ShareTwinDialog({ presenter, onClose }) {
       <p className={NOTE}>
         {canSend
           ? 'You confirm the share on AuthenTech, and they accept it there. You can withdraw it at any time; videos already published stay published, and a copy they downloaded cannot be recalled.'
-          : 'Sending with consent needs a free AuthenTech account, so the permission can be proved and withdrawn. The twin card works now: it holds the personality, outfits and voice settings, never your recordings, and grants nothing by itself.'}
+          : 'The twin package works now: one file with the card, a picture of each look and the voice sample, each fingerprinted. Send it to them yourself; their app rebuilds the twin on their side and it ends on the date you chose. Sending through AuthenTech adds proof of consent once it is live.'}
       </p>
     </Modal>
   );
@@ -192,27 +185,66 @@ export function ShareTwinDialog({ presenter, onClose }) {
 /** Add a twin someone shared: see what it brings and what is still needed, then add it. */
 export function ImportTwinDialog({ onClose, onAdded }) {
   const { mutate } = useStudio();
+  const dialog = useDialog();
+  const [file, setFile] = useState(null);
   const [card, setCard] = useState(null);
   const [preview, setPreview] = useState(null);
   const [err, setErr] = useState(null);
   const [done, setDone] = useState(null);
-  const pick = async (file) => {
-    setErr(null); setPreview(null);
+  const [busy, setBusy] = useState(null);
+  const [made, setMade] = useState({});
+  const pick = async (f) => {
+    setErr(null); setPreview(null); setCard(null); setFile(null);
     try {
-      const c = JSON.parse(await file.text());
+      const head = new Uint8Array(await f.slice(0, 2).arrayBuffer());
+      if (head[0] === 0x50 && head[1] === 0x4b) { setFile(f); setPreview({ name: f.name.replace(/\.twin$/, ''), packaged: true }); return; }
+      const c = JSON.parse(await f.text());
       setCard(c);
       setPreview(await api.previewTwinCard(c));
-    } catch (e) { setErr(e instanceof SyntaxError ? 'That file is not a twin card.' : e.message); }
+    } catch (e) { setErr(e instanceof SyntaxError ? 'That file is not a twin package.' : e.message); }
   };
   const add = async () => {
-    const r = await mutate(() => api.importTwinCard(card), null).catch(() => null);
+    const r = await mutate(() => (file ? api.importTwinPackage(file) : api.importTwinCard(card)), null).catch(() => null);
     if (r) { setDone(r.data); onAdded?.(); }
+  };
+  const voice = async () => {
+    setBusy('voice');
+    const r = await mutate(() => api.makeTwinVoice(done.presenterId), null).catch(() => null);
+    setBusy(null); if (r) setMade((m) => ({ ...m, voice: true }));
+  };
+  const look = async () => {
+    if (!await dialog.confirm({ title: `Build ${done.name}'s look in your HeyGen?`, confirmLabel: 'Build look', tone: 'warn',
+      body: 'Their picture is uploaded to your HeyGen account and made into a photo avatar. It uses your account, and HeyGen may ask them to confirm it is them.' })) return;
+    setBusy('look');
+    const r = await mutate(() => api.buildTwinLook(done.presenterId), null).catch(() => null);
+    setBusy(null); if (r) setMade((m) => ({ ...m, look: true }));
   };
   if (done) {
     return (
-      <Modal title={`${done.name} added`} onClose={onClose} footer={<button className="primary" onClick={onClose}>Done</button>}>
-        <p className="m-0 text-[13px]">They are under Presenters, and {done.owner} is under Collaborators. Before they can appear in a video:</p>
-        <ul className="m-[8px_0_0] p-[0_0_0_18px] text-[12.5px] text-muted leading-[1.6]">{done.needs.map((n) => <li key={n}>{n}</li>)}</ul>
+      <Modal title={`${done.name} added`} width={520} onClose={onClose} footer={<button className="primary" onClick={onClose}>Done</button>}>
+        <p className="m-0 text-[13px]">
+          {done.name} is under Presenters{done.grant?.endsAt ? `, shared with you until ${new Date(done.grant.endsAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}.
+          {done.looks || done.voice ? ' Build them on your side:' : ''}
+        </p>
+        {(done.looks || done.voice) && (
+          <div className="grid gap-[8px] mt-[12px]">
+            {done.voice && (
+              <div className="flex items-center gap-[10px] p-[10px_12px] rounded-lg border border-solid border-line">
+                <span className="flex-1 text-[12.5px]"><b className="block text-[13px] font-[580]">Their voice</b><span className="text-muted">Made on this Mac from their sample — free.</span></span>
+                {made.voice ? <span className="text-ok text-[12.5px] inline-flex items-center gap-[4px]"><Check size={13} /> Ready</span>
+                  : <button disabled={busy} onClick={voice}>{busy === 'voice' ? 'Making…' : 'Make their voice'}</button>}
+              </div>
+            )}
+            {done.looks > 0 && (
+              <div className="flex items-center gap-[10px] p-[10px_12px] rounded-lg border border-solid border-line">
+                <span className="flex-1 text-[12.5px]"><b className="block text-[13px] font-[580]">Their look</b><span className="text-muted">Built in your HeyGen from their picture.</span></span>
+                {made.look ? <span className="text-ok text-[12.5px] inline-flex items-center gap-[4px]"><Check size={13} /> Building in HeyGen</span>
+                  : <button disabled={busy} onClick={look}>{busy === 'look' ? 'Uploading…' : 'Build in HeyGen…'}</button>}
+              </div>
+            )}
+          </div>
+        )}
+        {done.needs?.length > 0 && <p className={NOTE}>Still to do: {done.needs.join('; ')}.</p>}
       </Modal>
     );
   }
@@ -220,21 +252,23 @@ export function ImportTwinDialog({ onClose, onAdded }) {
     <Modal title="Add a shared twin" width={500} onClose={onClose}
       footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={!preview} onClick={add}>Add to presenters</button></>}>
       <label className="flex items-center justify-center gap-[8px] p-[18px] rounded-lg border border-dashed border-line-2 bg-surface-2 text-[13px] text-muted cursor-pointer hover:border-accent">
-        <Upload size={15} /> {card ? 'Choose a different card' : 'Choose a twin card (.twin.json)'}
-        <input type="file" accept=".json,application/json" className="hidden" onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
+        <Upload size={15} /> {preview ? 'Choose a different file' : 'Choose the twin package they sent (.twin)'}
+        <input type="file" accept=".twin,.json,application/zip,application/json" className="hidden" onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
       </label>
       {err && <p className="oberr m-[10px_0_0]">{err}</p>}
       {preview && (
         <div className="mt-[12px] text-[12.5px]">
           <b className="block text-[14px] font-[600]">{preview.name}</b>
-          <span className="text-muted">{preview.owner ? `Shared by ${preview.owner}` : 'Shared twin'}{preview.tagline ? ` · ${preview.tagline}` : ''}</span>
-          <p className="m-[10px_0_4px] font-semibold text-[11.5px] text-muted">It brings</p>
-          <span className="text-ink-2">{[preview.personality?.voice && 'personality', preview.wardrobe?.length && `${preview.wardrobe.length} outfit${preview.wardrobe.length === 1 ? '' : 's'}`, preview.voice && 'voice settings'].filter(Boolean).join(' · ') || 'a name only'}</span>
-          <p className="m-[10px_0_4px] font-semibold text-[11.5px] text-muted">Still needed before a video</p>
-          <ul className="m-0 p-[0_0_0_18px] text-muted leading-[1.6]">{preview.needs.map((n) => <li key={n}>{n}</li>)}</ul>
+          {preview.packaged
+            ? <span className="text-muted">A twin package. Its files are checked against their fingerprints when you add it.</span>
+            : <>
+                <span className="text-muted">{preview.owner ? `Shared by ${preview.owner}` : 'Shared twin'}{preview.tagline ? ` · ${preview.tagline}` : ''}</span>
+                <p className="m-[10px_0_4px] font-semibold text-[11.5px] text-muted">Still needed before a video</p>
+                <ul className="m-0 p-[0_0_0_18px] text-muted leading-[1.6]">{preview.needs.map((n) => <li key={n}>{n}</li>)}</ul>
+              </>}
         </div>
       )}
-      <p className={NOTE}>A card describes a twin; it is not permission to use one. <a href="https://theauthentech.app" target="_blank" rel="noopener noreferrer">AuthenTech <ExternalLink size={10} className="inline" /></a> records that.</p>
+      <p className={NOTE}>A package describes a twin and carries what it is built from; the share inside it says until when.</p>
     </Modal>
   );
 }

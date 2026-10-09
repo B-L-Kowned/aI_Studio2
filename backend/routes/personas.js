@@ -4,6 +4,9 @@ import { looksFor } from '../lib/appearance.js';
 import { personaLooks, setPersona, personaFor, setVideoPersona, useForOf } from '../lib/personas.js';
 import { WORKSTREAMS } from './register.js';
 import { twinCard, importCard, readCard, needsFor } from '../lib/twin-card.js';
+import express from 'express';
+import { rmSync } from 'node:fs';
+import { buildPackage, importPackage, makeTwinVoice, buildTwinLook } from '../lib/twin-package.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -44,6 +47,32 @@ router.post('/twin-cards/preview', route(async (req, res) => {
 router.post('/twin-cards/import', route(async (req, res) => {
   try { return ok(res, importCard(req.body?.card), 'Twin added'); }
   catch (err) { return failWith(res, err); }
+}));
+
+const ownerName = () => getDb().prepare("SELECT name FROM people WHERE role LIKE '%owner%' ORDER BY id LIMIT 1").get()?.name ?? null;
+
+/** The twin package for a share: card + look pictures + voice sample, fingerprinted. */
+router.get('/presenters/:id/twin-package', route(async (req, res) => {
+  try {
+    const pkg = await buildPackage(Number(req.params.id), { ownerName: ownerName(), grantId: req.query.grant ? Number(req.query.grant) : null });
+    return res.download(pkg.file, pkg.name, () => rmSync(pkg.file, { force: true }));
+  } catch (err) { return failWith(res, err); }
+}));
+
+/** Open a package someone sent you (the raw file as the body). */
+router.post('/twin-packages/import', express.raw({ type: ['application/octet-stream', 'application/zip'], limit: '60mb' }), route(async (req, res) => {
+  try { return ok(res, await importPackage(req.body), 'Twin added'); }
+  catch (err) { return fail(res, err.code === 'TAMPERED' ? 409 : 400, err.code ?? 'BAD_PACKAGE', err.message); }
+}));
+
+router.post('/presenters/:id/twin/voice', route(async (req, res) => {
+  try { return ok(res, await makeTwinVoice(Number(req.params.id)), 'Their voice is ready on this Mac'); }
+  catch (err) { return failWith(res, err); }
+}));
+
+router.post('/presenters/:id/twin/look', route(async (req, res) => {
+  try { return ok(res, await buildTwinLook(Number(req.params.id), { confirm: req.body?.confirm === true }), 'Building their look in your HeyGen'); }
+  catch (err) { return fail(res, { CONFIRMATION_REQUIRED: 402, NOT_CONNECTED: 409 }[err.code] ?? 400, err.code ?? 'ERROR', err.message); }
 }));
 
 export default router;
