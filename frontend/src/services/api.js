@@ -308,6 +308,7 @@ export const api = {
   endGrant: (id) => post(`/grants/${id}/end`),
   accountSignIn: (createAccount) => post('/account/sign-in', { createAccount }),
   accountSignOut: () => post('/account/sign-out'),
+  startAuthentechShare: (grantId) => post(`/account/shares/${grantId}/start`),
   twinCard: (presenterId, grantId) => get(`/presenters/${presenterId}/twin-card${grantId ? `?grant=${grantId}` : ''}`),
   previewTwinCard: (card) => post('/twin-cards/preview', { card }).then((r) => r.data),
   importTwinCard: (card) => post('/twin-cards/import', { card }),

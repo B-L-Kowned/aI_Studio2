@@ -26,6 +26,7 @@ import appearance from './routes/appearance.js';
 import account from './routes/account.js';
 import { getDb } from './db/index.js';
 import { advanceRenders } from './routes/pipeline.js';
+import { pollEvents } from './lib/authentech-shares.js';
 import grantsRoutes from './routes/grants.js';
 import scriptTools from './routes/script-tools.js';
 import editorKit from './routes/editor-kit.js';
@@ -173,4 +174,6 @@ const server = app.listen(PORT, '127.0.0.1', () => {
     } catch { /* the next tick tries again */ }
   };
   setInterval(watchRenders, 60_000).unref();
+  // Shares withdrawn or accepted on AuthenTech reach the studio within minutes.
+  setInterval(() => { pollEvents().catch(() => {}); }, 180_000).unref();
 });

@@ -104,6 +104,33 @@ export function ShareTwinDialog({ presenter, onClose }) {
   const { mutate } = useStudio();
   const [f, setF] = useState({ name: '', email: '', how: 'source', parts: ['appearance', 'voice', 'personality'], days: '7' });
   const [shared, setShared] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmed, setConfirmed] = useState(null);
+  const poll = useRef(null);
+  useEffect(() => () => clearInterval(poll.current), []);
+  // Record the share here, confirm it on AuthenTech's own screen, then the
+  // package (downloaded after) carries AuthenTech's proof and their accept link.
+  const sendWithConsent = async () => {
+    const g = shared ?? (await mutate(() => api.shareTwin({ presenterId: presenter.id, counterpart: f.name.trim(), email: f.email.trim(),
+      scopes: f.parts, mode: f.how, days: f.days ? Number(f.days) : null }), null).catch(() => null))?.data;
+    if (!g) return;
+    setShared(g);
+    const r = await mutate(() => api.startAuthentechShare(g.id), null).catch(() => null);
+    if (!r) return;
+    window.open(r.data.url, '_blank', 'noopener');
+    setConfirming(true);
+    let tries = 0;
+    clearInterval(poll.current);
+    poll.current = setInterval(async () => {
+      tries += 1;
+      const list = await api.grants().catch(() => null);
+      const mine = list?.out.find((x) => x.id === g.id);
+      if (mine?.authentech?.verified || tries > 120) {
+        clearInterval(poll.current); setConfirming(false);
+        if (mine?.authentech?.verified) setConfirmed(mine);
+      }
+    }, 2500);
+  };
   const toggle = (p) => setF((x) => ({ ...x, parts: x.parts.includes(p) ? x.parts.filter((y) => y !== p) : [...x.parts, p] }));
   // Downloading is sharing: the share is recorded first, with its end date,
   // and the card carries it, so it ends on both sides at the same moment.
@@ -126,10 +153,10 @@ export function ShareTwinDialog({ presenter, onClose }) {
       footer={<>
         <button onClick={onClose}>Cancel</button>
         <button disabled={!f.parts.length || !f.name.trim()} onClick={download} title={f.name.trim() ? 'One file: the card, a picture of each look and the voice sample — send it to them yourself' : 'Say who it is for first'}><Download size={13} /> Download twin package</button>
-        <button className="primary" disabled={!f.parts.length || !f.email.trim() || (account?.signedIn && !canSend)}
-          onClick={() => (account?.signedIn ? null : setSignIn(true))}
-          title={account?.signedIn ? 'Opens once AuthenTech twin sharing is live — download the card meanwhile' : 'Sharing with consent uses an AuthenTech account'}>
-          {account?.signedIn ? 'Send with consent (soon)' : 'Send with consent…'}
+        <button className="primary" disabled={!f.parts.length || !f.email.trim() || !f.name.trim() || confirming}
+          onClick={() => (canSend ? sendWithConsent() : setSignIn(true))}
+          title={canSend ? 'You confirm on AuthenTech; then the package carries the proof and their link to accept' : 'Sharing with consent uses an AuthenTech account'}>
+          {confirming ? 'Waiting for AuthenTech…' : 'Send with consent…'}
         </button>
       </>}>
       <div className="grid grid-cols-[1fr_1fr] gap-[10px] lte620:grid-cols-[1fr]">
@@ -168,7 +195,12 @@ export function ShareTwinDialog({ presenter, onClose }) {
           </div>
         </div>
       </div>
-      {shared && (
+      {confirmed && (
+        <p className="m-[12px_0_0] p-[8px_11px] rounded-md bg-ok-soft text-ok text-[12.5px]">
+          <Check size={13} className="inline -mt-[2px]" /> Confirmed on AuthenTech. Now download the twin package and send it to {confirmed.counterpart} — it carries the proof and their link to accept.
+        </p>
+      )}
+      {shared && !confirmed && (
         <p className="m-[12px_0_0] p-[8px_11px] rounded-md bg-ok-soft text-ok text-[12.5px]">
           Shared with {shared.counterpart} {shared.endsAt ? `until ${new Date(shared.endsAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : 'until you end it'}. Send them the card; you can extend or end it under Cast → Sharing.
         </p>

@@ -54,7 +54,14 @@ export function twinCard(presenterId, { ownerName, grantId = null } = {}) {
     consent: (() => {
       const g = grantId ? grantById(grantId) : null;
       return g && g.direction === 'out' && g.presenter?.id === presenterId
-        ? { grant_id: null, scopes: g.scopes, mode: g.mode, starts_at: g.startsAt, expires_at: g.endsAt, for: g.counterpart }
+        ? (() => {
+          const row = getDb().prepare('SELECT authentech_share_id, authentech_assertion FROM grants WHERE id = ?').get(g.id);
+          return {
+            grant_id: row?.authentech_share_id ?? null, assertion: row?.authentech_assertion ?? null,
+            accept_url: row?.authentech_share_id ? `https://theauthentech.app/api/oauth/share/accept?share=${encodeURIComponent(row.authentech_share_id)}` : null,
+            scopes: g.scopes, mode: g.mode, starts_at: g.startsAt, expires_at: g.endsAt, for: g.counterpart,
+          };
+        })()
         : { grant_id: null, scopes: [], mode: null, starts_at: null, expires_at: null, for: null };
     })(),
     exported_at: new Date().toISOString(),

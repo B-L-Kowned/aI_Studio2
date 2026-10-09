@@ -9,6 +9,8 @@ import { twinCard, importCard } from './twin-card.js';
 import { cachedFile, cachePreview } from './preview-cache.js';
 import { createLocalVoice } from './local-voice.js';
 import * as mcp from './providers/heygen-mcp.js';
+import { isSignedIn } from './authentech.js';
+import { checkShare } from './authentech-shares.js';
 
 const run = promisify(execFile);
 const bad = (message, code = 'BAD_REQUEST') => Object.assign(new Error(message), { code });
@@ -103,7 +105,20 @@ export async function importPackage(buffer) {
     src.dir = dest;
     src.files = files.map((f) => ({ ...f, abs: join(dest, f.path) }));
     db.prepare('UPDATE presenters SET twin_source = ? WHERE id = ?').run(JSON.stringify(src), result.presenterId);
-    return { ...result, looks: files.filter((f) => f.kind === 'appearance').length, voice: files.some((f) => f.kind === 'voice') };
+    // A share id in the card is a claim; AuthenTech is asked whether it is real and live.
+    let verified = false;
+    const shareId = card.consent?.grant_id;
+    if (shareId && await isSignedIn().catch(() => false)) {
+      try {
+        const s = await checkShare(shareId);
+        if (['active', 'offered'].includes(s.status)) {
+          db.prepare('UPDATE grants SET authentech_share_id = ?, verified = 1 WHERE id = ?').run(shareId, result.grant.id);
+          db.prepare("UPDATE people SET status = 'approved', consent_scope = 'Confirmed on AuthenTech' WHERE id = ?").run(result.personId);
+          verified = true;
+        }
+      } catch { /* not ours to see, or offline: stays unverified */ }
+    }
+    return { ...result, verified, acceptUrl: card.consent?.accept_url ?? null, looks: files.filter((f) => f.kind === 'appearance').length, voice: files.some((f) => f.kind === 'voice') };
   } catch (err) {
     rmSync(dest, { recursive: true, force: true });
     throw err instanceof SyntaxError ? bad('The twin card inside is unreadable.', 'BAD_PACKAGE') : err;

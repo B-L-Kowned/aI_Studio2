@@ -183,6 +183,13 @@ const ADDED_COLUMNS = [
   ['assets', 'hidden', 'INTEGER NOT NULL DEFAULT 0'],
   // Archived: kept whole (scripts, takes, renders), out of every list; restorable.
   ['productions', 'archived_at', 'TEXT'],
+  // A share recorded on AuthenTech: its id, the signed proof, and whether it checked out.
+  ['grants', 'authentech_share_id', 'TEXT'],
+  ['grants', 'authentech_assertion', 'TEXT'],
+  ['grants', 'verified', 'INTEGER NOT NULL DEFAULT 0'],
+  ['grants', 'accepted_at', 'TEXT'],
+  // Where the studio is in AuthenTech's event feed.
+  ['workspace', 'authentech_cursor', 'TEXT'],
 ];
 
 function migrate(db) {

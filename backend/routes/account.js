@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { accountState, startSignIn, finishSignIn, signOut } from '../lib/authentech.js';
+import { startShare, finishShare, receivedShares, pollEvents } from '../lib/authentech-shares.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -31,6 +32,30 @@ router.get('/account/callback', route(async (req, res) => {
     return res.status(400).send(page('Not signed in', esc(err.message)));
   }
 }));
+
+/** Confirm one of your shares on AuthenTech: the page to open, which comes back here. */
+router.post('/account/shares/:grantId/start', route(async (req, res) => {
+  try {
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/account/share-callback`;
+    return ok(res, { url: await startShare(Number(req.params.grantId), redirectUri) });
+  } catch (err) { return fail(res, { NOT_SIGNED_IN: 401, REVOKED: 401, NOT_YOURS: 403 }[err.code] ?? 400, err.code ?? 'ERROR', err.message); }
+}));
+
+router.get('/account/share-callback', route(async (req, res) => {
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  try {
+    const r = await finishShare(req.query);
+    if (r.declined) return res.send(page('Not shared', 'You did not confirm the share, so nothing was recorded. You can close this tab.'));
+    return res.send(page('Share confirmed', 'AuthenTech has recorded your consent. Back in the studio, download the twin package and send it — it carries the proof and their link to accept.'));
+  } catch (err) { return res.status(400).send(page('Not confirmed', esc(err.message))); }
+}));
+
+router.get('/account/received', route(async (_req, res) => {
+  try { return ok(res, { shares: await receivedShares() }); }
+  catch (err) { return fail(res, 400, err.code ?? 'ERROR', err.message); }
+}));
+
+router.post('/account/events', route(async (_req, res) => ok(res, await pollEvents().catch((e) => ({ polled: false, error: e.message })))));
 
 router.post('/account/sign-out', route(async (_req, res) => { await signOut(); return ok(res, await accountState(), 'Signed out'); }));
 

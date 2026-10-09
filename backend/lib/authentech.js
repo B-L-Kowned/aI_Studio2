@@ -34,6 +34,8 @@ const PATHS = {
 const SCOPES = 'openid profile email twin:receive';
 
 export const authentechReady = () => !!CLIENT_ID();
+export const authentechBase = () => BASE();
+export const authentechClientId = () => CLIENT_ID();
 
 const bad = (message, code = 'BAD_REQUEST') => Object.assign(new Error(message), { code });
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -105,8 +107,7 @@ async function accessToken() {
 
 export async function accountState() {
   const ready = authentechReady();
-  // canShare turns on when AuthenTech's representative asset grant exists (WP-5/6);
-  // the share itself then opens on AuthenTech with the card's references prefilled.
+  // Signed in, a share can be confirmed on AuthenTech's own screen.
   const base = { available: ready, canShare: false, createAccountUrl: `${BASE()}${PATHS.signup}`, signedIn: false, profile: null };
   if (!ready) return base;
   const token = await accessToken().catch(() => null);
@@ -119,7 +120,34 @@ export async function accountState() {
       if (res.ok && p) session.profile = { name: p.name ?? p.preferred_username ?? null, email: p.email ?? null };
     } catch { /* offline: still signed in */ }
   }
-  return { ...base, signedIn: true, profile: session.profile };
+  return { ...base, signedIn: true, canShare: true, profile: session.profile };
+}
+
+export async function isSignedIn() {
+  return authentechReady() && !!(await accessToken().catch(() => null));
+}
+
+/**
+ * A call to AuthenTech's API as you. Its envelope is { data, error, message };
+ * a 401 means you withdrew this app's permission there, so the sign-in ends.
+ */
+export async function authFetch(method, path, body) {
+  const token = await accessToken();
+  if (!token) throw bad('Sign in with AuthenTech first.', 'NOT_SIGNED_IN');
+  const res = await fetch(`${BASE()}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(20_000),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    session = null;
+    deleteCredential('authentech_refresh');
+    throw bad('AuthenTech says this app no longer has your permission. Sign in again to continue.', 'REVOKED');
+  }
+  if (!res.ok || json.error) throw bad(json.message || `AuthenTech answered ${res.status}.`, json.error?.code ?? json.error ?? 'AUTHENTECH_ERROR');
+  return json.data ?? json;
 }
 
 /** Sign out here and end the session at AuthenTech too, so the refresh token is dead everywhere. */

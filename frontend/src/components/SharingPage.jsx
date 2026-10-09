@@ -58,6 +58,7 @@ function Row({ g, people, onChanged }) {
       </div>
       <div className={`text-[12.5px] font-[540] inline-flex items-center gap-[6px] lte960:col-start-2 ${tone}`}>
         {g.status === 'active' ? <Clock size={13} /> : g.status === 'done' ? <Check size={13} /> : null}{words}
+        {g.authentech?.verified && <span className="ml-[6px] text-[11px] font-[600] rounded-full p-[1px_8px] bg-accent-soft text-accent" title="Consent recorded on AuthenTech">AuthenTech ✓</span>}
       </div>
       <div className="flex flex-wrap gap-[6px] justify-end lte960:col-start-2 lte960:justify-start">
         {g.status === 'pending' && person?.inviteUrl && (
