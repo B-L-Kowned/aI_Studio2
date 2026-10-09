@@ -119,10 +119,13 @@ export const api = {
   // generation providers (HeyGen)
   providers: () => get('/providers'),
   syncProvider: (id) => post(`/providers/${id}/sync`),
-  providerAssets: (id, { kind, q, limit, pool, offset } = {}) => {
+  providerAssets: (id, { kind, q, limit, pool, offset, gender, group, person } = {}) => {
     const p = new URLSearchParams();
     if (kind) p.set('kind', kind);
     if (pool) p.set('pool', pool);
+    if (gender) p.set('gender', gender);
+    if (group) p.set('group', group);
+    if (person) p.set('person', person);
     if (offset) p.set('offset', String(offset));
     if (q) p.set('q', q);
     if (limit) p.set('limit', String(limit));

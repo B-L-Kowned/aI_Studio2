@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Check, AlertCircle, Plus, X, Archive, RotateCcw, ChevronDown, Search } from 'lucide-react';
 import { useStudio } from '../context/studio-context.jsx';
-import { useDialog } from '../components/Dialog.jsx';
+import { useDialog, Modal } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import { Section, PageHead } from '../components/Section.jsx';
 import { ShareTwinDialog, ImportTwinDialog } from '../components/Twin.jsx';
@@ -101,12 +101,12 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
   };
   // In Comedy a HeyGen avatar becomes a character's performer; in Content, a presenter.
   const comedy = scopeMode === 'comedy';
-  const useAvatar = async (a) => {
+  const useAvatar = async (a, person) => {
     setErr(null);
     try {
       const r = await mutate(() => api.createPresenter(comedy
-        ? { kind: 'character', name: a.name, description: 'Performed by a HeyGen avatar' }
-        : { kind: 'avatar', name: a.name, description: 'From your HeyGen account' }), null);
+        ? { kind: 'character', name: person ?? a.name, description: `Performed by a HeyGen avatar · ${a.name}` }
+        : { kind: 'avatar', name: person ?? a.name, description: `HeyGen presenter · ${a.name}` }), null);
       await mutate(() => api.castPresenter(r.data.id, { avatarAssetId: a.id }), null, { silent: true });
       await load();
     } catch (ex) { setErr(ex.message); }
@@ -194,7 +194,7 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
             })()
               : <p className="sectionempty">{comedy
                 ? 'No characters yet. Create one, or bring in a HeyGen avatar to perform one.'
-                : 'Every video in your register is presented by you. None added yet. To put someone else on camera, use one of your HeyGen avatars below.'}</p>}
+                : 'Every video in your register is presented by you. None added yet. To put someone else on camera, choose one of HeyGen’s presenters below.'}</p>}
           </Section>
         )}
         {/* Content presenters come from HeyGen, so the catalogue is the page, not a hidden drawer. */}
@@ -385,70 +385,103 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
  * can be cast from. Nine thousand rows are searched, never shipped.
  */
 const PAGE = 48;
+/**
+ * HeyGen's own presenters: about 1,600 people, each wearing several looks.
+ * Your own looks are not here — they belong to your personas, under You.
+ * Pick a person, then the look they should wear.
+ */
 function HeyGenBrowser({ onUse }) {
-  const [pool, setPool] = useState('mine');
   const [q, setQ] = useState('');
+  const [gender, setGender] = useState('');
   const [res, setRes] = useState(null);
-  const [items, setItems] = useState([]);
+  const [people, setPeople] = useState([]);
+  const [open, setOpen] = useState(null);      // the person whose looks are shown
+  const [looks, setLooks] = useState(null);
   const [busy, setBusy] = useState(null);
   const [broken, setBroken] = useState(() => new Set());
   useEffect(() => {
     let live = true;
     const t = setTimeout(() => {
-      api.providerAssets('heygen', { kind: 'avatar', q: q.trim(), pool, limit: PAGE }).then((r) => {
+      api.providerAssets('heygen', { kind: 'avatar', pool: 'stock', group: 'person', q: q.trim(), gender, limit: PAGE }).then((r) => {
         if (!live) return;
-        setRes(r); setItems(r.items);
-      }).catch(() => live && setRes({ items: [], matched: 0, total: 0, owned: 0 }));
+        setRes(r); setPeople(r.people ?? []);
+      }).catch(() => live && setRes({ people: [], matched: 0, total: 0 }));
     }, q ? 250 : 0);
     return () => { live = false; clearTimeout(t); };
-  }, [pool, q]);
-  const more = () => api.providerAssets('heygen', { kind: 'avatar', q: q.trim(), pool, limit: PAGE, offset: items.length })
-    .then((r) => setItems((cur) => [...cur, ...r.items])).catch(() => {});
+  }, [q, gender]);
+  useEffect(() => {
+    if (!open) { setLooks(null); return; }
+    api.providerAssets('heygen', { kind: 'avatar', pool: 'stock', person: open, limit: 200 })
+      .then((r) => setLooks(r.items ?? [])).catch(() => setLooks([]));
+  }, [open]);
+  const more = () => api.providerAssets('heygen', { kind: 'avatar', pool: 'stock', group: 'person', q: q.trim(), gender, limit: PAGE, offset: people.length })
+    .then((r) => setPeople((cur) => [...cur, ...(r.people ?? [])])).catch(() => {});
   if (!res) return null;
+  const picture = (a, cls) => (a?.previewUrl && !broken.has(a.id)
+    ? <img className={`block w-full object-cover object-[center_22%] bg-surface-2 ${cls}`} src={a.previewUrl} alt="" loading="lazy"
+        onError={() => setBroken((cur) => new Set(cur).add(a.id))} />
+    : <div className={`w-full grid place-items-center bg-surface-2 text-[22px] font-[600] text-faint ${cls}`} aria-hidden="true">{initials(a?.name)}</div>);
   const chip = (id, label) => (
-    <button type="button" onClick={() => setPool(id)}
-      className={'text-[12px] p-[4px_11px] rounded-full border border-solid ' + (pool === id ? 'bg-ink text-white border-ink' : 'bg-surface text-ink-2 border-line')}>
+    <button type="button" onClick={() => setGender(id)}
+      className={'text-[12px] p-[4px_11px] rounded-full border border-solid ' + (gender === id ? 'bg-ink text-white border-ink' : 'bg-surface text-ink-2 border-line')}>
       {label}
     </button>
   );
   return (
-    <Section title="HeyGen avatars" meta={`${res.matched.toLocaleString()} ${q ? 'match' : pool === 'mine' ? 'yours' : 'in the catalogue'}`}
+    <Section title="HeyGen presenters" meta={`${res.matched.toLocaleString()} ${q ? 'match' : 'people'} · ${res.looks?.toLocaleString() ?? ''} looks`}
       actions={<>
-        {chip('mine', `Yours ${res.owned ?? ''}`)}
-        {chip('all', `All ${res.total?.toLocaleString() ?? ''}`)}
+        {chip('', 'Everyone')}
+        {chip('female', 'Women')}
+        {chip('male', 'Men')}
         <label className="flex items-center gap-[6px] border border-solid border-line-2 rounded p-[0_8px] bg-surface text-faint">
           <Search size={13} />
-          <input className="[border:0] p-[5px_0] w-[180px] text-[12.5px] focus:[outline:0] focus:[box-shadow:none] text-ink" placeholder="Search avatars…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search HeyGen avatars" />
+          <input className="[border:0] p-[5px_0] w-[180px] text-[12.5px] focus:[outline:0] focus:[box-shadow:none] text-ink" placeholder="Search a name or setting…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search HeyGen presenters" />
         </label>
       </>}>
-      {items.length === 0 ? (
-        <p className="sectionempty">{res.total ? 'No avatar matches that.' : 'No HeyGen avatars synced yet — connect HeyGen under Settings → HeyGen account.'}</p>
+      {people.length === 0 ? (
+        <p className="sectionempty">{res.total ? 'No presenter matches that.' : 'HeyGen’s presenters have not been downloaded yet — sign in under Settings → HeyGen account.'}</p>
       ) : (
         <>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[10px]">
-            {items.map((a) => (
-              <figure key={a.id} className="m-0 group relative border border-solid border-line rounded-md overflow-hidden bg-surface">
-                {/* HeyGen's picture links expire; until a sign-in refreshes them, initials, not a broken image. */}
-                {a.previewUrl && !broken.has(a.id)
-                  ? <img className="block w-full aspect-square object-cover object-[center_22%] bg-surface-2" src={a.previewUrl} alt="" loading="lazy"
-                      onError={() => setBroken((cur) => new Set(cur).add(a.id))} />
-                  : <div className="w-full aspect-square grid place-items-center bg-surface-2 text-[22px] font-[600] text-faint" aria-hidden="true">{initials(a.name)}</div>}
-                <figcaption className="p-[6px_8px] text-[11.5px] leading-[1.35] text-ink-2 truncate" title={a.name}>{a.name}</figcaption>
-                <button type="button" disabled={busy === a.id}
-                  className="absolute left-[8px] right-[8px] bottom-[34px] text-[11.5px] p-[5px_8px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [transition:opacity_.12s]"
-                  onClick={async () => { setBusy(a.id); await onUse(a); setBusy(null); }}>
-                  <Plus size={12} /> {busy === a.id ? 'Adding…' : 'Use as presenter'}
-                </button>
-              </figure>
+            {people.map((p) => (
+              <button key={p.person} type="button" onClick={() => setOpen(p.person)}
+                className="text-left p-0 border border-solid border-line rounded-md overflow-hidden bg-surface hover:border-line-2 hover:[box-shadow:var(--shadow)]">
+                {picture(p.cover, 'aspect-square')}
+                <span className="flex items-baseline justify-between gap-[6px] p-[6px_8px]">
+                  <b className="text-[12.5px] font-[560] text-ink truncate">{p.person}</b>
+                  <span className="text-[11px] text-faint flex-none">{p.looks} look{p.looks === 1 ? '' : 's'}</span>
+                </span>
+              </button>
             ))}
           </div>
-          {items.length < res.matched && (
+          {people.length < res.matched && (
             <div className="flex items-center gap-[10px] mt-[12px] text-[12px] text-muted">
-              Showing {items.length.toLocaleString()} of {res.matched.toLocaleString()}
-              <button type="button" className="text-[12px] p-[4px_10px]" onClick={more}>Show {Math.min(PAGE, res.matched - items.length)} more</button>
+              Showing {people.length.toLocaleString()} of {res.matched.toLocaleString()}
+              <button type="button" className="text-[12px] p-[4px_10px]" onClick={more}>Show {Math.min(PAGE, res.matched - people.length)} more</button>
             </div>
           )}
         </>
+      )}
+      {open && (
+        <Modal title={`${open} · choose a look`} width={760} onClose={() => setOpen(null)}
+          footer={<button onClick={() => setOpen(null)}>Close</button>}>
+          {!looks ? <p className="m-0 text-muted text-[13px]">Loading looks…</p> : (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[10px] max-h-[62vh] overflow-auto">
+              {looks.map((a) => (
+                <figure key={a.id} className="m-0 border border-solid border-line rounded-md overflow-hidden bg-surface">
+                  {picture(a, 'aspect-square')}
+                  <figcaption className="p-[6px_8px] text-[11.5px] text-ink-2 truncate" title={a.name}>{a.name}</figcaption>
+                  <div className="p-[0_8px_8px]">
+                    <button type="button" className="w-full text-[12px] p-[4px_8px]" disabled={busy === a.id}
+                      onClick={async () => { setBusy(a.id); await onUse(a, open); setBusy(null); setOpen(null); }}>
+                      <Plus size={12} /> {busy === a.id ? 'Adding…' : 'Add as presenter'}
+                    </button>
+                  </div>
+                </figure>
+              ))}
+            </div>
+          )}
+        </Modal>
       )}
     </Section>
   );

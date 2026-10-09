@@ -5,7 +5,7 @@ import {
 } from '../lib/providers/index.js';
 import { ok, fail, route } from '../utils/respond.js';
 import { createReadStream } from 'node:fs';
-import { cachedFile, cachePreview } from '../lib/preview-cache.js';
+import { cachedFile, cachePreview, linkExpired } from '../lib/preview-cache.js';
 
 const router = Router();
 
@@ -64,11 +64,67 @@ router.get(
     // have none yet, which is exactly the state a new install is in.
     // `pool`: mine = only your own, all = the whole catalogue; unset keeps the
     // picker's rule (yours first, the catalogue when you have none).
-    const pool = req.query.pool === 'mine' ? owned : req.query.pool === 'all' ? all : null;
+    // stock = HeyGen's own presenters only: your looks are yours, under You.
+    // HeyGen's catalogue mixes video avatars (stock presenters, stable pictures)
+    // with talking photos (still images, signed links that expire, names like
+    // "111"). A presenter is a video avatar.
+    const talkingPhoto = new Set(getDb().prepare(
+      "SELECT id FROM provider_assets WHERE provider = ? AND kind = 'avatar' AND preview_url LIKE '%/talking_photo/%'"
+    ).all(req.params.id).map((r) => r.id));
+    const stock = all.filter((a) => !a.owned && !talkingPhoto.has(a.id));
+    // Looks whose picture can no longer be shown: an expired link, never saved here.
+    const noPicture = new Set(getDb().prepare(
+      "SELECT id, preview_url FROM provider_assets WHERE provider = ? AND kind = 'avatar' AND preview_url LIKE '%Expires=%'"
+    ).all(req.params.id).filter((r) => linkExpired(r.preview_url) && !cachedFile(r.id)).map((r) => r.id));
+    const pool = req.query.pool === 'mine' ? owned : req.query.pool === 'all' ? all : req.query.pool === 'stock' ? stock : null;
     const offset = Math.max(0, Number(req.query.offset) || 0);
-    const matched = q
+    const gender = ['male', 'female'].includes(req.query.gender) ? req.query.gender : null;
+    // HeyGen's catalogue says both "male" and "Man".
+    const genderOf = (a) => ({ male: 'male', man: 'male', female: 'female', woman: 'female' })[String(a.gender ?? '').toLowerCase()] ?? null;
+    // One stock presenter wears many looks ("Dante Office 2", "Dante Living
+    // Room 3"): the person is the first word of the look's name, quotes and
+    // stray spaces aside.
+    // A name that is a description ("A man is sitting…", "111") is its own
+    // card under its full name, sorted after the named presenters.
+    const NOT_NAMES = new Set(['A', 'An', 'The', 'Man', 'Woman', 'Young', 'Old', 'Business', 'Professional']);
+    const personOf = (a) => {
+      const clean = a.name.trim().replace(/^["'“”]+|["'“”]+$/g, '');
+      const first = clean.split(/\s+/)[0] ?? '';
+      if (/^\p{Lu}[\p{Ll}'’-]+$/u.test(first) && !NOT_NAMES.has(first)) return first;
+      return clean.replace(/\s*\d+$/, '') || clean;
+    };
+    const named = (k) => /^\p{Lu}[\p{Ll}'’-]+$/u.test(k);
+    const person = String(req.query.person ?? '').trim();
+    let matched = q
       ? (pool ?? all).filter((a) => a.name.toLowerCase().includes(q))
       : (pool ?? (owned.length ? owned : all));
+    if (gender) matched = matched.filter((a) => genderOf(a) === gender);
+    if (person) matched = matched.filter((a) => personOf(a) === person && !noPicture.has(a.id));
+
+    // Grouped: one card per person, their first look as the picture.
+    if (req.query.group === 'person' && !person) {
+      const byPerson = new Map();
+      for (const a of matched) {
+        const k = personOf(a);
+        const g = byPerson.get(k);
+        if (g) {
+          g.looks += 1;
+          // The card's picture: the first look that can still be shown.
+          if (noPicture.has(g.cover.id) && !noPicture.has(a.id)) g.cover = a;
+        } else byPerson.set(k, { person: k, looks: 1, cover: a, gender: genderOf(a) });
+      }
+      // A presenter none of whose looks can be shown waits for the next sync,
+      // which refreshes the links, rather than sitting in the grid as a blank tile.
+      const people = [...byPerson.values()].filter((g) => !noPicture.has(g.cover.id)).sort((x, y) => (named(y.person) - named(x.person)) || x.person.localeCompare(y.person, undefined, { sensitivity: 'base' }));
+      return ok(res, {
+        people: people.slice(offset, offset + limit),
+        offset,
+        matched: people.length,
+        looks: matched.length,
+        total: stock.length,
+        owned: owned.length,
+      });
+    }
 
     return ok(res, {
       items: matched.slice(offset, offset + limit),
