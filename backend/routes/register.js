@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getDb } from '../db/index.js';
-import { ok, route } from '../utils/respond.js';
+import { ok, fail, route } from '../utils/respond.js';
 import { madeBy } from '../lib/made-by.js';
 
 const router = Router();
@@ -127,5 +127,28 @@ export function buildRegister() {
 }
 
 router.get('/register', route(async (_req, res) => ok(res, buildRegister())));
+
+/**
+ * How many videos are made, in one go: every outline section of each takes the
+ * same "who appears". Who appears never makes a script out of date.
+ */
+const WHO = { self: 'Pat (recorded myself)', voice: 'Pat (voice only)', heygen: 'Pat' };
+router.post('/productions/made-by', route(async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
+  const who = WHO[req.body?.madeBy];
+  if (!who) return fail(res, 400, 'BAD_MADE_BY', 'madeBy must be self, voice or heygen');
+  if (!ids.length) return fail(res, 400, 'NO_IDS', 'Choose at least one video');
+  const db = getDb();
+  const upd = db.prepare('UPDATE outline_sections SET participants = ? WHERE production_id = ?');
+  let changed = 0; const noOutline = [];
+  db.transaction(() => {
+    for (const id of ids) {
+      const n = upd.run(who, id).changes;
+      if (n) changed++; else noOutline.push(id);
+    }
+  })();
+  return ok(res, { changed, noOutline }, `${changed} video${changed === 1 ? '' : 's'} now ${req.body.madeBy === 'self' ? 'recorded by you' : req.body.madeBy === 'voice' ? 'voice-over' : 'HeyGen avatar'}`
+    + (noOutline.length ? ` · ${noOutline.length} have no outline yet` : ''));
+}));
 
 export default router;

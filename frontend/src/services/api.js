@@ -90,6 +90,7 @@ export const api = {
   videoPersona: (id) => get(`/productions/${id}/persona`),
   setVideoPersona: (id, personaId) => request(`/productions/${id}/persona`, { method: 'PUT', body: JSON.stringify({ personaId }) }),
   retirePresenter: (id, active) => post(`/presenters/${id}/retire`, { active }),
+  setMadeBy: (ids, madeBy) => post('/productions/made-by', { ids, madeBy }),
   consentStatus: () => get('/people/consent-status'),
   sendInvite: (body) => post('/people/invites', body),
   withdrawInvite: (id) => post(`/people/${id}/withdraw-invite`),

@@ -39,6 +39,9 @@ function chaptersFor(ctx) {
   const total = sections.reduce((n, s) => n + s.words, 0);
   if (sections.length < 3 || !total) return '';
   const spoken = ctx.duration ?? (total / review.wpm) * 60;
+  // YouTube shows chapters only when there are three or more, each at least
+  // ten seconds long — under a minute there is nothing to divide.
+  if (spoken < 60) return '';
   let at = 0;
   return sections.map((s) => { const line = `${clock(at)} ${s.title}`; at += (s.words / total) * spoken; return line; }).join('\n');
 }
