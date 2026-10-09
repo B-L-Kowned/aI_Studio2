@@ -24,6 +24,8 @@ import voices from './routes/voices.js';
 import register from './routes/register.js';
 import appearance from './routes/appearance.js';
 import account from './routes/account.js';
+import { getDb } from './db/index.js';
+import { advanceRenders } from './routes/pipeline.js';
 import grantsRoutes from './routes/grants.js';
 import scriptTools from './routes/script-tools.js';
 import editorKit from './routes/editor-kit.js';
@@ -162,4 +164,13 @@ const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`STUDIO_READY ${JSON.stringify({ port: actual, packaged, dbPath })}`);
   // Avatar pictures are signed links that expire; keep yours while they work.
   cacheOwnedPreviews().catch(() => {});
+  // Renders finish while you are elsewhere: check the live ones every minute,
+  // so each is saved and filed as finished without the Render step being open.
+  const watchRenders = async () => {
+    try {
+      const live = getDb().prepare("SELECT DISTINCT production_id FROM render_versions WHERE status IN ('queued','processing')").all();
+      for (const { production_id: id } of live) await advanceRenders(id).catch(() => {});
+    } catch { /* the next tick tries again */ }
+  };
+  setInterval(watchRenders, 60_000).unref();
 });

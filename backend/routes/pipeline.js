@@ -290,7 +290,7 @@ const PUSH_GRACE_SECONDS = 120;
  * created for a video that did not exist yet. A progress bar that advances on
  * its own is not progress, it is an animation.
  */
-async function advanceRenders(productionId) {
+export async function advanceRenders(productionId) {
   const db = getDb();
   const live = db
     .prepare("SELECT * FROM render_versions WHERE production_id = ? AND status IN ('queued','processing')")
