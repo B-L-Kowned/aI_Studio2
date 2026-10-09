@@ -76,7 +76,7 @@ export function courses() {
 
   return rows.map((c) => {
     const lessons = db
-      .prepare(`SELECT * FROM productions WHERE campaign_id = ? ${collectionOrderBy()}`)
+      .prepare(`SELECT * FROM productions WHERE campaign_id = ? AND archived_at IS NULL ${collectionOrderBy()}`)
       .all(c.id)
       .map((p, i) => {
         const { state, gate } = lessonProgress(p.id);

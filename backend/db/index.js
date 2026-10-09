@@ -181,6 +181,8 @@ const ADDED_COLUMNS = [
   ['publications', 'by_hand', 'INTEGER NOT NULL DEFAULT 0'],
   // Kept but not shown: seed samples, and videos since deleted in HeyGen.
   ['assets', 'hidden', 'INTEGER NOT NULL DEFAULT 0'],
+  // Archived: kept whole (scripts, takes, renders), out of every list; restorable.
+  ['productions', 'archived_at', 'TEXT'],
 ];
 
 function migrate(db) {

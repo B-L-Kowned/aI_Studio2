@@ -88,7 +88,7 @@ export function month(monthKey, mode = null) {
       `SELECT p.id, p.title, p.due_at, c.name AS campaign
          FROM productions p
          LEFT JOIN campaigns c ON c.id = p.campaign_id
-        WHERE p.due_at IS NOT NULL${scopeSql}`
+        WHERE p.due_at IS NOT NULL AND p.archived_at IS NULL${scopeSql}`
     )
     .all(...scopeArg);
 
@@ -133,7 +133,7 @@ export function month(monthKey, mode = null) {
         `SELECT p.id, p.title, c.name AS campaign
            FROM productions p
            LEFT JOIN campaigns c ON c.id = p.campaign_id
-          WHERE p.due_at IS NULL${scopeSql}
+          WHERE p.due_at IS NULL AND p.archived_at IS NULL${scopeSql}
           ORDER BY p.updated_at DESC`
       )
       .all(...scopeArg)

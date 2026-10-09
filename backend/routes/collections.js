@@ -186,12 +186,17 @@ router.get(
       // heard of it" while /campaigns said purpose: null. Plan reads THIS one,
       // which is why the company/track layering was invisible on the page that
       // lists campaigns. Third endpoint pair today to disagree about one row.
-      rows.map((c) => ({
+      // A campaign whose every video is archived is archived with them.
+      rows.filter((c) => {
+        const all = db.prepare('SELECT COUNT(*) n FROM productions WHERE campaign_id = ?').get(c.id).n;
+        const live = db.prepare('SELECT COUNT(*) n FROM productions WHERE campaign_id = ? AND archived_at IS NULL').get(c.id).n;
+        return !(all > 0 && live === 0);
+      }).map((c) => ({
         id: c.id, name: c.name, description: c.description, mode: c.mode,
         companyId: c.company_id ?? null,
         purpose: c.purpose ?? null,
         audience: c.audience ?? null,
-        productions: db.prepare('SELECT COUNT(*) n FROM productions WHERE campaign_id = ?').get(c.id).n,
+        productions: db.prepare('SELECT COUNT(*) n FROM productions WHERE campaign_id = ? AND archived_at IS NULL').get(c.id).n,
       }))
     );
   })
