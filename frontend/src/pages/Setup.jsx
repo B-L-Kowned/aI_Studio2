@@ -25,10 +25,27 @@ const SECTIONS = [
 ];
 
 export default function Setup() {
-  const [section, setSection] = useState(() => {
-    // Another page can send you straight to a section (e.g. the HeyGen limit).
-    try { const s = sessionStorage.getItem('settings-section'); sessionStorage.removeItem('settings-section'); return s || 'voice'; } catch { return 'voice'; }
+  // The section lives in the address (?section=heygen), so a refresh, Back or a
+  // bookmark lands where you were. Another page can still send you to one.
+  const [section, setSectionState] = useState(() => {
+    try {
+      const sent = sessionStorage.getItem('settings-section');
+      sessionStorage.removeItem('settings-section');
+      const fromUrl = new URLSearchParams(window.location.search).get('section');
+      const pick = sent || fromUrl;
+      return SECTIONS.some((x) => x.id === pick) ? pick : 'voice';
+    } catch { return 'voice'; }
   });
+  const setSection = useCallback((id) => {
+    setSectionState(id);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('section', id);
+      window.history.replaceState(window.history.state, '', url.pathname + url.search);
+    } catch { /* restricted: the section still changes */ }
+  }, []);
+  // Keep the address in step on first paint too (e.g. arriving from another page).
+  useEffect(() => { setSection(section); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>

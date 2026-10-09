@@ -15,12 +15,32 @@ export default function Cast() {
   const comedy = scopeMode === 'comedy';
   // Each program opens where its work is: your looks in Content, the
   // characters in Comedy.
-  const [view, setView] = useState(() => {
-    // Today can send you straight to Sharing.
-    try { const v = sessionStorage.getItem('cast-view'); sessionStorage.removeItem('cast-view'); if (v) return v; } catch { /* storage blocked */ }
+  // The tab lives in the address (?tab=sharing), so a refresh keeps it. Today
+  // can still send you straight to Sharing.
+  const TABS = ['you', 'cast', 'sharing'];
+  const [view, setViewState] = useState(() => {
+    try {
+      const sent = sessionStorage.getItem('cast-view');
+      sessionStorage.removeItem('cast-view');
+      const pick = sent || new URLSearchParams(window.location.search).get('tab');
+      if (TABS.includes(pick)) return pick;
+    } catch { /* storage blocked */ }
     return comedy ? 'cast' : 'you';
   });
-  useEffect(() => { setView(comedy ? 'cast' : 'you'); }, [comedy]);
+  const setView = React.useCallback((v) => {
+    setViewState(v);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', v);
+      window.history.replaceState(window.history.state, '', url.pathname + url.search);
+    } catch { /* restricted */ }
+  }, []);
+  // Switching program opens its own default tab; the first render keeps the address's.
+  const first = React.useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; setView(view); return; }
+    setView(comedy ? 'cast' : 'you');
+  }, [comedy]); // eslint-disable-line react-hooks/exhaustive-deps
   const bar = (
     <Tabs value={view} onChange={setView} items={[
       { id: 'you', label: 'You' },
