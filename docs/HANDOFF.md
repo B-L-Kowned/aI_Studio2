@@ -347,8 +347,9 @@ In rough priority order. Items 1–3 are about not spending money by accident.
     customer build:** (1) bundle or download-on-first-run the Python voice
     environment and its models, with progress and sizes stated first;
     (2) ship ffmpeg inside the app instead of expecting Homebrew; (3) have
-    the Electron shell start and supervise the voice service; (4) decide
-    Mac-only (Apple GPU) for v1, or Windows/Intel at ~3× slower voice;
+    the Electron shell start and supervise the voice service; (4) **decided
+    2026-10-09:** Mac first; once the Mac build is signed off, Pat builds the
+    Windows version on his Windows machine (voice there runs ~3× slower on CPU);
     (5) code-sign and notarise the macOS build.
 
 ---
