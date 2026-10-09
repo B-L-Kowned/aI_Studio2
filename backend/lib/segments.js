@@ -4,6 +4,7 @@ import * as mcp from './providers/heygen-mcp.js';
 import { canReadLive } from './providers/mode.js';
 import { LOCAL, speakLocal } from './local-voice.js';
 import { wordsFor } from './line-words.js';
+import { assertUsable } from './grants.js';
 
 // The segment is the unit of script, take, presenter, shot, quality and render.
 //
@@ -161,6 +162,8 @@ function applySegmentUpdate(segmentId, { text, presenterId, quality, shot, apply
   if (!seg) throw Object.assign(new Error('Segment not found'), { code: 'NOT_FOUND' });
 
   let invalidated = 0;
+  // Someone's twin lent for a while cannot be newly cast once the share ends.
+  if (presenterId) assertUsable(presenterId);
 
   // Casting is a decision about a SPEAKER, not about a line. A script where
   // every line says "Narrator" otherwise needs the same choice made once per
@@ -229,6 +232,7 @@ export async function auditionSegment(segmentId, { speed = 1.0, ssml = false, co
   if (!presenter) {
     throw Object.assign(new Error(`No presenter cast for "${seg.speaker}"`), { code: 'NO_PRESENTER' });
   }
+  assertUsable(presenter.id);
   const cast = presenterCasting(presenter.id);
   if (!cast?.voice) {
     throw Object.assign(

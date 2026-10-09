@@ -1,5 +1,6 @@
 import { getDb } from '../db/index.js';
 import { personaLooks } from './personas.js';
+import { grantById, createGrant } from './grants.js';
 
 /**
  * A twin card: everything about a persona that can travel, and nothing that
@@ -20,7 +21,7 @@ function parsePersona(raw) {
   try { return raw ? JSON.parse(raw) : {}; } catch { return {}; }
 }
 
-export function twinCard(presenterId, { ownerName } = {}) {
+export function twinCard(presenterId, { ownerName, grantId = null } = {}) {
   const db = getDb();
   const p = db.prepare('SELECT * FROM presenters WHERE id = ?').get(presenterId);
   if (!p) throw bad('No such persona.', 'NOT_FOUND');
@@ -48,8 +49,14 @@ export function twinCard(presenterId, { ownerName } = {}) {
       renderer: voice.provider === 'local' ? 'local-voice' : voice.provider,
       id: voice.remote_id, kind: 'voice', name: voice.name, portable: false,
     } : null,
-    // Filled in by AuthenTech once a grant exists; a card on its own grants nothing.
-    consent: { grant_id: null, scopes: [], expires_at: null },
+    // The share this card was made for: what of the twin, how, and until when.
+    // AuthenTech fills in a verifiable grant once it is connected.
+    consent: (() => {
+      const g = grantId ? grantById(grantId) : null;
+      return g && g.direction === 'out' && g.presenter?.id === presenterId
+        ? { grant_id: null, scopes: g.scopes, mode: g.mode, starts_at: g.startsAt, expires_at: g.endsAt, for: g.counterpart }
+        : { grant_id: null, scopes: [], mode: null, starts_at: null, expires_at: null, for: null };
+    })(),
     exported_at: new Date().toISOString(),
   };
 }
@@ -77,6 +84,9 @@ export function readCard(card) {
       .map((w) => ({ renderer: str(w?.renderer, 40), id: str(w?.id, 120), name: str(w?.name, 120), default: !!w?.default })),
     voice: card.voice ? { renderer: str(card.voice.renderer, 40), id: str(card.voice.id, 120), name: str(card.voice.name, 120) } : null,
     grantId: str(card.consent?.grant_id, 120) || null,
+    scopes: Array.isArray(card.consent?.scopes) ? card.consent.scopes.filter((x) => ['appearance', 'voice', 'personality'].includes(x)) : [],
+    mode: card.consent?.mode === 'render' ? 'render' : 'source',
+    expiresAt: (() => { const t = Date.parse(card.consent?.expires_at ?? ''); return Number.isFinite(t) ? new Date(t).toISOString() : null; })(),
   };
 }
 
@@ -108,7 +118,15 @@ export function importCard(card) {
   ).run(c.name, description, person.id, position, JSON.stringify(c.personality), c.tagline, c.speed,
     JSON.stringify({ owner, wardrobe: c.wardrobe, voice: c.voice, grantId: c.grantId, importedAt: new Date().toISOString() }))
     .lastInsertRowid;
-  return { presenterId: id, personId: person.id, name: c.name, owner, needs: needsFor(c) };
+  // Theirs, lent to you until the date on the card. An expired card adds
+  // nothing usable: the grant is already over.
+  const expired = c.expiresAt && Date.parse(c.expiresAt) <= Date.now();
+  const grant = createGrant({
+    direction: 'in', personId: person.id, presenterId: id, counterpart: owner,
+    scopes: c.scopes.length ? c.scopes : undefined, mode: c.mode, days: null,
+    endsAt: c.expiresAt, status: 'active', source: 'card',
+  });
+  return { presenterId: id, personId: person.id, name: c.name, owner, needs: needsFor(c), grant, expired: !!expired };
 }
 
 /** What the recipient still has to do before the twin can appear in a video. */

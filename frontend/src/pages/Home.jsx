@@ -64,6 +64,8 @@ function DeadlineDialog({ deadlines, onSave, onClose }) {
 const H = 'text-[11.5px] tracking-[.06em] uppercase text-faint font-semibold m-[0_0_8px] flex items-center gap-[6px]';
 
 export default function Home({ go }) {
+  const [ending, setEnding] = useState([]);
+  useEffect(() => { api.grants().then((g) => setEnding(g.endingSoon ?? [])).catch(() => {}); }, []);
   const { openProduction, setPendingStage, setPendingView, setPendingDate, mutate, scopeMode, notify } = useStudio();
   const dialog = useDialog();
   const [m, setM] = useState(null);
@@ -101,6 +103,7 @@ export default function Home({ go }) {
     try { await mutate(() => api.addIdea({ text }), null); } catch { setIdea(text); }
   };
   const hasDates = Object.keys(m.deadlines ?? {}).length > 0;
+  const openSharing = () => { try { sessionStorage.setItem('cast-view', 'sharing'); } catch { /* storage blocked */ } go('Cast'); };
   const Q = m.queues;
   // Voice approved means ready to render: one decision starts them all. A render
   // spends HeyGen credits, so it asks once, plainly, for the whole batch.
@@ -200,6 +203,15 @@ export default function Home({ go }) {
                 {m.projected ? <>At this pace everything is done around <b className="text-ink-2">{fmtDate(m.projected)}</b>.</> : 'Nothing finished in the last four weeks — no pace yet.'}
               </p>
             </section>
+          )}
+
+          {ending.length > 0 && (
+            <button type="button" onClick={openSharing}
+              className="flex items-center gap-[8px] w-full text-left p-[8px_12px] rounded-lg border border-solid border-warn-line bg-warn-soft text-warn text-[12.5px] hover:brightness-[.98]">
+              <Clock size={14} className="flex-none" />
+              <span>{ending.map((g) => `${g.direction === 'out' ? `${g.counterpart}'s access to ${g.presenter?.name ?? 'your twin'}` : `Your access to ${g.counterpart}'s likeness`} ends ${g.daysLeft === 0 ? 'today' : g.daysLeft === 1 ? 'tomorrow' : `in ${g.daysLeft} days`}`).join(' · ')}</span>
+              <ArrowRight size={13} className="ml-auto flex-none" />
+            </button>
           )}
 
           <section>

@@ -557,3 +557,28 @@ CREATE TABLE IF NOT EXISTS presenter_looks (
   position     INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (presenter_id, asset_id)
 );
+
+-- A grant: someone's likeness, shared for a while. `out` is your twin, lent to
+-- someone; `in` is theirs, lent to you. It ends by itself at ends_at (NULL =
+-- until someone ends it), when the borrower says they are finished, or when
+-- the owner ends it. Videos already made stay; nothing new is made after.
+CREATE TABLE IF NOT EXISTS grants (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  direction     TEXT NOT NULL CHECK (direction IN ('out','in')),
+  person_id     INTEGER REFERENCES people(id) ON DELETE SET NULL,
+  presenter_id  INTEGER REFERENCES presenters(id) ON DELETE SET NULL,
+  counterpart   TEXT NOT NULL DEFAULT '',
+  email         TEXT,
+  scopes        TEXT NOT NULL DEFAULT '["appearance","voice","personality"]',
+  mode          TEXT NOT NULL DEFAULT 'source' CHECK (mode IN ('source','render')),
+  status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('pending','active','done','ended','withdrawn','declined')),
+  starts_at     TEXT,
+  ends_at       TEXT,
+  ended_at      TEXT,
+  ended_by      TEXT CHECK (ended_by IN ('time','borrower','owner')),
+  source        TEXT NOT NULL DEFAULT 'studio',
+  invite_id     TEXT,
+  days          INTEGER,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_grants_presenter ON grants(presenter_id, status);

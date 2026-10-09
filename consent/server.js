@@ -55,6 +55,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS invites (
   answered_at TEXT,
   updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
+// How long consent lasts: proposed in days by the owner (NULL = until withdrawn),
+// chosen by the person, and the moment it ends once they agree.
+for (const [col, type] of [['days', 'INTEGER'], ['ends_at', 'TEXT']]) {
+  if (!db.prepare('PRAGMA table_info(invites)').all().some((c) => c.name === col)) db.exec(`ALTER TABLE invites ADD COLUMN ${col} ${type}`);
+}
+const DAY_CHOICES = [7, 30, 90];
+const untilWords = (iso) => new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+const howLong = (days) => (days ? `${days} days` : 'until withdrawn');
+// Consent past its end date is over, whoever looks first.
+const settle = () => db.prepare("UPDATE invites SET status = 'expired', updated_at = datetime('now') WHERE status = 'approved' AND ends_at IS NOT NULL AND ends_at <= ?").run(new Date().toISOString());
 
 const ROLES = {
   camera: { label: 'appear on camera', asks: ['appearance', 'voice'] },
@@ -92,6 +102,7 @@ const view = (r) => ({
   id: r.id, name: r.name, email: r.email, role: r.role, scope: r.scope, scopeLabel: r.scope_label, status: r.status,
   answer: r.answer ? JSON.parse(r.answer) : null, emailed: !!r.emailed, emailError: r.email_error,
   createdAt: r.created_at, openedAt: r.opened_at, answeredAt: r.answered_at, updatedAt: r.updated_at,
+  days: r.days ?? null, endsAt: r.ends_at ?? null,
   url: `${PUBLIC_URL}/i/${r.token}`,
 });
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -101,11 +112,11 @@ async function sendInvite(r) {
   if (!RESEND_API_KEY || !MAIL_FROM) return { emailed: false, error: 'Email is not set up on the consent service (RESEND_API_KEY / MAIL_FROM).' };
   const role = ROLES[r.role];
   const url = `${PUBLIC_URL}/i/${r.token}`;
-  const text = `Hi ${r.name},\n\n${r.owner} would like you to ${role.label} in their videos, for ${r.scope_label || SCOPES[r.scope]}.\n`
+  const text = `Hi ${r.name},\n\n${r.owner} would like you to ${role.label} in their videos, for ${r.scope_label || SCOPES[r.scope]} — ${r.days ? `for ${r.days} days` : 'until you withdraw it'}.\n`
     + `${r.note ? `\n"${r.note}"\n` : ''}\nYou decide what is allowed, and you can take it back at any time:\n${url}\n\nNothing is used until you agree.`;
   const html = `<div style="font:15px/1.55 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#17181a;max-width:520px">
     <p>Hi ${esc(r.name)},</p>
-    <p><b>${esc(r.owner)}</b> would like you to ${esc(role.label)} in their videos, for ${esc(r.scope_label || SCOPES[r.scope])}.</p>
+    <p><b>${esc(r.owner)}</b> would like you to ${esc(role.label)} in their videos, for ${esc(r.scope_label || SCOPES[r.scope])} — ${r.days ? `for ${r.days} days` : 'until you withdraw it'}.</p>
     ${r.note ? `<p style="border-left:3px solid #d9d8d3;padding-left:12px;color:#55575c">${esc(r.note)}</p>` : ''}
     <p>You decide what is allowed, and you can take it back at any time.</p>
     <p><a href="${esc(url)}" style="display:inline-block;background:#17181a;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px">Review and decide</a></p>
@@ -135,24 +146,36 @@ app.post('/api/invites', studioOnly, async (req, res) => {
   if (!EMAIL_RE.test(email)) return fail(res, 400, 'BAD_EMAIL', 'That email address does not look right.');
   if (!ROLES[role]) return fail(res, 400, 'BAD_ROLE', 'Role must be camera, voice or approve.');
   if (!SCOPES[scope]) return fail(res, 400, 'BAD_SCOPE', 'Scope must be production, series or workspace.');
+  const days = b.days == null || b.days === '' ? null : Number(b.days);
+  if (days !== null && !(Number.isInteger(days) && days >= 1 && days <= 365)) return fail(res, 400, 'BAD_DAYS', 'Days must be 1–365, or empty for until withdrawn.');
   const row = {
     id: randomUUID(), token: randomBytes(24).toString('base64url'), name, email, role, scope,
-    scope_label: String(b.scopeLabel ?? '').trim().slice(0, 140), owner: String(b.owner ?? 'The studio owner').trim().slice(0, 80),
+    days, scope_label: String(b.scopeLabel ?? '').trim().slice(0, 140), owner: String(b.owner ?? 'The studio owner').trim().slice(0, 80),
     note: String(b.note ?? '').trim().slice(0, 600),
   };
-  db.prepare(`INSERT INTO invites (id, token, name, email, role, scope, scope_label, owner, note)
-    VALUES (@id, @token, @name, @email, @role, @scope, @scope_label, @owner, @note)`).run(row);
+  db.prepare(`INSERT INTO invites (id, token, name, email, role, scope, scope_label, owner, note, days)
+    VALUES (@id, @token, @name, @email, @role, @scope, @scope_label, @owner, @note, @days)`).run(row);
   const sent = await sendInvite(row);
   db.prepare("UPDATE invites SET emailed = ?, email_error = ?, updated_at = datetime('now') WHERE id = ?").run(sent.emailed ? 1 : 0, sent.error, row.id);
   return reply(res, 201, view(db.prepare('SELECT * FROM invites WHERE id = ?').get(row.id)), sent.emailed ? `Invite emailed to ${email}` : 'Invite created — copy the link to send it');
 });
 
 app.get('/api/invites', studioOnly, (req, res) => {
+  settle();
   const since = String(req.query.since ?? '');
   const rows = since
     ? db.prepare('SELECT * FROM invites WHERE updated_at > ? ORDER BY created_at DESC').all(since)
     : db.prepare('SELECT * FROM invites ORDER BY created_at DESC LIMIT 500').all();
   return reply(res, 200, { invites: rows.map(view), now: db.prepare("SELECT datetime('now') n").get().n });
+});
+
+// The studio is finished with their likeness: it ends now, and their page says so.
+app.post('/api/invites/:id/finish', studioOnly, (req, res) => {
+  const r = db.prepare('SELECT * FROM invites WHERE id = ?').get(req.params.id);
+  if (!r) return fail(res, 404, 'NOT_FOUND', 'No such invite.');
+  db.prepare("UPDATE invites SET status = 'finished', ends_at = COALESCE(ends_at, ?), updated_at = datetime('now') WHERE id = ? AND status IN ('approved','sent','opened')")
+    .run(new Date().toISOString(), r.id);
+  return reply(res, 200, view(db.prepare('SELECT * FROM invites WHERE id = ?').get(r.id)));
 });
 
 app.delete('/api/invites/:id', studioOnly, (req, res) => {
@@ -181,14 +204,23 @@ button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}.ok{colo
 app.get('/i/:token', (req, res) => {
   const r = db.prepare('SELECT * FROM invites WHERE token = ?').get(req.params.token);
   if (!r || r.status === 'revoked') return res.status(404).type('html').send(PAGE('Invite not found', '<h1>This invite is no longer open</h1><p>It may have been withdrawn. Ask the person who sent it for a new one.</p>'));
+  settle();
+  const fresh = db.prepare('SELECT * FROM invites WHERE id = ?').get(r.id);
+  Object.assign(r, fresh);
   if (r.status === 'sent') db.prepare("UPDATE invites SET status = 'opened', opened_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(r.id);
   const role = ROLES[r.role];
   const a = r.answer ? JSON.parse(r.answer) : null;
-  if (r.status === 'approved' || r.status === 'declined' || r.status === 'withdrawn') {
-    const what = r.status === 'approved'
-      ? `<p class="ok"><b>You agreed</b> — ${[a?.appearance && 'your appearance', a?.voice && 'your voice'].filter(Boolean).join(' and ')}, for ${esc(SCOPES[a?.scope] ?? SCOPES[r.scope])}.</p>
-         <form method="post" action="/i/${esc(r.token)}/withdraw"><div class="row"><button type="submit">Withdraw my consent</button></div></form>`
-      : r.status === 'declined' ? '<p>You declined. Nothing of yours will be used.</p>' : '<p class="warn">You withdrew your consent. Nothing new will be made with your likeness.</p>';
+  if (['approved', 'declined', 'withdrawn', 'expired', 'finished'].includes(r.status)) {
+    const allowed = [a?.appearance && 'your appearance', a?.voice && 'your voice'].filter(Boolean).join(' and ');
+    const what = {
+      approved: `<p class="ok"><b>You agreed</b> — ${allowed}, for ${esc(SCOPES[a?.scope] ?? SCOPES[r.scope])}, ${r.ends_at ? `until <b>${esc(untilWords(r.ends_at))}</b>` : 'until you withdraw it'}.</p>
+         <p>It ends by itself then. You can also end it now:</p>
+         <form method="post" action="/i/${esc(r.token)}/withdraw"><div class="row"><button type="submit">End my consent now</button></div></form>`,
+      declined: '<p>You declined. Nothing of yours will be used.</p>',
+      withdrawn: '<p class="warn">You ended your consent. Nothing new will be made with your likeness.</p>',
+      expired: `<p>Your consent ended on ${esc(untilWords(r.ends_at))}, as agreed. Nothing new will be made with your likeness.</p>`,
+      finished: `<p>${esc(r.owner)} has finished using your likeness, so your consent has ended. Nothing new will be made with it.</p>`,
+    }[r.status];
     return res.type('html').send(PAGE('Your answer', `<h1>Thanks, ${esc(r.name)}</h1>${what}`));
   }
   const opt = (k, title, sub) => (role.asks.includes(k)
@@ -203,7 +235,9 @@ app.get('/i/:token', (req, res) => {
         ${opt('appearance', 'Your appearance', 'Your face and likeness, as an AI avatar or in recordings, in finished videos.')}
         ${opt('voice', 'Your voice', 'Your voice, recorded or as an AI voice made from a sample you provide.')}
       </fieldset>
-      <fieldset><legend>For how long</legend>${['production', 'series', 'workspace'].map(scopeOpt).join('')}</fieldset>
+      <fieldset><legend>For which videos</legend>${['production', 'series', 'workspace'].map(scopeOpt).join('')}</fieldset>
+      <fieldset><legend>For how long</legend>${[...new Set([...(r.days ? [r.days] : []), ...DAY_CHOICES])].sort((x, y) => x - y).map((d) => `<label class="opt"><input type="radio" name="days" value="${d}" ${d === r.days ? 'checked' : ''}><span><b>${d} days</b><span>Ends by itself on ${esc(untilWords(new Date(Date.now() + d * 86400000).toISOString()))}${d === r.days ? ' · what was asked for' : ''}</span></span></label>`).join('')}
+        <label class="opt"><input type="radio" name="days" value="" ${r.days ? '' : 'checked'}><span><b>Until I end it</b><span>You can end it from this page at any time.</span></span></label></fieldset>
       <fieldset><legend>Sign</legend><label>Type your full name<input type="text" name="signedName" required maxlength="80" autocomplete="name"></label></fieldset>
       <fieldset><legend>Anything to add (optional)</legend><input type="text" name="comment" maxlength="400"></fieldset>
       <div class="row"><button class="primary" type="submit" name="decision" value="approve">I agree</button><button type="submit" name="decision" value="decline" formnovalidate>No, thanks</button></div>
@@ -224,7 +258,11 @@ app.post('/i/:token', (req, res) => {
   if (!signedName || (!answer.appearance && !answer.voice)) {
     return res.status(400).type('html').send(PAGE('Almost there', '<h1>Almost there</h1><p>Tick at least one thing you allow, and type your name to sign.</p><p><a href="">Go back</a></p>'));
   }
-  db.prepare("UPDATE invites SET status = 'approved', answer = ?, answered_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(answer), r.id);
+  const chosen = b.days == null || b.days === '' ? null : Number(b.days);
+  const days = Number.isInteger(chosen) && chosen >= 1 && chosen <= 365 ? chosen : null;
+  const endsAt = days ? new Date(Date.now() + days * 86400000).toISOString() : null;
+  db.prepare("UPDATE invites SET status = 'approved', answer = ?, days = ?, ends_at = ?, answered_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
+    .run(JSON.stringify({ ...answer, days }), days, endsAt, r.id);
   return res.redirect(303, `/i/${r.token}`);
 });
 

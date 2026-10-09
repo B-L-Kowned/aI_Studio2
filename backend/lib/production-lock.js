@@ -1,5 +1,6 @@
 import { getDb } from '../db/index.js';
 import { renderGate } from './segments.js';
+import { usable } from './grants.js';
 
 const gate = (key, label, status, detail, action = null) => ({ key, label, status, detail, action });
 
@@ -42,6 +43,9 @@ export function productionLock(productionId) {
     if (!proof) appearanceMissing.push(presenter.name);
   }
 
+  // A borrowed twin whose share has ended: nothing new is made with it.
+  const shareEnded = castIds.map((id) => usable(id)).filter((u) => !u.ok);
+
   const researchFailed = research.filter((r) => r.status === 'failed');
   const researchUnreviewed = research.filter((r) => r.status === 'complete' && !r.reviewed);
   const gates = [];
@@ -54,6 +58,10 @@ export function productionLock(productionId) {
     gates.push(gate('research', 'Source research', 'block', 'The website evidence has not been reviewed by you.', 'Script · Plan details · Sources'));
   } else {
     gates.push(gate('research', 'Source research', 'pass', 'Website evidence reviewed.', 'Script · Plan details · Sources'));
+  }
+
+  if (shareEnded.length) {
+    gates.push(gate('likeness', 'Permission to use their likeness', 'block', shareEnded.map((u) => u.reason).join(' '), 'Cast · Sharing'));
   }
 
   gates.push(gate(

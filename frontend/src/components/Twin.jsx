@@ -91,7 +91,7 @@ const HOW = [
   ['render', 'They ask, you render', 'They send you scripts; you approve and render them on your HeyGen, within your monthly limit. Nothing of yours leaves this computer.'],
 ];
 const PARTS = [['appearance', 'Look'], ['voice', 'Voice'], ['personality', 'Personality']];
-const HOW_LONG = [['30', '30 days'], ['90', '90 days'], ['', 'Until I withdraw it']];
+const HOW_LONG = [['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['', 'Until I end it']];
 
 /**
  * Share one of your personas. Three plain choices — how they use it, what of
@@ -101,10 +101,18 @@ const HOW_LONG = [['30', '30 days'], ['90', '90 days'], ['', 'Until I withdraw i
 export function ShareTwinDialog({ presenter, onClose }) {
   const [account, reload] = useAccount();
   const [signIn, setSignIn] = useState(false);
-  const [f, setF] = useState({ name: '', email: '', how: 'source', parts: ['appearance', 'voice', 'personality'], days: '90' });
+  const { mutate } = useStudio();
+  const [f, setF] = useState({ name: '', email: '', how: 'source', parts: ['appearance', 'voice', 'personality'], days: '7' });
+  const [shared, setShared] = useState(null);
   const toggle = (p) => setF((x) => ({ ...x, parts: x.parts.includes(p) ? x.parts.filter((y) => y !== p) : [...x.parts, p] }));
+  // Downloading is sharing: the share is recorded first, with its end date,
+  // and the card carries it, so it ends on both sides at the same moment.
   const download = async () => {
-    const card = await api.twinCard(presenter.id);
+    const g = await mutate(() => api.shareTwin({ presenterId: presenter.id, counterpart: f.name.trim(), email: f.email.trim() || null,
+      scopes: f.parts, mode: f.how, days: f.days ? Number(f.days) : null }), null).catch(() => null);
+    if (!g) return;
+    setShared(g.data);
+    const card = await api.twinCard(presenter.id, g.data.id);
     const keep = new Set(f.parts);
     const shared = {
       ...card,
@@ -124,7 +132,7 @@ export function ShareTwinDialog({ presenter, onClose }) {
     <Modal title={`Share ${presenter.name}`} width={560} onClose={onClose}
       footer={<>
         <button onClick={onClose}>Cancel</button>
-        <button disabled={!f.parts.length} onClick={download} title="A file with the personality, outfits and voice settings — never your samples"><Download size={13} /> Download twin card</button>
+        <button disabled={!f.parts.length || !f.name.trim()} onClick={download} title={f.name.trim() ? 'A file with the personality, outfits and voice settings — never your samples' : 'Say who it is for first'}><Download size={13} /> Download twin card</button>
         <button className="primary" disabled={!f.parts.length || !f.email.trim() || (account?.signedIn && !canSend)}
           onClick={() => (account?.signedIn ? null : setSignIn(true))}
           title={account?.signedIn ? 'Opens once AuthenTech twin sharing is live — download the card meanwhile' : 'Sharing with consent uses an AuthenTech account'}>
@@ -167,6 +175,11 @@ export function ShareTwinDialog({ presenter, onClose }) {
           </div>
         </div>
       </div>
+      {shared && (
+        <p className="m-[12px_0_0] p-[8px_11px] rounded-md bg-ok-soft text-ok text-[12.5px]">
+          Shared with {shared.counterpart} {shared.endsAt ? `until ${new Date(shared.endsAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : 'until you end it'}. Send them the card; you can extend or end it under Cast → Sharing.
+        </p>
+      )}
       <p className={NOTE}>
         {canSend
           ? 'You confirm the share on AuthenTech, and they accept it there. You can withdraw it at any time; videos already published stay published, and a copy they downloaded cannot be recalled.'

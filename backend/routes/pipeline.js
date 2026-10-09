@@ -21,6 +21,7 @@ import { madeBy } from '../lib/made-by.js';
 import { cleanRecordingAudio } from '../lib/assemble.js';
 import { keepRenderLocally } from '../lib/render-keep.js';
 import { costOf, budgetRefusal } from '../lib/budget.js';
+import { usable } from '../lib/grants.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -448,6 +449,12 @@ router.post(
     // Fixtures remains an explicit sandbox for exercising downstream export
     // and publication code. Any path that can reach HeyGen — including Test's
     // free, watermarked API-key route — must pass the whole approval chain.
+    // A share that has ended stops a render in every mode, Fixtures included:
+    // it is a question of permission, not of cost.
+    const castIds = [...new Set(getDb().prepare('SELECT presenter_id FROM segments WHERE production_id = ?').all(id).map((r) => r.presenter_id).filter(Boolean))];
+    const ended = castIds.map((pid) => usable(pid)).find((u) => !u.ok);
+    if (ended) return fail(res, 409, 'GRANT_ENDED', ended.reason);
+
     const lock = productionLock(id);
     const blockers = (lock?.blockers ?? []).filter((b) => !(fromRecording && b.key === 'voice'));
     if (providerMode() !== 'fixtures' && blockers.length) {

@@ -28,10 +28,10 @@ const SCOPE_OPTIONS = [['production', 'One video'], ['series', 'One series'], ['
  * they would allow, agree or decline, and withdraw later; the answer comes
  * back here by itself.
  */
-function InviteDialog({ onClose, onSent }) {
+export function InviteDialog({ onClose, onSent }) {
   const { productions, mutate } = useStudio();
   const [ready, setReady] = useState(null);
-  const [f, setF] = useState({ name: '', email: '', role: 'camera', scope: 'production', productionId: '', note: '' });
+  const [f, setF] = useState({ name: '', email: '', role: 'camera', scope: 'production', productionId: '', note: '', days: 7 });
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(null);
   React.useEffect(() => { api.consentStatus().then((r) => setReady(r.ready)).catch(() => setReady(false)); }, []);
@@ -99,6 +99,14 @@ function InviteDialog({ onClose, onSent }) {
           {(productions ?? []).slice(0, 400).map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
         </select>
       )}
+      <p className="m-[14px_0_6px] text-[11.5px] font-semibold text-muted">For how long</p>
+      <div className="flex flex-wrap gap-[6px]">
+        {[[7, '7 days'], [30, '30 days'], [90, '90 days'], [null, 'Until they end it']].map(([v, l]) => (
+          <button key={l} type="button" onClick={() => setF({ ...f, days: v })}
+            className={'text-[12.5px] p-[5px_12px] rounded-full border border-solid ' + (f.days === v ? 'bg-ink text-white border-ink' : 'bg-surface text-ink-2 border-line')}>{l}</button>
+        ))}
+      </div>
+      <p className="m-[6px_0_0] text-[11.5px] text-faint">They can choose a shorter time, and end it early. It ends by itself; nothing new is made with their likeness after.</p>
       <label className="flex flex-col gap-[4px] text-[11.5px] font-semibold text-muted mt-[14px]">A note for them (optional)
         <textarea className="font-normal text-[13px] text-ink min-h-[64px]" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })}
           placeholder="We are making a short partner video for Fixology and would love you in it." />

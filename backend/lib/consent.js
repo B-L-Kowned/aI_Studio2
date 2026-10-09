@@ -1,4 +1,5 @@
 import { getDb } from '../db/index.js';
+import { createGrant } from './grants.js';
 
 /*
  * The studio's half of collaborator consent. Invites are created on the
@@ -31,14 +32,19 @@ async function call(method, path, body) {
 }
 
 /** Invite someone: a person row here, an invite (and its email) there. */
-export async function invite({ name, email, role = 'camera', scope = 'production', scopeLabel = '', note = '', owner = '' }) {
+export async function invite({ name, email, role = 'camera', scope = 'production', scopeLabel = '', note = '', owner = '', days = 7 }) {
   const db = getDb();
   if (!String(name ?? '').trim()) throw bad('Who is this invite for?', 'NAME_REQUIRED');
-  const remote = await call('POST', '/api/invites', { name, email, role, scope, scopeLabel, note, owner: owner || ownerName() });
+  const remote = await call('POST', '/api/invites', { name, email, role, scope, scopeLabel, note, owner: owner || ownerName(), days: days || null });
   const position = db.prepare('SELECT COUNT(*) n FROM people').get().n;
   const id = db.prepare(`INSERT INTO people (name, role, representation, consent_scope, status, position, email, invite_id, invite_url, invite_role, invite_status)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(remote.name, 'Guest', remote.emailed ? 'Invite emailed' : 'Invite ready — send the link',
     'Pending', 'pending', position, remote.email, remote.id, remote.url, role, remote.status).lastInsertRowid;
+  // Their likeness, lent to you once they agree, for as long as they choose.
+  createGrant({
+    direction: 'in', personId: id, counterpart: remote.name, email: remote.email, status: 'pending',
+    scopes: role === 'voice' ? ['voice'] : ['appearance', 'voice'], days: days || null, source: 'invite', inviteId: remote.id,
+  });
   return { id, emailed: remote.emailed, emailError: remote.emailError, url: remote.url };
 }
 
@@ -71,6 +77,23 @@ export async function syncConsent({ force = false } = {}) {
     upd.run(status, rep, scope, i.status, i.id);
     changed++;
   }
+  // The grant follows the answer: when it starts, when it ends, how it ended.
+  const g = db.prepare('UPDATE grants SET status = ?, starts_at = COALESCE(?, starts_at), ends_at = ?, days = ?, ended_at = ?, ended_by = ? WHERE invite_id = ? AND direction = \'in\'');
+  for (const i of invites) {
+    const answered = i.answeredAt ? new Date(`${i.answeredAt.replace(' ', 'T')}Z`).toISOString() : null;
+    const now = new Date().toISOString();
+    const [st, endedAt, by] = {
+      approved: ['active', null, null],
+      expired: ['ended', i.endsAt, 'time'],
+      finished: ['done', i.endsAt ?? now, 'borrower'],
+      withdrawn: ['withdrawn', now, 'owner'],
+      revoked: ['withdrawn', now, 'borrower'],
+      declined: ['declined', null, null],
+    }[i.status] ?? ['pending', null, null];
+    const cur = db.prepare("SELECT status, ended_at FROM grants WHERE invite_id = ? AND direction = 'in'").get(i.id);
+    if (!cur || (cur.status === st)) continue;
+    g.run(st, answered, i.endsAt ?? null, i.days ?? null, cur.ended_at ?? endedAt, by, i.id);
+  }
   return { synced: true, changed };
 }
 
@@ -79,6 +102,12 @@ export async function withdrawInvite(personId) {
   if (!row?.invite_id) throw bad('No invite to withdraw.', 'NOT_FOUND');
   await call('DELETE', `/api/invites/${row.invite_id}`);
   getDb().prepare("UPDATE people SET status = 'pending', representation = 'Invite withdrawn', invite_status = 'revoked' WHERE id = ?").run(personId);
+}
+
+/** Tell their page you are finished with their likeness. */
+export async function finishInvite(inviteId) {
+  if (!inviteId || !consentReady()) return false;
+  try { await call('POST', `/api/invites/${inviteId}/finish`); return true; } catch { return false; }
 }
 
 export const roleWord = (r) => ROLE_WORDS[r] ?? null;

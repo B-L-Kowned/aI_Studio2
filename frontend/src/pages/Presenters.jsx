@@ -492,34 +492,15 @@ function HeyGenBrowser({ onUse }) {
  * and which videos they present when a video does not choose for itself.
  */
 function PersonaCard({ presenter: p, onChanged, options, onCast }) {
-  const [open, setOpen] = useState(false);
-  const [meta, setMeta] = useState(null);   // workstreams + companies to choose from
-  const [form, setForm] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(null); // null | the tab to open on
   const [sharing, setSharing] = useState(false);
   const useFor = p.useFor ?? { workstreams: [], companies: [] };
-  const edit = async () => {
-    if (open) { setOpen(false); return; }
-    const d = await api.presenterPersona(p.id).catch(() => null);
-    if (!d) return;
-    setMeta(d);
-    setForm({ name: p.name, tagline: p.tagline ?? p.description ?? '', persona: { voice: '', signatureOpening: '', signOff: '', neverClaim: '', ...(p.persona ?? {}) }, useFor: d.useFor });
-    setOpen(true);
-  };
-  const toggle = (key, v) => setForm((f) => {
-    const list = f.useFor[key];
-    return { ...f, useFor: { ...f.useFor, [key]: list.includes(v) ? list.filter((x) => x !== v) : [...list, v] } };
-  });
-  const save = async () => {
-    setSaving(true);
-    try { await api.savePresenterPersona(p.id, form); onChanged?.(); setOpen(false); } finally { setSaving(false); }
-  };
   const image = p.avatar?.previewUrl;
   const used = [...useFor.workstreams, ...useFor.companies];
-  const FIELD = 'flex flex-col gap-[3px] text-[11px] font-semibold text-muted';
+  const looks = p.looks ?? [];
   return (
     <div className="[&+&]:[border-top:1px_solid_var(--line)]">
-      <div className="grid grid-cols-[44px_minmax(220px,1fr)_minmax(200px,1fr)_auto] gap-[14px] items-center p-[10px_14px] lte960:grid-cols-[44px_1fr]">
+      <div className="grid grid-cols-[44px_minmax(220px,1fr)_minmax(200px,1fr)_auto_auto] gap-[14px] items-center p-[10px_14px] lte960:grid-cols-[44px_1fr]">
         {image ? <img className="w-[44px] h-[44px] rounded-[8px] object-cover object-[center_22%] bg-surface-2" src={image} alt="" loading="lazy" />
           : <b className="w-[44px] h-[44px] grid place-items-center rounded-[8px] bg-surface-2 border border-solid border-line text-[12px]">{initials(p.name)}</b>}
         <div className="min-w-0">
@@ -531,67 +512,156 @@ function PersonaCard({ presenter: p, onChanged, options, onCast }) {
           <span className="text-muted">Presents: </span>
           {used.length ? <span className="text-ink-2">{used.join(' · ')}</span>
             : <span className="text-faint">{p.persona ? 'only when chosen for a video' : 'any video no persona presents'}</span>}
-          <span className="block text-faint">{p.looks?.length || 0} look{p.looks?.length === 1 ? '' : 's'} · {p.speed ? `${p.speed.toFixed(2)}×` : 'natural pace'}</span>
+          <span className="block text-faint">{p.speed ? `${p.speed.toFixed(2)}× pace` : 'natural pace'}</span>
         </div>
+        {/* The outfits, seen at a glance; click to change them. */}
+        <button type="button" onClick={() => setEditing('outfits')} title="Change the outfits"
+          className="flex items-center gap-[4px] p-[3px] rounded-md border border-solid border-line bg-surface hover:border-line-2 lte960:col-span-2 lte960:justify-self-start">
+          {looks.slice(0, 4).map((l) => (
+            <img key={l.id} src={l.previewUrl} alt="" className="w-[30px] h-[30px] rounded-[5px] object-cover object-[center_22%] bg-surface-2" loading="lazy" />
+          ))}
+          <span className="text-[11.5px] text-muted p-[0_6px]">{looks.length} outfit{looks.length === 1 ? '' : 's'}</span>
+        </button>
         <span className="flex gap-[6px] lte960:col-span-2 lte960:justify-self-end">
-          <button className="text-[12px] p-[4px_11px] ghostbtn text-muted" onClick={() => setSharing(true)} title="Let someone use this twin, with your consent">Share</button>
-          <button className="text-[12px] p-[4px_11px]" onClick={edit} aria-expanded={open}>{open ? 'Close' : 'Edit'}</button>
+          <button className="text-[12px] p-[4px_11px] ghostbtn text-muted" onClick={() => setSharing(true)} title="Let someone use this twin, for a set time">Share</button>
+          <button className="text-[12px] p-[4px_11px]" onClick={() => setEditing('who')}>Edit</button>
         </span>
       </div>
       {sharing && <ShareTwinDialog presenter={p} onClose={() => setSharing(false)} />}
-      {open && form && meta && (
-        <div className="p-[4px_14px_16px_72px] grid gap-[16px] lte960:p-[4px_14px_16px]">
-          <div className="grid grid-cols-[1fr_2fr] gap-[12px] lte800:grid-cols-[1fr]">
-            <label className={FIELD}>Name<input className="font-normal text-[13px]" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-            <label className={FIELD}>Who they are, in a line<input className="font-normal text-[13px]" value={form.tagline} onChange={(e) => setForm({ ...form, tagline: e.target.value })} /></label>
-          </div>
-          <div className="grid grid-cols-[1fr_1fr] gap-[12px] lte800:grid-cols-[1fr]">
-            {[['voice', 'How they speak'], ['signatureOpening', 'How they open'], ['signOff', 'How they close'], ['neverClaim', 'What they never claim']].map(([k, l]) => (
-              <label key={k} className={FIELD}>{l}
-                <textarea className="font-normal text-[12.5px] leading-[1.5] min-h-[56px]" value={form.persona[k] ?? ''}
-                  onChange={(e) => setForm({ ...form, persona: { ...form.persona, [k]: e.target.value } })} />
-              </label>
-            ))}
-          </div>
-          <div>
-            <span className={FIELD}>Presents by default — when a video does not choose its persona</span>
-            <div className="flex flex-wrap gap-[5px] mt-[6px]">
-              {meta.workstreams.map((w) => (
-                <button key={w} type="button" onClick={() => toggle('workstreams', w)}
-                  className={'text-[12px] p-[3px_10px] rounded-full border border-solid ' + (form.useFor.workstreams.includes(w) ? 'bg-ink text-white border-ink' : 'bg-surface text-ink-2 border-line')}>
-                  {w}
-                </button>
-              ))}
+      {editing && <PersonaEditor presenter={p} tab={editing} options={options} onCast={onCast}
+        onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged?.(); }} />}
+    </div>
+  );
+}
+
+const EDIT_TABS = [['who', 'Who they are'], ['outfits', 'Outfits & pace'], ['voice', 'Look & voice'], ['presents', 'What they present']];
+
+/**
+ * Everything about a persona in one dialog, one Save: who they are and how
+ * they speak, the outfits they wear and their pace, and which videos they
+ * present by default.
+ */
+function PersonaEditor({ presenter: p, tab: initialTab, options, onCast, onClose, onSaved }) {
+  const [tab, setTab] = useState(initialTab);
+  const [meta, setMeta] = useState(null);
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    api.presenterPersona(p.id).then((d) => {
+      setMeta(d);
+      setForm({
+        name: p.name, tagline: p.tagline ?? p.description ?? '',
+        persona: { voice: '', signatureOpening: '', signOff: '', neverClaim: '', ...(p.persona ?? {}) },
+        useFor: d.useFor, assetIds: d.looks.map((l) => l.id), speed: d.speed ?? 1,
+      });
+    }).catch(() => {});
+  }, [p.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const FIELD = 'flex flex-col gap-[4px] text-[11.5px] font-semibold text-muted';
+  const toggleUse = (key, v) => setForm((f) => {
+    const list = f.useFor[key];
+    return { ...f, useFor: { ...f.useFor, [key]: list.includes(v) ? list.filter((x) => x !== v) : [...list, v] } };
+  });
+  const toggleLook = (id) => setForm((f) => ({ ...f, assetIds: f.assetIds.includes(id) ? f.assetIds.filter((x) => x !== id) : [...f.assetIds, id] }));
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.savePresenterPersona(p.id, {
+        name: form.name, tagline: form.tagline, persona: form.persona, useFor: form.useFor,
+        assetIds: form.assetIds, speed: Math.abs(form.speed - 1) < 0.005 ? null : form.speed,
+      });
+      onSaved?.();
+    } finally { setSaving(false); }
+  };
+  return (
+    <Modal title={`Edit ${p.name}`} width={860} onClose={onClose}
+      footer={<>
+        <span className="mr-auto text-[11.5px] text-faint">{form ? `${form.assetIds.length} outfit${form.assetIds.length === 1 ? '' : 's'} · ${form.speed.toFixed(2)}× pace` : ''}</span>
+        <button onClick={onClose}>Cancel</button>
+        <button className="primary" disabled={!form || saving || !form.assetIds.length || !form.name.trim()} onClick={save}
+          title={form && !form.assetIds.length ? 'Choose at least one outfit' : ''}>{saving ? 'Saving…' : 'Save'}</button>
+      </>}>
+      <div className="flex gap-[2px] m-[-4px_0_14px] [border-bottom:1px_solid_var(--line)]" role="tablist">
+        {EDIT_TABS.map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+            className={'[border:0] rounded-none bg-transparent text-[13px] p-[7px_12px] -mb-px ' + (tab === id ? 'text-ink font-[580] [border-bottom:2px_solid_var(--ink)]' : 'text-muted hover:text-ink')}>{label}</button>
+        ))}
+      </div>
+      {!form || !meta ? <p className="m-0 text-[13px] text-muted">Loading…</p> : (
+        <div className="min-h-[340px]">
+          {tab === 'who' && (
+            <div className="grid gap-[12px]">
+              <div className="grid grid-cols-[1fr_2fr] gap-[12px] lte800:grid-cols-[1fr]">
+                <label className={FIELD}>Name<input className="font-normal text-[13px] text-ink" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+                <label className={FIELD}>Who they are, in a line<input className="font-normal text-[13px] text-ink" value={form.tagline} onChange={(e) => setForm({ ...form, tagline: e.target.value })} /></label>
+              </div>
+              <div className="grid grid-cols-[1fr_1fr] gap-[12px] lte800:grid-cols-[1fr]">
+                {[['voice', 'How they speak'], ['signatureOpening', 'How they open'], ['signOff', 'How they close'], ['neverClaim', 'What they never claim']].map(([k, l]) => (
+                  <label key={k} className={FIELD}>{l}
+                    <textarea className="font-normal text-[12.5px] text-ink leading-[1.5] min-h-[78px]" value={form.persona[k] ?? ''}
+                      onChange={(e) => setForm({ ...form, persona: { ...form.persona, [k]: e.target.value } })} />
+                  </label>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-[5px] mt-[6px]">
-              {form.useFor.companies.map((c) => (
-                <span key={c} className="text-[12px] p-[3px_6px_3px_10px] rounded-full bg-ink text-white inline-flex items-center gap-[4px]">
-                  {c}<button type="button" className="[border:0] bg-transparent text-white p-0" aria-label={`Remove ${c}`} onClick={() => toggle('companies', c)}><X size={11} /></button>
-                </span>
-              ))}
-              <select className="text-[12px] p-[3px_8px]" value="" onChange={(e) => e.target.value && toggle('companies', e.target.value)} aria-label="Add a company">
-                <option value="">+ a company…</option>
-                {meta.companies.filter((c) => !form.useFor.companies.includes(c)).map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+          )}
+          {tab === 'outfits' && (
+            <div>
+              <p className="m-[0_0_10px] text-[12.5px] text-muted">Tick the outfits {form.name} wears — from your own HeyGen looks. The first ticked is the default for new videos; any of them can be chosen per video in Render.</p>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-[8px] max-h-[46vh] overflow-auto p-[2px]">
+                {meta.wearable.map((l) => {
+                  const n = form.assetIds.indexOf(l.id);
+                  return (
+                    <button key={l.id} type="button" onClick={() => toggleLook(l.id)} title={l.name} aria-pressed={n >= 0}
+                      className={'relative p-0 rounded-md overflow-hidden border-[2px] border-solid bg-surface ' + (n >= 0 ? 'border-accent' : 'border-transparent opacity-80 hover:opacity-100')}>
+                      <img className="block w-full aspect-square object-cover object-[center_22%] bg-surface-2" src={l.previewUrl} alt="" loading="lazy" />
+                      {n >= 0 && <span className="absolute top-[4px] left-[4px] text-[10px] font-semibold rounded-full p-[1px_6px] bg-accent text-white">{n === 0 ? 'Default' : n + 1}</span>}
+                      <span className="block p-[3px_5px] text-[11px] text-ink-2 truncate">{l.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap items-center gap-[10px] mt-[14px] text-[12.5px]">
+                <span className="font-semibold text-muted text-[11.5px]">Pace</span>
+                <input type="range" min="0.85" max="1.15" step="0.01" value={form.speed} onChange={(e) => setForm({ ...form, speed: Number(e.target.value) })}
+                  className="w-[200px] accent-[var(--ink)]" aria-label={`${form.name}'s pace`} />
+                <code className="text-ink-2">{form.speed.toFixed(2)}×</code>
+                <span className="text-faint">{Math.abs(form.speed - 1) < 0.005 ? 'natural' : form.speed < 1 ? 'more measured' : 'brisker'} — where every video {form.name} presents starts</span>
+              </div>
             </div>
-            <p className="m-[6px_0_0] text-[11.5px] text-faint">A company outranks a kind of video: a Fixology investor briefing goes to whoever presents Fixology.</p>
-          </div>
-          <div className="flex gap-[8px]">
-            <button className="primary text-[12.5px]" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
-            <button className="text-[12.5px]" onClick={() => setOpen(false)}>Cancel</button>
-          </div>
-          <div>
-            <span className={FIELD}>Default look and voice</span>
-            <p className="m-[2px_0_6px] text-[11.5px] text-faint">The voice is how this persona sounds — record a sample in its tone under Settings → Your voice, then choose it here.</p>
-            <div className="max-w-[640px]"><CastRow presenter={p} options={options} onSave={onCast} /></div>
-          </div>
-          <div>
-            <span className={FIELD}>Outfits and pace</span>
-            <div className="mt-[6px] mx-[-72px] lte960:mx-0"><PersonaStyle presenter={p} onSaved={onChanged} /></div>
-          </div>
+          )}
+          {tab === 'voice' && (
+            <div>
+              <p className="m-[0_0_10px] text-[12.5px] text-muted">The default look and the voice {form.name} speaks in. Changes here save as you choose them. To give a persona its own voice, record a sample in its tone under Settings → Your voice.</p>
+              <div className="max-w-[640px]"><CastRow presenter={p} options={options} onSave={onCast} /></div>
+            </div>
+          )}
+          {tab === 'presents' && (
+            <div>
+              <p className="m-[0_0_10px] text-[12.5px] text-muted">When a video does not choose its persona, these decide who presents it. A company outranks a kind of video: a Fixology investor briefing goes to whoever presents Fixology.</p>
+              <span className={FIELD}>Kinds of video</span>
+              <div className="flex flex-wrap gap-[6px] mt-[6px]">
+                {meta.workstreams.map((w) => (
+                  <button key={w} type="button" onClick={() => toggleUse('workstreams', w)} aria-pressed={form.useFor.workstreams.includes(w)}
+                    className={'text-[12.5px] p-[4px_11px] rounded-full border border-solid ' + (form.useFor.workstreams.includes(w) ? 'bg-ink text-white border-ink' : 'bg-surface text-ink-2 border-line')}>{w}</button>
+                ))}
+              </div>
+              <span className={FIELD + ' mt-[16px]'}>Companies</span>
+              <div className="flex flex-wrap items-center gap-[6px] mt-[6px]">
+                {form.useFor.companies.map((c) => (
+                  <span key={c} className="text-[12.5px] p-[4px_7px_4px_11px] rounded-full bg-ink text-white inline-flex items-center gap-[5px]">
+                    {c}<button type="button" className="[border:0] bg-transparent text-white p-0" aria-label={`Remove ${c}`} onClick={() => toggleUse('companies', c)}><X size={11} /></button>
+                  </span>
+                ))}
+                <select className="text-[12.5px] p-[4px_8px]" value="" onChange={(e) => e.target.value && toggleUse('companies', e.target.value)} aria-label="Add a company">
+                  <option value="">+ a company…</option>
+                  {meta.companies.filter((c) => !form.useFor.companies.includes(c)).map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       )}
-    </div>
+    </Modal>
   );
 }
 

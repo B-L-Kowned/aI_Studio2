@@ -33,7 +33,7 @@ router.put('/productions/:id/persona', route(async (req, res) => {
 router.get('/presenters/:id/twin-card', route(async (req, res) => {
   try {
     const owner = getDb().prepare("SELECT name FROM people WHERE role LIKE '%owner%' ORDER BY id LIMIT 1").get()?.name ?? null;
-    return ok(res, twinCard(Number(req.params.id), { ownerName: owner }));
+    return ok(res, twinCard(Number(req.params.id), { ownerName: owner, grantId: req.query.grant ? Number(req.query.grant) : null }));
   } catch (err) { return failWith(res, err); }
 }));
 /** Look at a shared card before adding it: what it brings and what is still needed. */
