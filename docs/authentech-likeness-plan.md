@@ -31,9 +31,60 @@ likeness. Each step has a single owner:
 | Consent: who, scopes, extent, expiry, revocation, signature | A copy for working offline | **The record of truth**, as a revocable grant |
 | Proof per published video | Keeps the assertion with the video | Issues and verifies signed assertions |
 
-> **Decision 1 (Pat):** keep raw samples studio-side, as the spec says
-> (recommended). If AuthenTech should hold them instead, the spec has to
-> change first.
+> Where samples are stored and clones generated is **Decision 0**, below in
+> *Storage and generation*. AuthenTech never holds raw samples.
+
+## Storage and generation (decide before Phase 1 ships)
+
+Customers will create in the **web** studio and won't have the desktop app. So
+the plan has to settle two questions, not one: where samples are **stored**,
+and where clones are **generated**. Today only the owner's own voice is
+generated on the owner's Mac (Chatterbox Turbo), and a web customer has no Mac
+in the loop. In every option below, **AuthenTech is the record of consent and
+permission, and never the store for samples.**
+
+| | **A. Hosted renderer** (HeyGen; ElevenLabs as an alternative for voice) | **B. Web studio stores, renderer generates** | **C. Self-hosted generation** (fleet hardware) |
+|---|---|---|---|
+| Where the raw sample lives | At the renderer only. The studio passes it straight through and keeps no copy. | Studio backend, encrypted at rest, kept for a set period (e.g. 90 days, or until the clone is built) | Fleet storage, encrypted, kept for a set period |
+| Where the clone is generated | At the renderer (HeyGen digital twin; HeyGen or ElevenLabs voice clone) | At the renderer, per job, from the stored original | On fleet GPUs (Chatterbox Turbo for voice; no self-hosted face/avatar model at HeyGen's quality today) |
+| What AuthenTech holds | Grant + renderer asset id | Grant + renderer asset id + studio asset id | Grant + fleet asset id |
+| Re-cloning, or switching renderer later | Needs a new sample from the person | **Possible from the stored original**, without asking again | Possible |
+| Privacy and fewest copies | **Best: one copy, at the renderer** | Two copies (studio + renderer) | One copy, on infrastructure you run |
+| Cost | Renderer pricing per clone and per minute | The same as A, plus encrypted storage | GPU hardware and its running costs; voice cheap per minute, but no viable avatar path |
+| Operations burden | Lowest | Medium: encryption keys, retention jobs, deletion on revoke | Highest: GPU capacity, queueing, model updates |
+| Revocation | Delete at the renderer (its API) + revoke the grant | + delete the stored original | + delete the fleet copy |
+| Fits HeyGen's own consent rule (the person reads its statement on camera) | Natively | Yes, the stored clip is the evidence | Doesn't apply to voice; avatar would still need HeyGen |
+
+**Recommendation: A for v1, built so B can follow.** That matches the
+AuthenTech session's advice. Concretely:
+
+- **Samples go straight from the person's browser to the renderer**, through a
+  short-lived upload link from the studio backend. The studio records only the
+  renderer's asset id plus a hash of the sample.
+- **Every asset record already has the fields B needs:** `storage: "renderer" |
+  "studio"`, `retention_until`, and `sha256`. Moving to B later means turning
+  on encrypted storage plus a retention job; the record doesn't change.
+- **Voice:** the owner keeps the free local clone on the desktop app.
+  Customers on the web use a hosted voice clone (HeyGen or ElevenLabs). The
+  studio already routes each video's voice to a provider, so this becomes one
+  more provider, not a new pipeline.
+- **C is a cost play for voice only, later.** If hosted voice cloning gets
+  expensive at volume, run Chatterbox Turbo on a fleet GPU behind the same
+  provider interface. No self-hosted option yet makes avatars at HeyGen's
+  quality.
+
+> **Decision 0 (Pat): A, B or C for v1.** Recommended: A, with B's fields in
+> place. With A or B, also choose the voice renderer for web customers: HeyGen
+> voice (one vendor) or ElevenLabs (often better voice clones; a second vendor
+> and a second consent).
+
+Whichever is chosen, revocation has three parts, run in order and logged:
+
+1. Revoke the AuthenTech grant.
+2. Delete at the renderer.
+3. Delete any studio or fleet copy.
+
+Videos already published stay published. Nothing new is made.
 
 ## The record (the same shape on both sides from day one)
 
@@ -44,8 +95,10 @@ likeness. Each step has a single owner:
   "scopes": ["appearance", "voice"],
   "extent": { "kind": "production | series | workspace", "label": "V05-01 — Fixology: who it helps and why" },
   "assets": [
-    { "renderer": "local-voice", "id": "voice:42", "kind": "voice" },
-    { "renderer": "heygen", "id": "18e7f41f…", "kind": "appearance" }
+    { "renderer": "heygen", "id": "18e7f41f…", "kind": "appearance",
+      "storage": "renderer", "retention_until": null, "sha256": "…" },
+    { "renderer": "elevenlabs | heygen | local-voice", "id": "…", "kind": "voice",
+      "storage": "renderer", "retention_until": null, "sha256": "…" }
   ],
   "expires_at": null,
   "granted_at": "…",
@@ -129,8 +182,12 @@ In the studio:
 
 ## Decisions for Pat
 
-1. **Where raw samples live:** studio/renderer side (recommended; matches the
-   spec) or in AuthenTech (needs a spec change).
+0. **Storage and generation for web customers:** A (hosted renderer), B (web
+   studio stores originals, renderer generates) or C (fleet hardware).
+   Recommended: A, with B's fields in place. Also choose the voice renderer
+   for web customers: HeyGen voice or ElevenLabs.
+1. **Never in AuthenTech:** raw samples stay out of AuthenTech in every option
+   (it is the consent record only, per its spec). Confirm.
 2. **Consent page address for Phase 1:** consent.bialkowned.com (recommended),
    or wait for AuthenTech and skip Phase 1's page.
 3. **Invite email sender:** invites@bialkowned.com. Is bialkowned.com verified
