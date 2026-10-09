@@ -35,6 +35,8 @@ const PROVIDERS = new Set([
   'openai', 'anthropic', 'groq', 'xai', 'elevenlabs', 'heygen',
   // OAuth tokens, stored the same encrypted way as everything else.
   'heygen_mcp', 'heygen_mcp_refresh',
+  // Signing in with AuthenTech (desktop OAuth); the access token stays in memory.
+  'authentech_refresh',
 ]);
 
 export function isProvider(p) {

@@ -23,6 +23,7 @@ import workflow from './routes/workflow.js';
 import voices from './routes/voices.js';
 import register from './routes/register.js';
 import appearance from './routes/appearance.js';
+import account from './routes/account.js';
 import scriptTools from './routes/script-tools.js';
 import editorKit from './routes/editor-kit.js';
 import enhance from './routes/enhance.js';
@@ -93,6 +94,7 @@ app.use('/api', music);
 app.use('/api', managerRoutes);
 app.use('/api', lineFixRoutes);
 app.use('/api', appearance);
+app.use('/api', account);
 
 // ------------------------------------------------------- the app itself ---
 //

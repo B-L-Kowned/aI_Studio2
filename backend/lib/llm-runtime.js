@@ -74,7 +74,7 @@ export function parseStructured(text, { provider = 'unknown', model = 'unknown' 
   );
 }
 
-function ollamaBaseUrl() {
+export function ollamaBaseUrl() {
   const value = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
   let url;
   try { url = new URL(value); } catch {

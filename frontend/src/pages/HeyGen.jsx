@@ -6,6 +6,7 @@ import { useStudio } from '../context/studio-context.jsx';
 import { api } from '../services/api.js';
 import LoadState from '../components/LoadState.jsx';
 import { Section } from '../components/Section.jsx';
+import { useBudget, BudgetMeter, BudgetPicker } from '../components/Budget.jsx';
 
 /**
  * Your actual HeyGen account: videos, avatars, credits.
@@ -40,6 +41,8 @@ export default function HeyGen({ embedded }) {
   const [assetQuery, setAssetQuery] = useState('');
   const [assetKind, setAssetKind] = useState('all');
   const [assetLimit, setAssetLimit] = useState(ASSET_PAGE);
+  const [budget, , setBudget] = useBudget();
+  const [editingBudget, setEditingBudget] = useState(false);
 
   const load = useCallback(async () => {
     const s = await api.heygenStatus();
@@ -94,6 +97,26 @@ export default function HeyGen({ embedded }) {
       </div>
 
       {err && <p className="oberr"><AlertCircle size={14} /> {err}</p>}
+
+      {/* Your HeyGen account, your money: the studio spends only up to a limit you choose. */}
+      {budget && (
+        <Section title="Monthly limit" meta={budget.set ? 'renders stop before passing it' : 'choose one before your first paid render'}>
+          {!connected && status.pocket === 'none' && (
+            <p className="m-[0_0_10px] text-[12.5px] text-muted leading-[1.5]">
+              Two ways to connect HeyGen: <b className="text-ink font-[560]">sign in</b> above to use a web plan you pay for monthly, or paste an <b className="text-ink font-[560]">API key</b> under Settings → Connections to pay as you go. Either way it is your own account.
+            </p>
+          )}
+          {budget.set && !editingBudget ? (
+            <div className="flex flex-wrap items-center gap-[12px]">
+              <div className="flex-1 min-w-[260px]"><BudgetMeter budget={budget} /></div>
+              <button onClick={() => setEditingBudget(true)}>Change limit</button>
+            </div>
+          ) : (
+            <BudgetPicker budget={budget} onSaved={(b) => { setBudget(b); setEditingBudget(false); }} />
+          )}
+          {budget.atLimit && <p className="sectionnote warn"><AlertCircle size={14} /> This month's limit is reached. Nothing more renders until {budget.resetsOn} unless you raise it.</p>}
+        </Section>
+      )}
 
       {/* Your videos only exist once signed in; until then the bar above says so. */}
       {connected && (

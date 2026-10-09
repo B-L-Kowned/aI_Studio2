@@ -39,7 +39,10 @@ const TONE_CLASS = { free: 'free text-ok', meter: 'text-accent', bill: 'text-war
 const H2 = 'm-[0_0_4px]';
 
 export default function Setup() {
-  const [section, setSection] = useState('voice');
+  const [section, setSection] = useState(() => {
+    // Another page can send you straight to a section (e.g. the HeyGen limit).
+    try { const s = sessionStorage.getItem('settings-section'); sessionStorage.removeItem('settings-section'); return s || 'voice'; } catch { return 'voice'; }
+  });
   const { workspace } = useStudio();
 
   return (
@@ -177,6 +180,64 @@ function LicenseSection() {
 }
 
 // ----------------------------------------------------------------- planning
+/**
+ * The model on this Mac that Enhance and the suggestions use. Light comes with
+ * the app; Full is an optional bigger download for whole-script rewrites. Auto
+ * uses Full when it is there and Light otherwise, so most people never choose.
+ */
+function LocalModel({ onChange }) {
+  const { mutate } = useStudio();
+  const [t, setT] = useState(null);
+  const load = useCallback(() => api.modelTier().then(setT).catch(() => setT(null)), []);
+  useEffect(() => { load(); }, [load]);
+  // Poll while a download runs.
+  useEffect(() => {
+    if (!t?.pulling || t.pulling.done) return undefined;
+    const h = setTimeout(load, 1500);
+    return () => clearTimeout(h);
+  }, [t, load]);
+  if (!t) return null;
+  const choose = (tier) => mutate(() => api.setModelTier(tier), (r) => { setT(r.data); onChange?.(); });
+  const download = (tier) => mutate(() => api.downloadModelTier(tier), (r) => setT(r.data));
+  const CARD = (on) => 'flex flex-col gap-[4px] text-left p-[11px_13px] rounded-lg border border-solid ' + (on ? 'border-ink [box-shadow:inset_0_0_0_1px_var(--ink)]' : 'border-line');
+  const p = t.pulling;
+  return (
+    <div className="m-[6px_0_16px]">
+      <h3 className={SUBHEAD}>Local model</h3>
+      {!t.ollama ? (
+        <div className="notice warn"><AlertCircle /><span>Ollama is not running on this Mac, so Enhance and suggestions are off. The plain checks still work. Open the Ollama app, then re-check.</span>
+          <button onClick={load}><RefreshCw size={13} /> Re-check</button></div>
+      ) : (
+        <>
+          <div className="grid grid-cols-[1fr_1fr_1fr] gap-[10px] lte860:grid-cols-[1fr]">
+            <button type="button" className={CARD(t.tier === 'auto')} onClick={() => choose('auto')}>
+              <span className="flex justify-between"><b className="text-[13px]">Auto</b>{t.tier === 'auto' && <Check size={14} />}</span>
+              <small className="text-[11.5px] text-muted leading-[1.45]">Full when it is downloaded, Light otherwise. Suggested.</small>
+            </button>
+            {t.tiers.map((x) => (
+              <div key={x.id} className={CARD(t.tier === x.id)}>
+                <button type="button" className="text-left [border:0] bg-transparent p-0" onClick={() => x.installed && choose(x.id)} disabled={!x.installed}>
+                  <span className="flex justify-between"><b className="text-[13px]">{x.label} <span className="font-normal text-muted">· {x.size}</span></b>{t.tier === x.id && <Check size={14} />}</span>
+                  <small className="block text-[11.5px] text-muted leading-[1.45] mt-[4px]">{x.good}</small>
+                </button>
+                {x.installed
+                  ? <small className="text-[11px] text-ok">Downloaded</small>
+                  : p && !p.done && p.tier === x.id
+                    ? <small className="text-[11px] text-accent">Downloading… {p.percent}%</small>
+                    : <button className="self-start text-[12px] p-[3px_10px] mt-[2px]" disabled={p && !p.done} onClick={() => download(x.id)}>Download {x.size}</button>}
+              </div>
+            ))}
+          </div>
+          <p className="m-[8px_0_0] text-[12px] text-muted">
+            {t.inUse ? <>Writing with <b className="text-ink font-[560]">{t.inUse}</b> ({t.inUseTier}). Nothing leaves this Mac.</> : 'No writing model yet — download Light to turn on Enhance.'}
+            {p?.error && <span className="text-danger"> Download failed: {p.error}</span>}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AiSection() {
   const { workspace, setWorkspace, mutate } = useStudio();
   const llm = workspace.llm;
@@ -184,7 +245,6 @@ function AiSection() {
   const loadRuntime = useCallback(() => api.llmStatus().then(setRuntime).catch(() => setRuntime(null)), []);
   useEffect(() => { loadRuntime(); }, [loadRuntime]);
   const apply = (r) => setWorkspace(r.data);
-  const local = runtime?.ollama;
 
   return (
     <>
@@ -194,18 +254,7 @@ function AiSection() {
         Local Ollama is a real on-device model; cloud models use your connected provider account.
       </p>
 
-      <div className={'notice ' + (local?.connected && local?.installed ? '' : 'warn')}>
-        {local?.connected && local?.installed ? <Check /> : <AlertCircle />}
-        <span>
-          <b>Local Ollama:</b>{' '}
-          {!runtime ? 'checking…' : local.connected
-            ? local.installed
-              ? `ready · ${local.model}`
-              : `${local.issue} Run: ollama pull ${local.model}`
-            : `${local.issue} Run: ollama serve`}
-        </span>
-        <button onClick={loadRuntime}><RefreshCw size={13} /> Re-check</button>
-      </div>
+      <LocalModel onChange={loadRuntime} />
 
       {workspace.providerMode?.mode !== 'live' && llm.routing.script !== 'included'
         && llm.routing.script !== 'ollama' && (

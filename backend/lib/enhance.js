@@ -1,5 +1,6 @@
 import { getDb } from '../db/index.js';
 import { generateStructured, ollamaStatus, LlmRuntimeError } from './llm-runtime.js';
+import { tierOrder } from './model-tier.js';
 import { scriptTiming } from './script-timing.js';
 import { personaFor } from './personas.js';
 
@@ -22,11 +23,6 @@ const confirmsOf = (t) => String(t ?? '').match(CONFIRM_RE) ?? [];
 
 // Model preference for writing, best first. A model tuned for code still
 // writes clean prose; the 8B one ignores length targets (measured 2026-10-08).
-// Measured on three real drafts (2026-10-08): the general 14B writes fresher
-// prose but invented pricing claims ("you only pay for the sessions that help
-// you"); the coder 14B stays with what the draft says and hits length better.
-// Inventing is the worse failure, so it goes first.
-const WRITING_MODELS = ['qwen2.5-coder:14b', 'qwen2.5:14b', 'qwen2.5:14b-instruct', 'qwen2.5:7b', 'llama3.1:8b'];
 
 export async function writingModel(preferred = null) {
   const status = await ollamaStatus();
@@ -35,10 +31,11 @@ export async function writingModel(preferred = null) {
   }
   const installed = status.models ?? [];
   if (preferred && (installed.includes(preferred) || installed.includes(`${preferred}:latest`))) return preferred;
-  const wanted = process.env.ENHANCE_MODEL ? [process.env.ENHANCE_MODEL, ...WRITING_MODELS] : WRITING_MODELS;
+  // The customer's tier (Settings → Model routing) decides the order.
+  const wanted = process.env.ENHANCE_MODEL ? [process.env.ENHANCE_MODEL, ...tierOrder()] : tierOrder();
   const model = wanted.find((m) => installed.includes(m) || installed.includes(`${m}:latest`));
   if (!model) {
-    throw Object.assign(new Error(`No writing model is installed. Run: ollama pull ${WRITING_MODELS[0]}`), { code: 'NO_MODEL' });
+    throw Object.assign(new Error('No local writing model is installed yet. Download the light model (2 GB) in Settings → Model routing.'), { code: 'NO_MODEL' });
   }
   return model;
 }

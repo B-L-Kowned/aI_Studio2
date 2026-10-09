@@ -107,8 +107,17 @@ export default function Home({ go }) {
   const renderAll = async () => {
     const n = Q.render.count;
     if (n === 1) { openAt(Q.render.first, 'Make'); return; }
+    const budget = await api.budget().catch(() => null);
+    if (budget && !budget.set) {
+      if (await dialog.confirm({ title: 'Choose a monthly HeyGen limit first', confirmLabel: 'Choose a limit',
+        body: 'Renders are charged to your own HeyGen account. Set how much a month the studio may spend there, and a batch can never run past it.' })) {
+        try { sessionStorage.setItem('settings-section', 'heygen'); } catch { /* storage blocked */ }
+        go('Settings');
+      }
+      return;
+    }
     if (!await dialog.confirm({ title: `Start ${n} renders on HeyGen?`, tone: 'warn', confirmLabel: `Render ${n}`,
-      body: 'Each render uses your HeyGen credits. Videos without an approved look are skipped and named afterwards.' })) return;
+      body: `Each render uses your HeyGen credits. Videos without an approved look are skipped and named afterwards.${budget?.set ? ` You have $${budget.remaining.toFixed(2)} of your $${budget.monthlyCap} monthly limit left; renders that would pass it are skipped.` : ''}` })) return;
     const skipped = [];
     let started = 0;
     for (const id of Q.render.ids) {

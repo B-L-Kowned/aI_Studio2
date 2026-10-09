@@ -20,6 +20,7 @@ import { productionLock } from '../lib/production-lock.js';
 import { madeBy } from '../lib/made-by.js';
 import { cleanRecordingAudio } from '../lib/assemble.js';
 import { keepRenderLocally } from '../lib/render-keep.js';
+import { costOf, budgetRefusal } from '../lib/budget.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -488,7 +489,10 @@ router.post(
       ? `${Math.floor(audio.seconds / 60)}:${String(Math.round(audio.seconds % 60)).padStart(2, '0')}`
       : estimateRuntime(segments);
     const minutes = duration.split(':').reduce((m, s, i) => (i === 0 ? Number(m) : Number(m) + Number(s) / 60), 0);
-    const cost = Math.round(minutes * 1.4 * 100) / 100;
+    const cost = costOf(minutes);
+    // The customer's own monthly limit: nothing starts that would pass it.
+    const overBudget = DRY_RUN() ? null : budgetRefusal(cost);
+    if (overBudget) return fail(res, 402, overBudget.code, overBudget.message);
 
     const version =
       (db.prepare('SELECT MAX(version) m FROM render_versions WHERE production_id = ?').get(id).m ?? 0) + 1;

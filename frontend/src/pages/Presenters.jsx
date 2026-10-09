@@ -4,6 +4,7 @@ import { useStudio } from '../context/studio-context.jsx';
 import { useDialog } from '../components/Dialog.jsx';
 import { api } from '../services/api.js';
 import { Section, PageHead } from '../components/Section.jsx';
+import { ShareTwinDialog, ImportTwinDialog } from '../components/Twin.jsx';
 
 const ROSTER_PAGE_SIZE = 24;
 
@@ -63,6 +64,7 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
   const [query, setQuery] = useState('');
   const [visibleCount, setVisibleCount] = useState(ROSTER_PAGE_SIZE);
   const [browsing, setBrowsing] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     const d = await api.presenters(showRetired);
@@ -173,7 +175,9 @@ export default function Presenters({ tab: externalTab, onTabs, tabs: tabsNode, o
               )}
               <button onClick={() => setBrowsing((b) => !b)}>{browsing ? 'Close HeyGen avatars' : <><Plus size={14} /> Add from HeyGen</>}</button>
               <button onClick={() => setAdding(true)}><Plus size={14} /> New {word}</button>
+              {!comedy && <button className="ghostbtn text-muted" onClick={() => setImporting(true)} title="Someone shared their twin card with you">Add a shared twin</button>}
             </>}>
+            {importing && <ImportTwinDialog onClose={() => setImporting(false)} onAdded={load} />}
             {others.presenters.length ? (() => {
               const found = others.presenters.filter((p) => !normalizedQuery || searchablePresenter(p).includes(normalizedQuery));
               return (
@@ -453,6 +457,7 @@ function PersonaCard({ presenter: p, onChanged, options, onCast }) {
   const [meta, setMeta] = useState(null);   // workstreams + companies to choose from
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const useFor = p.useFor ?? { workstreams: [], companies: [] };
   const edit = async () => {
     if (open) { setOpen(false); return; }
@@ -489,10 +494,12 @@ function PersonaCard({ presenter: p, onChanged, options, onCast }) {
             : <span className="text-faint">{p.persona ? 'only when chosen for a video' : 'any video no persona presents'}</span>}
           <span className="block text-faint">{p.looks?.length || 0} look{p.looks?.length === 1 ? '' : 's'} · {p.speed ? `${p.speed.toFixed(2)}×` : 'natural pace'}</span>
         </div>
-        <button className="text-[12px] p-[4px_11px] lte960:col-span-2 lte960:justify-self-end" onClick={edit} aria-expanded={open}>
-          {open ? 'Close' : 'Edit'}
-        </button>
+        <span className="flex gap-[6px] lte960:col-span-2 lte960:justify-self-end">
+          <button className="text-[12px] p-[4px_11px] ghostbtn text-muted" onClick={() => setSharing(true)} title="Let someone use this twin, with your consent">Share</button>
+          <button className="text-[12px] p-[4px_11px]" onClick={edit} aria-expanded={open}>{open ? 'Close' : 'Edit'}</button>
+        </span>
       </div>
+      {sharing && <ShareTwinDialog presenter={p} onClose={() => setSharing(false)} />}
       {open && form && meta && (
         <div className="p-[4px_14px_16px_72px] grid gap-[16px] lte960:p-[4px_14px_16px]">
           <div className="grid grid-cols-[1fr_2fr] gap-[12px] lte800:grid-cols-[1fr]">

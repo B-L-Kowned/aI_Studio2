@@ -3,6 +3,7 @@ import { getDb } from '../db/index.js';
 import { looksFor } from '../lib/appearance.js';
 import { personaLooks, setPersona, personaFor, setVideoPersona, useForOf } from '../lib/personas.js';
 import { WORKSTREAMS } from './register.js';
+import { twinCard, importCard, readCard, needsFor } from '../lib/twin-card.js';
 import { ok, fail, route } from '../utils/respond.js';
 
 const router = Router();
@@ -25,6 +26,23 @@ router.put('/presenters/:id/persona', route(async (req, res) => {
 router.get('/productions/:id/persona', route(async (req, res) => ok(res, personaFor(Number(req.params.id)))));
 router.put('/productions/:id/persona', route(async (req, res) => {
   try { return ok(res, setVideoPersona(Number(req.params.id), req.body?.personaId ?? null), 'Persona set'); }
+  catch (err) { return failWith(res, err); }
+}));
+
+/** A persona as a twin card: what can travel, never the samples. */
+router.get('/presenters/:id/twin-card', route(async (req, res) => {
+  try {
+    const owner = getDb().prepare("SELECT name FROM people WHERE role LIKE '%owner%' ORDER BY id LIMIT 1").get()?.name ?? null;
+    return ok(res, twinCard(Number(req.params.id), { ownerName: owner }));
+  } catch (err) { return failWith(res, err); }
+}));
+/** Look at a shared card before adding it: what it brings and what is still needed. */
+router.post('/twin-cards/preview', route(async (req, res) => {
+  try { const c = readCard(req.body?.card); return ok(res, { ...c, needs: needsFor(c) }); }
+  catch (err) { return failWith(res, err); }
+}));
+router.post('/twin-cards/import', route(async (req, res) => {
+  try { return ok(res, importCard(req.body?.card), 'Twin added'); }
   catch (err) { return failWith(res, err); }
 }));
 

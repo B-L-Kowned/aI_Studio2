@@ -164,6 +164,14 @@ const ADDED_COLUMNS = [
   // The three dates your register is worked to: { P1, P2, P3 } as YYYY-MM-DD.
   // A video is due by its priority's date unless it carries its own due_at.
   ['workspace', 'deadlines', 'TEXT'],
+  // The customer's monthly HeyGen limit and rate: { monthlyCap, ratePerMin }.
+  ['workspace', 'budget', 'TEXT'],
+  // What a single-line render was estimated to cost, counted against the limit.
+  ['segment_renders', 'cost_estimate', 'REAL NOT NULL DEFAULT 0'],
+  // Which local model tier Enhance and the checks use: 'light' | 'full'.
+  ['workspace', 'llm_tier', 'TEXT'],
+  // A twin someone shared with you: owner, wardrobe and voice references, grant.
+  ['presenters', 'twin_source', 'TEXT'],
 ];
 
 function migrate(db) {

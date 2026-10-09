@@ -10,6 +10,7 @@ import Plan from './pages/Plan.jsx';
 import Cast from './pages/Cast.jsx';
 import Library from './pages/Library.jsx';
 import Setup from './pages/Setup.jsx';
+import { AccountChip } from './components/Twin.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { api } from './services/api.js';
 import './style.css';
@@ -155,7 +156,10 @@ function App() {
               <button key={n} className={current === n ? 'on' : ''} onClick={() => setPage(n)}>{NAV_LABEL[n] ?? n}</button>
             ))}
           </nav>
-          <ProgramBadge go={setPage} />
+          <span className="flex items-center gap-[6px] justify-self-end lte880:col-[2] lte880:row-[1]">
+            <ProgramBadge go={setPage} />
+            <AccountChip />
+          </span>
         </div>
       </header>
       <main>

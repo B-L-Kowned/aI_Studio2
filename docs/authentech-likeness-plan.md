@@ -6,6 +6,114 @@ approved AuthenTech design (`docs/identity-platform/DESIGN.md`, approved
 2026-10-08, and "AuthenTech Architecture and Build Prompt v1.1", section
 *Agents and clones*). No AuthenTech code is changed by this document.
 
+## Update 2026-10-08: desktop app, the customer's own accounts
+
+This replaces the "platform account" assumption in the sections below.
+
+- **Customers download the desktop app** from the website. Each one uses **their
+  own HeyGen account** (sign-in for a web plan, or their own API key) and picks a
+  **monthly limit** for it: $25 / $50 (suggested) / $100 or their own amount.
+  The studio records an estimate for every paid render and refuses one that
+  would go past the limit (`backend/lib/budget.js`). The first paid render asks
+  for the limit at that moment.
+- **A local model comes with the app**: Light (llama3.2:3b, 2 GB) handles
+  checks and suggestions. Full (qwen2.5-coder:14b, 9 GB) is an optional
+  in-app download for whole-script rewrites (Settings → Model routing,
+  `backend/lib/model-tier.js`).
+- **AuthenTech is optional.** It is only needed to **share a twin** (look,
+  voice, personality, wardrobe) with another customer, or to receive one, with
+  consent either side can prove and withdraw. Sign-in is offered from the
+  header and the Share dialog, never at launch.
+- **Desktop sign-in** (`backend/lib/authentech.js`, `routes/account.js`):
+  - OAuth code + PKCE S256 with a loopback redirect, and no secret in the app;
+  - the refresh token is stored encrypted, the access token in memory only;
+  - sign-out revokes the token at AuthenTech.
+
+  This is built and tested against a mock. It switches on when
+  `AUTHENTECH_CLIENT_ID` is set.
+- **Twin card** `ai-video-studio.twin/1` (`backend/lib/twin-card.js`):
+  - holds the personality, delivery, wardrobe and voice references, plus a
+    consent slot, and never raw samples;
+  - renderer assets are marked `portable: false`, because a HeyGen avatar
+    belongs to the account that made it;
+  - an import becomes a Content presenter tied to a collaborator, with consent
+    "not yet verified" until AuthenTech confirms it.
+- **Two ways to share** (Cast → You → Share):
+  - **They make videos with it:** the recipient builds the twin in their own
+    HeyGen from the source the owner shares, and pays for it there.
+  - **They ask, you render:** the owner renders on their own account, within
+    their own limit.
+
+  Both choices let the owner pick what is shared (look, voice, personality)
+  and for how long.
+
+### Needs sent to the AuthenTech terminal (2026-10-08)
+
+1. A public desktop client: PKCE, loopback redirect on any port (RFC 8252), no
+   secret. Assumed paths: `/oauth/authorize`, `/oauth/token`, `/oauth/revoke`.
+2. Create account inside the same flow (`prompt=create`), plus a bare
+   `/signup` for the website.
+3. `GET /api/v1/me` returning `{name, email}`.
+4. Scopes `twin:share` and `twin:receive` (renamed; see the answers below).
+5. A twin share grant from owner to recipient, by email, carrying:
+   - scopes;
+   - mode (`source` or `render`);
+   - expiry;
+   - the asset references.
+
+   Plus three calls: create, list "shared with me", and verify by id.
+6. For `source`: an encrypted, expiring hand-off of the source clips, either
+   relayed as an opaque blob or through a signed short-lived URL.
+7. Revocation the desktop can poll ("events since cursor"), since nothing can
+   push to a Mac.
+8. A sandbox client id.
+
+### AuthenTech's answers (autht-a4, 2026-10-08)
+
+Nothing on their side exists yet: the OAuth server is WP-6 and `/v1` is WP-7.
+The studio client already uses the confirmed paths and scopes.
+
+| # | Answer |
+|---|---|
+| 1 | Yes: public desktop client, PKCE S256 required, loopback on any port, no secret. Paths: `https://theauthentech.app/api/oauth/authorize`, `/api/oauth/token`, `/api/oauth/revoke`; discovery at `/.well-known/oauth-authorization-server`. |
+| 2 | Yes: `prompt=create`. The account page is `/register`. |
+| 3 | Not `/me`. `GET /api/v1/profile` returns only the fields the person granted, with a subject id that differs per client. Email comes from `/api/oauth/userinfo` under the `email` scope. |
+| 4 | Colon-style scopes: `openid profile email twin:receive`. **Decided: no `twin:share`** (see Pat's decisions below): in v1, client scopes are read-only, so the owner starts a share on AuthenTech's own screens, deep-linked from the studio with the card's references prefilled. |
+| 5 | Fits the planned representative asset grant: owner → recipient by email, with scopes, mode `source` or `render`, expiry and asset references, accepted on AuthenTech's consent screen. Planned calls are `GET /api/v1/grants/received` and `POST /api/v1/assertions/verify`. A card should carry an **AuthenTech-signed, short-lived assertion** rather than a bare grant id. **The grant's shape is open (Pat)**, pending Decisions 0 and 1. |
+| 6 | **Decided, adopted as proposed:** relaying an encrypted blob would still mean AuthenTech stores biometric data, which Decision 1 rules out. Their proposal: clips move outside AuthenTech (the owner's own expiring link, or the renderer's own sharing), and the grant records each clip's `sha256`, so consent is tied to exactly those files. |
+| 7 | Yes: `GET /api/v1/events?after=<cursor>` returns `grant.revoked`, `grant.changed` and similar. Revocation takes effect on the server at once, but a downloaded copy cannot be recalled, and the Share dialog says so. |
+| 8 | When WP-6 lands. There is no staging environment, so it will be a dev client on production behind a feature flag, plus a test account. |
+
+### Pat's decisions (2026-10-08): how sharing works
+
+1. **The app runs the share. The owner confirms consent on AuthenTech's
+   screen.**
+   - The app packages the twin card and source clips, sends them app to app,
+     and the recipient rebuilds the twin in their own HeyGen. This works with
+     no AuthenTech account.
+   - When the owner is signed in, Share deep-links to AuthenTech's
+     share-confirm screen, prefilled with the recipient, scopes, mode, expiry
+     and the clips' `sha256`.
+   - The owner confirms there. AuthenTech returns a `grant_id` and a signed
+     assertion to the app's loopback redirect, and the app puts them in the
+     card.
+   - **There is no app write scope.** A consent given on AuthenTech's own
+     screen is what makes AuthenTech worth having: if apps could create grants
+     through the API, AuthenTech would only be storing what apps claim.
+2. **Source clips go app to app**, outside AuthenTech, with each clip's
+   `sha256` bound into the grant.
+3. **AuthenTech is optional:** it is the record, the proof and the withdrawal
+   channel, never a requirement for sharing.
+
+Still needed from AuthenTech: the share-confirm deep link (its URL format, the
+prefill fields or a short-lived prefill handle, and `return_to`),
+`grants/received`, `assertions/verify` and `events`.
+
+Studio changes still to make once these exist:
+- the Share button deep-links to AuthenTech's share screen;
+- an import verifies the card's assertion;
+- the app polls `/events` for withdrawals.
+
 ## The goal
 
 There should be one standard process for making videos with someone else's
